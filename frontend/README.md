@@ -16,9 +16,9 @@ npm run dev
 
 ## Using Protected CRUD Pages
 
-1. Login via backend API (`POST /api/v1/auth/login`) in Swagger or Postman.
-2. Copy `access_token` from response.
-3. Open Dashboard and paste token into the `Auth Token` box.
+1. Open frontend at `http://localhost:5173`.
+2. Register at `/register` or login at `/login`.
+3. After login, token is stored automatically in browser local storage.
 4. Navigate to `Students`, `Subjects`, or `Assignments`.
 
 ## Scripts

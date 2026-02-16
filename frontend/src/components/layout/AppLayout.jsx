@@ -1,4 +1,5 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
+import { useAuth } from "../../auth/AuthContext";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
@@ -7,11 +8,19 @@ const navItems = [
   { to: "/assignments", label: "Assignments" },
 ];
 
-export default function AppLayout({ children }) {
+export default function AppLayout() {
+  const { user, logout } = useAuth();
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
         <h2>CAPS AI</h2>
+        <p className="sidebar-user">
+          {user?.full_name || "User"} ({user?.role || "guest"})
+        </p>
+        <button className="secondary-button" onClick={logout}>
+          Logout
+        </button>
         <nav className="sidebar-nav">
           {navItems.map((item) => (
             <NavLink
@@ -26,7 +35,9 @@ export default function AppLayout({ children }) {
           ))}
         </nav>
       </aside>
-      <section className="content-area">{children}</section>
+      <section className="content-area">
+        <Outlet />
+      </section>
     </main>
   );
 }

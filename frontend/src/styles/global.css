@@ -28,6 +28,7 @@ body {
 .sidebar-nav {
   display: grid;
   gap: 8px;
+  margin-top: 12px;
 }
 
 .nav-link {
@@ -47,6 +48,12 @@ body {
 
 .content-area {
   padding: 24px;
+}
+
+.sidebar-user {
+  margin: 0;
+  color: #334155;
+  font-size: 14px;
 }
 
 .stack {
@@ -104,6 +111,12 @@ button {
   cursor: pointer;
 }
 
+.secondary-button {
+  margin-top: 10px;
+  width: 100%;
+  background: #334155;
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -131,6 +144,31 @@ button:disabled {
 
 .error {
   color: #b91c1c;
+}
+
+.auth-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(420px, 100%);
+  background: #ffffff;
+  border: 1px solid #dbe1ea;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.inline-form a {
+  display: inline-block;
+  text-decoration: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: #0f172a;
+  background: #ffffff;
 }
 
 @media (max-width: 900px) {
