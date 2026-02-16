@@ -1,11 +1,11 @@
-import { Navigate } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 export default function ProtectedRoute({ children, allowedRoles = null }) {
   const { isAuthenticated, checking, user } = useAuth();
 
   if (checking) {
-    return <p>Checking session...</p>;
+    return <p className="p-6 text-sm text-slate-500">Checking session...</p>;
   }
 
   if (!isAuthenticated) {
