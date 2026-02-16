@@ -1,0 +1,2 @@
+﻿# ReportLab PDF generation placeholder
+

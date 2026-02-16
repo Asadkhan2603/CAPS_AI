@@ -1,0 +1,2 @@
+﻿# PDF/DOCX parsing placeholder
+
