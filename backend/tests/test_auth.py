@@ -276,3 +276,118 @@ def test_students_list_supports_pagination_and_filters() -> None:
     body = filtered.json()
     assert len(body) == 1
     assert body[0]["full_name"] == "Alice"
+
+
+def test_subjects_list_supports_pagination_and_filters() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    admin_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin User",
+            "email": "admin3@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    assert admin_register.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin3@example.com", "password": "password123"},
+    )
+    token = admin_login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    fake_db.subjects.items = [
+        {
+            "_id": ObjectId(),
+            "name": "Machine Learning",
+            "code": "ML101",
+            "description": "Intro",
+            "is_active": True,
+        },
+        {
+            "_id": ObjectId(),
+            "name": "Operating Systems",
+            "code": "CS205",
+            "description": "Core",
+            "is_active": True,
+        },
+        {
+            "_id": ObjectId(),
+            "name": "Advanced ML",
+            "code": "ML501",
+            "description": "Advanced",
+            "is_active": False,
+        },
+    ]
+
+    filtered = client.get(
+        "/api/v1/subjects/?q=ml&is_active=true&skip=0&limit=5",
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert len(body) == 1
+    assert body[0]["code"] == "ML101"
+
+
+def test_assignments_list_supports_pagination_and_filters() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    admin_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin User",
+            "email": "admin4@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    assert admin_register.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin4@example.com", "password": "password123"},
+    )
+    token = admin_login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    fake_db.assignments.items = [
+        {
+            "_id": ObjectId(),
+            "title": "ML Lab 1",
+            "subject_id": "s1",
+            "section_id": "A",
+            "created_by": "teacher1",
+            "total_marks": 100,
+        },
+        {
+            "_id": ObjectId(),
+            "title": "ML Lab 2",
+            "subject_id": "s1",
+            "section_id": "B",
+            "created_by": "teacher2",
+            "total_marks": 100,
+        },
+        {
+            "_id": ObjectId(),
+            "title": "OS Assignment",
+            "subject_id": "s2",
+            "section_id": "A",
+            "created_by": "teacher1",
+            "total_marks": 100,
+        },
+    ]
+
+    filtered = client.get(
+        "/api/v1/assignments/?q=ML&subject_id=s1&section_id=A&created_by=teacher1&skip=0&limit=1",
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert len(body) == 1
+    assert body[0]["title"] == "ML Lab 1"
