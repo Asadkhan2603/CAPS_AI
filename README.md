@@ -65,4 +65,17 @@ pytest -q
 3. Connect submission upload parsing and similarity engine.
 4. Build analytics and evaluation workflows end-to-end.
 
+## Auth Endpoints (Week 2 Started)
+
+- `POST /api/v1/auth/register` Register user (`admin`, `teacher`, or `student`).
+- `POST /api/v1/auth/login` Authenticate and receive JWT bearer token.
+- `GET /api/v1/auth/me` Get current authenticated user profile.
+- `GET /api/v1/users/` Admin-only user listing.
+
+## Protected CRUD List Query Params
+
+- `GET /api/v1/students/`: `q`, `section_id`, `is_active`, `skip`, `limit`
+- `GET /api/v1/subjects/`: `q`, `is_active`, `skip`, `limit`
+- `GET /api/v1/assignments/`: `q`, `subject_id`, `section_id`, `created_by`, `skip`, `limit`
+
 Roadmap reference: `DOC'S/CAPS_AI_Project_Roadmap.md`.

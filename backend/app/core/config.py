@@ -14,6 +14,13 @@ def _as_float(value: str, fallback: float) -> float:
         return fallback
 
 
+def _as_int(value: str, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
 @dataclass
 class Settings:
     app_name: str = field(default_factory=lambda: os.getenv("APP_NAME", "CAPS AI API"))
@@ -23,6 +30,9 @@ class Settings:
     mongodb_db: str = field(default_factory=lambda: os.getenv("MONGODB_DB", "caps_ai"))
     jwt_secret: str = field(default_factory=lambda: os.getenv("JWT_SECRET", "change_me"))
     jwt_algorithm: str = field(default_factory=lambda: os.getenv("JWT_ALGORITHM", "HS256"))
+    access_token_expire_minutes: int = field(
+        default_factory=lambda: _as_int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"), 60)
+    )
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     similarity_threshold: float = field(
         default_factory=lambda: _as_float(os.getenv("SIMILARITY_THRESHOLD", "0.8"), 0.8)
