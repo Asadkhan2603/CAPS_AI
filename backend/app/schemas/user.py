@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 UserRole = Literal["admin", "teacher", "student"]
+TeacherExtensionRole = Literal["year_head", "class_coordinator", "club_coordinator"]
 
 
 class UserCreate(BaseModel):
@@ -11,6 +12,7 @@ class UserCreate(BaseModel):
     email: str = Field(min_length=5, max_length=255)
     password: str = Field(min_length=8, max_length=128)
     role: UserRole
+    extended_roles: list[TeacherExtensionRole] = Field(default_factory=list)
 
 
 class UserLogin(BaseModel):
@@ -23,5 +25,6 @@ class UserOut(BaseModel):
     full_name: str
     email: str
     role: UserRole
+    extended_roles: list[TeacherExtensionRole] = Field(default_factory=list)
     is_active: bool = True
     created_at: datetime | None = None

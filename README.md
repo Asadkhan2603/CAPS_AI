@@ -2,11 +2,11 @@
 
 AI-assisted academic evaluation and plagiarism monitoring system.
 
-## Current Baseline (Week 1 Setup)
+## Current Baseline
 
-- Backend: FastAPI project with modular API routers and health endpoints.
-- Frontend: React + Vite app with routing and API connectivity check.
-- Database target: MongoDB (via Motor driver in backend core).
+- Week 1: Project setup (FastAPI + React + MongoDB)
+- Week 2: Authentication and role-based route protection
+- Week 3: Academic structure management (Sections, Subjects, Section-Subjects)
 
 ## Project Structure
 
@@ -58,22 +58,23 @@ cd backend
 pytest -q
 ```
 
-## Immediate Next Development Targets
-
-1. Implement authentication (JWT login/register and role guards).
-2. Add MongoDB CRUD for sections, students, subjects, assignments.
-3. Connect submission upload parsing and similarity engine.
-4. Build analytics and evaluation workflows end-to-end.
-
-## Auth Endpoints (Week 2 Started)
+## Auth Endpoints
 
 - `POST /api/v1/auth/register` Register user (`admin`, `teacher`, or `student`).
 - `POST /api/v1/auth/login` Authenticate and receive JWT bearer token.
 - `GET /api/v1/auth/me` Get current authenticated user profile.
 - `GET /api/v1/users/` Admin-only user listing.
 
+## Academic Structure Endpoints (Week 3)
+
+- Sections: `GET/POST /api/v1/sections`, `GET/PUT/DELETE /api/v1/sections/{section_id}`
+- Section-Subjects: `GET/POST /api/v1/section-subjects`, `GET/PUT/DELETE /api/v1/section-subjects/{mapping_id}`
+- Subjects: `GET/POST /api/v1/subjects`, `GET/PUT/DELETE /api/v1/subjects/{subject_id}`
+
 ## Protected CRUD List Query Params
 
+- `GET /api/v1/sections/`: `q`, `academic_year`, `semester`, `is_active`, `skip`, `limit`
+- `GET /api/v1/section-subjects/`: `section_id`, `subject_id`, `teacher_user_id`, `is_active`, `skip`, `limit`
 - `GET /api/v1/students/`: `q`, `section_id`, `is_active`, `skip`, `limit`
 - `GET /api/v1/subjects/`: `q`, `is_active`, `skip`, `limit`
 - `GET /api/v1/assignments/`: `q`, `subject_id`, `section_id`, `created_by`, `skip`, `limit`

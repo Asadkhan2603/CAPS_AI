@@ -19,6 +19,12 @@ router = APIRouter()
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register_user(payload: UserCreate) -> UserOut:
     email = payload.email.lower().strip()
+    extended_roles = payload.extended_roles or []
+    if payload.role != "teacher" and extended_roles:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Extended roles are only allowed for teacher accounts",
+        )
 
     existing_user = await db.users.find_one({"email": email})
     if existing_user:
@@ -33,6 +39,7 @@ async def register_user(payload: UserCreate) -> UserOut:
         "email": email,
         "hashed_password": get_password_hash(payload.password),
         "role": payload.role,
+        "extended_roles": extended_roles,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
     }
@@ -77,6 +84,7 @@ async def login_user(payload: UserLogin) -> Token:
         user_id=str(user["_id"]),
         email=user["email"],
         role=user["role"],
+        extended_roles=user.get("extended_roles", []),
     )
     return Token(access_token=token, user=UserOut(**user_public(user)))
 

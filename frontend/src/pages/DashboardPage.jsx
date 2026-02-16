@@ -39,6 +39,11 @@ export default function DashboardPage() {
           API status: <strong>{apiStatus}</strong>
         </p>
         <div className="inline-form">
+          {user?.role === "admin" ? <Link to="/courses">Open Courses</Link> : null}
+          {user?.role === "admin" ? <Link to="/years">Open Years</Link> : null}
+          {user?.role === "admin" ? <Link to="/classes">Open Classes</Link> : null}
+          {user?.role === "admin" ? <Link to="/sections">Open Sections</Link> : null}
+          {user?.role === "admin" ? <Link to="/section-subjects">Open Section Subjects</Link> : null}
           <Link to="/students">Open Students</Link>
           <Link to="/subjects">Open Subjects</Link>
           <Link to="/assignments">Open Assignments</Link>

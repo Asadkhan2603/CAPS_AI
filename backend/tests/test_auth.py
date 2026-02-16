@@ -7,9 +7,14 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.api.v1.endpoints import assignments as assignments_endpoint
 from app.api.v1.endpoints import auth as auth_endpoint
+from app.api.v1.endpoints import classes as classes_endpoint
+from app.api.v1.endpoints import courses as courses_endpoint
+from app.api.v1.endpoints import section_subjects as section_subjects_endpoint
+from app.api.v1.endpoints import sections as sections_endpoint
 from app.api.v1.endpoints import students as students_endpoint
 from app.api.v1.endpoints import subjects as subjects_endpoint
 from app.api.v1.endpoints import users as users_endpoint
+from app.api.v1.endpoints import years as years_endpoint
 from app.core import security as security_core
 
 
@@ -115,8 +120,13 @@ def _matches_query(item: Dict[str, Any], query: Dict[str, Any]) -> bool:
 class FakeDB:
     def __init__(self) -> None:
         self.users = FakeUsersCollection()
+        self.courses = FakeUsersCollection()
+        self.years = FakeUsersCollection()
+        self.classes = FakeUsersCollection()
         self.students = FakeUsersCollection()
         self.subjects = FakeUsersCollection()
+        self.sections = FakeUsersCollection()
+        self.section_subjects = FakeUsersCollection()
         self.assignments = FakeUsersCollection()
 
 
@@ -124,8 +134,13 @@ def _setup_fake_db() -> FakeDB:
     fake_db = FakeDB()
     auth_endpoint.db = fake_db
     users_endpoint.db = fake_db
+    courses_endpoint.db = fake_db
+    years_endpoint.db = fake_db
+    classes_endpoint.db = fake_db
     students_endpoint.db = fake_db
     subjects_endpoint.db = fake_db
+    sections_endpoint.db = fake_db
+    section_subjects_endpoint.db = fake_db
     assignments_endpoint.db = fake_db
     security_core.db = fake_db
     return fake_db
@@ -391,3 +406,198 @@ def test_assignments_list_supports_pagination_and_filters() -> None:
     body = filtered.json()
     assert len(body) == 1
     assert body[0]["title"] == "ML Lab 1"
+
+
+def test_sections_create_and_filter_for_admin() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin User",
+            "email": "admin5@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    assert register.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin5@example.com", "password": "password123"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create = client.post(
+        "/api/v1/sections/",
+        json={
+            "name": "A",
+            "program": "BCA",
+            "academic_year": "2026-27",
+            "semester": 4,
+        },
+        headers=headers,
+    )
+    assert create.status_code == 201
+
+    fake_db.sections.items.append(
+        {
+            "_id": ObjectId(),
+            "name": "B",
+            "program": "BSc CS",
+            "academic_year": "2025-26",
+            "semester": 2,
+            "is_active": True,
+        }
+    )
+
+    listed = client.get(
+        "/api/v1/sections/?q=bc&academic_year=2026-27&skip=0&limit=10",
+        headers=headers,
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+
+def test_student_cannot_create_section_subject_mapping() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student User",
+            "email": "student3@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert register.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student3@example.com", "password": "password123"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create = client.post(
+        "/api/v1/section-subjects/",
+        json={"section_id": "sec1", "subject_id": "sub1", "teacher_user_id": "u1"},
+        headers=headers,
+    )
+    assert create.status_code == 403
+
+
+def test_teacher_can_have_extended_roles() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Year Head Teacher",
+            "email": "teacher_role@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["year_head", "class_coordinator"],
+        },
+    )
+    assert register.status_code == 201
+    assert register.json()["extended_roles"] == ["year_head", "class_coordinator"]
+
+
+def test_non_teacher_cannot_have_extended_roles() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin User",
+            "email": "admin_roles@example.com",
+            "password": "password123",
+            "role": "admin",
+            "extended_roles": ["year_head"],
+        },
+    )
+    assert register.status_code == 400
+
+
+def test_admin_can_create_courses_years_and_classes() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin User",
+            "email": "admin6@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    assert register.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin6@example.com", "password": "password123"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BCA", "code": "BCA", "description": "Bachelor course"},
+        headers=headers,
+    )
+    assert course.status_code == 201
+    course_id = course.json()["id"]
+
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course_id, "year_number": 1, "label": "First Year"},
+        headers=headers,
+    )
+    assert year.status_code == 201
+    year_id = year.json()["id"]
+
+    class_item = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course_id,
+            "year_id": year_id,
+            "name": "BCA FY",
+            "section": "A",
+        },
+        headers=headers,
+    )
+    assert class_item.status_code == 201
+
+
+def test_student_cannot_create_course() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student User",
+            "email": "student4@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert register.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student4@example.com", "password": "password123"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "MCA", "code": "MCA", "description": "Master course"},
+        headers=headers,
+    )
+    assert course.status_code == 403

@@ -44,11 +44,22 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    *, user_id: str, email: str, role: str, minutes: int | None = None
+    *,
+    user_id: str,
+    email: str,
+    role: str,
+    extended_roles: List[str] | None = None,
+    minutes: int | None = None,
 ) -> str:
     expires_in_minutes = minutes or settings.access_token_expire_minutes
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_in_minutes)
-    payload = {"sub": user_id, "email": email, "role": role, "exp": expire}
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "extended_roles": extended_roles or [],
+        "exp": expire,
+    }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -106,3 +117,23 @@ def require_roles(allowed_roles: List[str]) -> Callable:
         return current_user
 
     return role_dependency
+
+
+def require_teacher_extensions(allowed_extensions: List[str]) -> Callable:
+    async def extension_dependency(
+        current_user: Dict[str, str] = Depends(get_current_user),
+    ) -> Dict[str, str]:
+        if current_user.get("role") != "teacher":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Teacher role is required",
+            )
+        user_extensions = current_user.get("extended_roles", [])
+        if not any(role in user_extensions for role in allowed_extensions):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Required supervisory role is missing",
+            )
+        return current_user
+
+    return extension_dependency

@@ -1,15 +1,24 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 
-const navItems = [
+const baseNavItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/students", label: "Students" },
   { to: "/subjects", label: "Subjects" },
   { to: "/assignments", label: "Assignments" },
 ];
 
+const adminNavItems = [
+  { to: "/courses", label: "Courses" },
+  { to: "/years", label: "Years" },
+  { to: "/classes", label: "Classes" },
+  { to: "/sections", label: "Sections" },
+  { to: "/section-subjects", label: "Section Subjects" },
+];
+
 export default function AppLayout() {
   const { user, logout } = useAuth();
+  const navItems = user?.role === "admin" ? [...baseNavItems, ...adminNavItems] : baseNavItems;
 
   return (
     <main className="app-shell">

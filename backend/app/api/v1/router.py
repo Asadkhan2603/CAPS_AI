@@ -4,6 +4,8 @@ from app.api.v1.endpoints import (
     assignments,
     audit_logs,
     auth,
+    classes,
+    courses,
     evaluations,
     notifications,
     section_subjects,
@@ -13,11 +15,15 @@ from app.api.v1.endpoints import (
     subjects,
     submissions,
     users,
+    years,
 )
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(courses.router, prefix="/courses", tags=["courses"])
+api_router.include_router(years.router, prefix="/years", tags=["years"])
+api_router.include_router(classes.router, prefix="/classes", tags=["classes"])
 api_router.include_router(sections.router, prefix="/sections", tags=["sections"])
 api_router.include_router(
     section_subjects.router, prefix="/section-subjects", tags=["section-subjects"]

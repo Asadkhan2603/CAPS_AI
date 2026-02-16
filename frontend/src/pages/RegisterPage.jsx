@@ -10,6 +10,7 @@ export default function RegisterPage() {
     email: "",
     password: "",
     role: "teacher",
+    extended_roles: [],
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,12 +20,26 @@ export default function RegisterPage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
+  function onExtendedRoleChange(event) {
+    const { value, checked } = event.target;
+    setForm((prev) => {
+      const nextRoles = checked
+        ? [...prev.extended_roles, value]
+        : prev.extended_roles.filter((item) => item !== value);
+      return { ...prev, extended_roles: nextRoles };
+    });
+  }
+
   async function onSubmit(event) {
     event.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await register(form);
+      const payload = {
+        ...form,
+        extended_roles: form.role === "teacher" ? form.extended_roles : [],
+      };
+      await register(payload);
       await login(form.email, form.password);
       navigate("/dashboard", { replace: true });
     } catch (err) {
@@ -68,6 +83,37 @@ export default function RegisterPage() {
             <option value="teacher">Teacher</option>
             <option value="student">Student</option>
           </select>
+          {form.role === "teacher" ? (
+            <div className="stack">
+              <label>
+                <input
+                  type="checkbox"
+                  value="year_head"
+                  checked={form.extended_roles.includes("year_head")}
+                  onChange={onExtendedRoleChange}
+                />{" "}
+                Year Head
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  value="class_coordinator"
+                  checked={form.extended_roles.includes("class_coordinator")}
+                  onChange={onExtendedRoleChange}
+                />{" "}
+                Class Coordinator
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  value="club_coordinator"
+                  checked={form.extended_roles.includes("club_coordinator")}
+                  onChange={onExtendedRoleChange}
+                />{" "}
+                Club Coordinator
+              </label>
+            </div>
+          ) : null}
           <button type="submit" disabled={loading}>
             {loading ? "Creating account..." : "Create Account"}
           </button>
