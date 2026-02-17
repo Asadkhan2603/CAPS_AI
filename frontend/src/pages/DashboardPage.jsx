@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bell, BookOpenCheck, ChartLine, FileText, Sparkles } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import { Link } from 'react-router-dom';
@@ -6,8 +6,10 @@ import StatCard from '../components/ui/StatCard';
 import Card from '../components/ui/Card';
 import Alert from '../components/ui/Alert';
 import Badge from '../components/ui/Badge';
+import TeacherSectionTiles from '../components/ui/TeacherSectionTiles';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
+import { apiClient } from '../services/apiClient';
 
 const performanceData = [
   { month: 'Jan', avg: 67, submissions: 41 },
@@ -22,24 +24,78 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { pushToast } = useToast();
   const [showNotice, setShowNotice] = useState(true);
+  const [summary, setSummary] = useState({});
+  const [teacherTiles, setTeacherTiles] = useState([]);
+  const [urgentNotices, setUrgentNotices] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const roleActions = useMemo(() => {
     if (user?.role === 'admin') {
       return [
+        { to: '/analytics', label: 'Analytics' },
         { to: '/courses', label: 'Manage Courses' },
         { to: '/years', label: 'Manage Years' },
         { to: '/classes', label: 'Manage Classes' },
         { to: '/sections', label: 'Manage Sections' },
-        { to: '/section-subjects', label: 'Section-Subject Mapping' }
+        { to: '/section-subjects', label: 'Section-Subject Mapping' },
+        { to: '/users', label: 'Manage Users' }
       ];
     }
     return [
+      { to: '/analytics', label: 'Analytics' },
       { to: '/students', label: 'Manage Students' },
       { to: '/subjects', label: 'Manage Subjects' },
       { to: '/assignments', label: 'Manage Assignments' },
       { to: '/submissions', label: 'Review Submissions' }
     ];
   }, [user?.role]);
+
+  async function loadDashboardData(silent = false) {
+    if (!silent) {
+      setLoading(true);
+    }
+    try {
+      const [summaryResp, tilesResp, noticesResp] = await Promise.all([
+        apiClient.get('/analytics/summary'),
+        user?.role === 'teacher' ? apiClient.get('/analytics/teacher/classes') : Promise.resolve({ data: { items: [] } }),
+        apiClient.get('/notices/', { params: { priority: 'urgent', limit: 3 } })
+      ]);
+      setSummary(summaryResp.data?.summary || {});
+      setTeacherTiles(tilesResp.data?.items || []);
+      setUrgentNotices(noticesResp.data || []);
+      setLastUpdated(new Date());
+    } catch {
+      setSummary({});
+      setTeacherTiles([]);
+      setUrgentNotices([]);
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    loadDashboardData(true);
+  }, [user?.role]);
+
+  const statItems = useMemo(() => {
+    const pairs = Object.entries(summary);
+    if (!pairs.length) {
+      return [
+        { title: 'Active Subjects', value: '0', hint: 'No data' },
+        { title: 'Submissions', value: '0', hint: 'No data' },
+        { title: 'Evaluations', value: '0', hint: 'No data' },
+        { title: 'Alerts', value: '0', hint: 'No data' }
+      ];
+    }
+    return pairs.slice(0, 4).map(([key, value]) => ({
+      title: key.replaceAll('_', ' '),
+      value: String(value),
+      hint: 'Live from backend'
+    }));
+  }, [summary]);
 
   return (
     <div className="space-y-5 page-fade">
@@ -53,17 +109,24 @@ export default function DashboardPage() {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={BookOpenCheck} title="Active Subjects" value="14" hint="+2 this semester" />
-        <StatCard icon={FileText} title="Submissions Today" value="87" hint="Across all sections" gradient="from-sky-600 to-cyan-500" />
-        <StatCard icon={ChartLine} title="Avg. Performance" value="81%" hint="+4.2% month-over-month" gradient="from-emerald-600 to-lime-500" />
-        <StatCard icon={Bell} title="Risk Alerts" value="9" hint="Requires faculty review" gradient="from-rose-600 to-orange-500" />
+        <StatCard icon={BookOpenCheck} title={statItems[0]?.title} value={statItems[0]?.value} hint={statItems[0]?.hint} />
+        <StatCard icon={FileText} title={statItems[1]?.title} value={statItems[1]?.value} hint={statItems[1]?.hint} gradient="from-sky-600 to-cyan-500" />
+        <StatCard icon={ChartLine} title={statItems[2]?.title} value={statItems[2]?.value} hint={statItems[2]?.hint} gradient="from-emerald-600 to-lime-500" />
+        <StatCard icon={Bell} title={statItems[3]?.title} value={statItems[3]?.value} hint={statItems[3]?.hint} gradient="from-rose-600 to-orange-500" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Card className="min-w-0 xl:col-span-2">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">Academic Trend</h2>
-            <Badge variant="info">Live Analytics</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="info">Live Analytics</Badge>
+              {lastUpdated ? (
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Updated {lastUpdated.toLocaleTimeString()}
+                </span>
+              ) : null}
+            </div>
           </div>
           <div className="h-72 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
@@ -96,14 +159,34 @@ export default function DashboardPage() {
           </div>
           <button
             className="btn-primary mt-4 w-full"
-            onClick={() =>
-              pushToast({ title: 'Synced', description: 'Dashboard data refreshed successfully.', variant: 'success' })
-            }
+            onClick={async () => {
+              await loadDashboardData();
+              pushToast({ title: 'Synced', description: 'Dashboard data refreshed successfully.', variant: 'success' });
+            }}
           >
-            Refresh Insights
+            {loading ? 'Refreshing...' : 'Refresh Insights'}
           </button>
         </Card>
       </div>
+
+      {urgentNotices.length ? (
+        <Card className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Urgent Notices</h2>
+            <Badge variant="danger">Priority</Badge>
+          </div>
+          <div className="space-y-2">
+            {urgentNotices.map((notice) => (
+              <div key={notice.id} className="rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-900/40 dark:bg-rose-950/30">
+                <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">{notice.title}</p>
+                <p className="mt-1 text-sm text-rose-700/90 dark:text-rose-200">{notice.message}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      {user?.role === 'teacher' ? <TeacherSectionTiles items={teacherTiles} /> : null}
     </div>
   );
 }

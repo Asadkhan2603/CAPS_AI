@@ -137,3 +137,25 @@ def require_teacher_extensions(allowed_extensions: List[str]) -> Callable:
         return current_user
 
     return extension_dependency
+
+
+def require_admin_or_teacher_extensions(allowed_extensions: List[str]) -> Callable:
+    async def dependency(
+        current_user: Dict[str, str] = Depends(get_current_user),
+    ) -> Dict[str, str]:
+        if current_user.get("role") == "admin":
+            return current_user
+        if current_user.get("role") != "teacher":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin or teacher supervisory role is required",
+            )
+        user_extensions = current_user.get("extended_roles", [])
+        if not any(role in user_extensions for role in allowed_extensions):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Required supervisory role is missing",
+            )
+        return current_user
+
+    return dependency

@@ -1,82 +1,83 @@
-# CAPS AI
+﻿# CAPS AI
 
-AI-assisted academic evaluation and plagiarism monitoring system.
+Enterprise academic governance and AI-assisted evaluation platform.
 
-## Current Baseline
+Master plan reference:
+- `DOC'S/CAPS_AI_ULTRA_PRO_MASTER_ROADMAP.md`
 
-- Week 1: Project setup (FastAPI + React + MongoDB)
-- Week 2: Authentication and role-based route protection
-- Week 3: Academic structure management (Sections, Subjects, Section-Subjects)
+## Current Implementation Status
+
+Completed backend phases (roadmap-aligned):
+- Phase 1: Foundation setup, auth, RBAC, health APIs
+- Phase 2: Academic core CRUD, role extensions, enrollment mapping
+- Phase 3: Assignments, submissions, evaluation lock workflow
+- Phase 4: AI suggestion pipeline and similarity engine
+- Phase 5: Analytics, notices, clubs/events, registration constraints
+- Phase 6 (in progress): hardening and release readiness
 
 ## Project Structure
 
-- `backend/` FastAPI app, services, schemas, tests, and Python dependencies.
-- `frontend/` React app scaffold, routes, styles, and API client.
-- `docs/` Documentation files.
-- `scripts/` Helper scripts.
+- `backend/` FastAPI services, endpoints, schemas, models, tests
+- `frontend/` React (Vite) SaaS dashboard frontend
+- `DOC'S/` authoritative roadmap and planning documents
+- `docs/` supplementary notes
 
 ## Prerequisites
 
-- Python 3.11+ (recommended)
-- Node.js 20+ and npm
-- MongoDB local instance on `mongodb://localhost:27017`
+- Python 3.11+
+- Node.js 20+
+- MongoDB on `mongodb://localhost:27017`
 
-## Backend Setup
+## Backend Run
 
 ```bash
 cd backend
 python -m venv .venv
-.venv\\Scripts\\activate
+.venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Backend URLs:
-
 - API: `http://localhost:8000`
-- Docs: `http://localhost:8000/docs`
+- OpenAPI docs: `http://localhost:8000/docs`
 - Health: `http://localhost:8000/health`
 
-## Frontend Setup
+## Frontend Run
 
 ```bash
 cd frontend
 npm install
 copy .env.example .env
-npm run dev
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
 Frontend URL:
-
 - App: `http://localhost:5173`
 
-## Run Tests
+## Test Commands
+
+Use project virtualenv Python to avoid global-package conflicts:
 
 ```bash
 cd backend
-pytest -q
+.venv\Scripts\python.exe -m pytest -q
 ```
 
-## Auth Endpoints
+## Core API Domains
 
-- `POST /api/v1/auth/register` Register user (`admin`, `teacher`, or `student`).
-- `POST /api/v1/auth/login` Authenticate and receive JWT bearer token.
-- `GET /api/v1/auth/me` Get current authenticated user profile.
-- `GET /api/v1/users/` Admin-only user listing.
+- Auth and users: `/api/v1/auth`, `/api/v1/users`
+- Academic structure: `/courses`, `/years`, `/classes`, `/sections`, `/section-subjects`, `/students`, `/subjects`
+- Academic operations: `/assignments`, `/submissions`, `/evaluations`
+- Intelligence: `/similarity`, AI submission evaluation via `/submissions/{id}/ai-evaluate`
+- Institutional modules: `/analytics`, `/notices`, `/notifications`, `/clubs`, `/club-events`, `/event-registrations`
+- Governance: `/audit-logs`, `/enrollments`
 
-## Academic Structure Endpoints (Week 3)
+## Security Baseline
 
-- Sections: `GET/POST /api/v1/sections`, `GET/PUT/DELETE /api/v1/sections/{section_id}`
-- Section-Subjects: `GET/POST /api/v1/section-subjects`, `GET/PUT/DELETE /api/v1/section-subjects/{mapping_id}`
-- Subjects: `GET/POST /api/v1/subjects`, `GET/PUT/DELETE /api/v1/subjects/{subject_id}`
-
-## Protected CRUD List Query Params
-
-- `GET /api/v1/sections/`: `q`, `academic_year`, `semester`, `is_active`, `skip`, `limit`
-- `GET /api/v1/section-subjects/`: `section_id`, `subject_id`, `teacher_user_id`, `is_active`, `skip`, `limit`
-- `GET /api/v1/students/`: `q`, `section_id`, `is_active`, `skip`, `limit`
-- `GET /api/v1/subjects/`: `q`, `is_active`, `skip`, `limit`
-- `GET /api/v1/assignments/`: `q`, `subject_id`, `section_id`, `created_by`, `skip`, `limit`
-
-Roadmap reference: `DOC'S/CAPS_AI_Project_Roadmap.md`.
+- JWT auth with role and extension-role checks
+- PBKDF2-SHA256 password hashing
+- File type and upload size validation
+- CORS-configured local origins
+- Security response headers (`X-Content-Type-Options`, `X-Frame-Options`, etc.)

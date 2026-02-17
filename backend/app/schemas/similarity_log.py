@@ -7,6 +7,11 @@ class SimilarityLogOut(BaseModel):
     id: str
     source_submission_id: str
     matched_submission_id: str
+    source_assignment_id: str | None = None
+    matched_assignment_id: str | None = None
+    source_section_id: str | None = None
+    matched_section_id: str | None = None
+    visible_to_extensions: list[str] = Field(default_factory=list)
     score: float = Field(ge=0, le=1)
     threshold: float = Field(ge=0, le=1)
     is_flagged: bool = False

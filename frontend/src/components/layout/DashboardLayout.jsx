@@ -22,7 +22,6 @@ export default function DashboardLayout() {
           user={user}
           collapsed={collapsed}
           mobileOpen={mobileOpen}
-          onToggleCollapse={() => setCollapsed((prev) => !prev)}
           onCloseMobile={() => setMobileOpen(false)}
           onLogout={logout}
         />
@@ -31,6 +30,8 @@ export default function DashboardLayout() {
           <Topbar
             user={user}
             onOpenMobile={() => setMobileOpen(true)}
+            collapsed={collapsed}
+            onToggleCollapse={() => setCollapsed((prev) => !prev)}
             isDark={isDark}
             onToggleTheme={toggleTheme}
             onLogout={logout}

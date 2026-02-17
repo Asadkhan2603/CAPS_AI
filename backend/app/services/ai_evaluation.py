@@ -15,16 +15,31 @@ def _heuristic_score(text: str, max_score: float) -> float:
     return round(score, 2)
 
 
-def generate_ai_feedback(text: str, *, max_score: float = 10.0) -> Dict[str, str | float]:
+def generate_ai_feedback(text: str, *, max_score: float = 10.0) -> Dict[str, str | float | None]:
     """Deterministic local fallback used until full LLM rubric integration."""
-    score = _heuristic_score(text, max_score)
-    if not settings.openai_api_key:
+    try:
+        score = _heuristic_score(text, max_score)
+        if not settings.openai_api_key:
+            return {
+                "score": score,
+                "summary": "Fallback evaluation generated. OpenAI key not configured.",
+                "status": "fallback",
+                "provider": "local",
+                "error": None,
+            }
+
         return {
             "score": score,
-            "summary": "Fallback evaluation generated. OpenAI key not configured.",
+            "summary": "Baseline AI evaluation generated. Replace with rubric prompt pipeline.",
+            "status": "completed",
+            "provider": "openai-baseline",
+            "error": None,
         }
-
-    return {
-        "score": score,
-        "summary": "Baseline AI evaluation generated. Replace with rubric prompt pipeline.",
-    }
+    except Exception as exc:
+        return {
+            "score": 0.0,
+            "summary": "AI evaluation failed. Fallback score unavailable.",
+            "status": "failed",
+            "provider": "local",
+            "error": str(exc)[:300],
+        }

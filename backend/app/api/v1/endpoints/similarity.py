@@ -1,5 +1,5 @@
 ﻿from datetime import datetime, timezone
-from typing import List
+from typing import List, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -10,9 +10,123 @@ from app.core.security import require_roles
 from app.models.similarity_logs import similarity_log_public
 from app.schemas.similarity_log import SimilarityLogOut
 from app.services.audit import log_audit_event
+from app.services.notifications import create_notification
 from app.services.similarity_engine import compute_similarity_scores
 
 router = APIRouter()
+
+
+async def _teacher_can_access_assignment(teacher_user_id: str, assignment_id: str) -> bool:
+    assignment = await db.assignments.find_one({'_id': parse_object_id(assignment_id)})
+    if not assignment:
+        return False
+    if assignment.get('created_by') == teacher_user_id:
+        return True
+
+    subject_id = assignment.get('subject_id')
+    section_id = assignment.get('section_id')
+    if not subject_id or not section_id:
+        return False
+
+    mapping = await db.section_subjects.find_one(
+        {
+            'subject_id': subject_id,
+            'section_id': section_id,
+            'teacher_user_id': teacher_user_id,
+            'is_active': True,
+        }
+    )
+    return bool(mapping)
+
+
+async def _class_coordinator_section_ids(user_id: str) -> Set[str]:
+    classes = await db.classes.find({'class_coordinator_user_id': user_id}).to_list(length=1000)
+    section_names = [item.get('section') for item in classes if item.get('section')]
+    if not section_names:
+        return set()
+    sections = await db.sections.find({'name': {'$in': section_names}}).to_list(length=1000)
+    return {str(section.get('_id')) for section in sections}
+
+
+async def _can_view_similarity_log(current_user: dict, item: dict) -> bool:
+    if current_user.get('role') == 'admin':
+        return True
+    if current_user.get('role') != 'teacher':
+        return False
+
+    user_id = str(current_user['_id'])
+    extensions = current_user.get('extended_roles', [])
+    if 'year_head' in extensions:
+        return True
+
+    if 'class_coordinator' in extensions:
+        coordinator_sections = await _class_coordinator_section_ids(user_id)
+        if item.get('source_section_id') in coordinator_sections or item.get('matched_section_id') in coordinator_sections:
+            return True
+
+    source_assignment_id = item.get('source_assignment_id')
+    matched_assignment_id = item.get('matched_assignment_id')
+    if source_assignment_id and await _teacher_can_access_assignment(user_id, source_assignment_id):
+        return True
+    if matched_assignment_id and await _teacher_can_access_assignment(user_id, matched_assignment_id):
+        return True
+    return False
+
+
+async def _notify_similarity_alert(
+    *,
+    source_submission: dict,
+    source_assignment: dict | None,
+    matched_submission_id: str,
+    score: float,
+    threshold: float,
+    created_by: str,
+) -> None:
+    recipients: Set[str] = set()
+
+    if source_assignment and source_assignment.get('created_by'):
+        recipients.add(str(source_assignment.get('created_by')))
+
+    source_section_id = source_assignment.get('section_id') if source_assignment else None
+    source_subject_id = source_assignment.get('subject_id') if source_assignment else None
+    if source_section_id and source_subject_id:
+        mappings = await db.section_subjects.find(
+            {'section_id': source_section_id, 'subject_id': source_subject_id, 'is_active': True}
+        ).to_list(length=1000)
+        for mapping in mappings:
+            teacher_id = mapping.get('teacher_user_id')
+            if teacher_id:
+                recipients.add(str(teacher_id))
+
+    if source_section_id:
+        section = await db.sections.find_one({'_id': parse_object_id(source_section_id)})
+        if section:
+            classes = await db.classes.find({'section': section.get('name')}).to_list(length=1000)
+            for class_item in classes:
+                coordinator_id = class_item.get('class_coordinator_user_id')
+                if coordinator_id:
+                    recipients.add(str(coordinator_id))
+
+    year_heads = await db.users.find(
+        {'role': 'teacher', 'extended_roles': {'$in': ['year_head']}}
+    ).to_list(length=1000)
+    for user in year_heads:
+        recipients.add(str(user.get('_id')))
+
+    title = 'Similarity Alert'
+    message = (
+        f"Submission {str(source_submission.get('_id'))} matched {matched_submission_id} "
+        f"with score {round(score, 3)} (threshold {round(threshold, 3)})."
+    )
+    for user_id in recipients:
+        await create_notification(
+            title=title,
+            message=message,
+            priority='urgent',
+            scope='similarity',
+            target_user_id=user_id,
+            created_by=created_by,
+        )
 
 
 @router.get('/checks', response_model=List[SimilarityLogOut])
@@ -21,7 +135,7 @@ async def similarity_checks(
     is_flagged: bool | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    _current_user=Depends(require_roles(['admin', 'teacher'])),
+    current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> List[SimilarityLogOut]:
     query = {}
     if source_submission_id:
@@ -31,6 +145,14 @@ async def similarity_checks(
 
     cursor = db.similarity_logs.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
+
+    if current_user.get('role') == 'teacher':
+        scoped = []
+        for item in items:
+            if await _can_view_similarity_log(current_user, item):
+                scoped.append(item)
+        items = scoped
+
     return [SimilarityLogOut(**similarity_log_public(item)) for item in items]
 
 
@@ -50,15 +172,31 @@ async def run_similarity_check(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Submission has no extracted text')
 
     source_assignment_id = source.get('assignment_id')
+    if not source_assignment_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Submission has no assignment mapping')
+
+    if current_user.get('role') == 'teacher':
+        allowed = await _teacher_can_access_assignment(str(current_user['_id']), source_assignment_id)
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to run similarity on this submission')
+
+    source_assignment = await db.assignments.find_one({'_id': parse_object_id(source_assignment_id)})
+    if source_assignment and source_assignment.get('plagiarism_enabled', True) is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Plagiarism detection is disabled for this assignment',
+        )
     candidate_cursor = db.submissions.find({'assignment_id': source_assignment_id})
     candidates = await candidate_cursor.to_list(length=1000)
 
     candidate_texts = []
+    id_to_submission = {}
     for item in candidates:
         item_id = str(item.get('_id'))
         if item_id == submission_id:
             continue
         candidate_texts.append((item_id, item.get('extracted_text', '')))
+        id_to_submission[item_id] = item
 
     scores = compute_similarity_scores(source_text, candidate_texts)
     active_threshold = threshold if threshold is not None else settings.similarity_threshold
@@ -67,18 +205,40 @@ async def run_similarity_check(
     max_score = 0.0
     for matched_submission_id, score in scores:
         max_score = max(max_score, score)
+        matched_submission = id_to_submission.get(matched_submission_id)
+        matched_assignment_id = matched_submission.get('assignment_id') if matched_submission else None
+        matched_assignment = None
+        if matched_assignment_id:
+            matched_assignment = await db.assignments.find_one({'_id': parse_object_id(matched_assignment_id)})
+
+        is_flagged = score >= active_threshold
         document = {
             'source_submission_id': submission_id,
             'matched_submission_id': matched_submission_id,
+            'source_assignment_id': source_assignment_id,
+            'matched_assignment_id': matched_assignment_id,
+            'source_section_id': source_assignment.get('section_id') if source_assignment else None,
+            'matched_section_id': matched_assignment.get('section_id') if matched_assignment else None,
+            'visible_to_extensions': ['year_head', 'class_coordinator'],
             'score': score,
             'threshold': active_threshold,
-            'is_flagged': score >= active_threshold,
+            'is_flagged': is_flagged,
             'created_at': datetime.now(timezone.utc),
         }
         result = await db.similarity_logs.insert_one(document)
         created = await db.similarity_logs.find_one({'_id': result.inserted_id})
         if created:
             created_items.append(created)
+
+        if is_flagged:
+            await _notify_similarity_alert(
+                source_submission=source,
+                source_assignment=source_assignment,
+                matched_submission_id=matched_submission_id,
+                score=score,
+                threshold=active_threshold,
+                created_by=str(current_user['_id']),
+            )
 
     await db.submissions.update_one(
         {'_id': source_obj_id},
@@ -92,5 +252,12 @@ async def run_similarity_check(
         entity_id=submission_id,
         detail=f'Generated {len(created_items)} similarity checks',
     )
+
+    if current_user.get('role') == 'teacher':
+        scoped = []
+        for item in created_items:
+            if await _can_view_similarity_log(current_user, item):
+                scoped.append(item)
+        created_items = scoped
 
     return [SimilarityLogOut(**similarity_log_public(item)) for item in created_items]

@@ -8,11 +8,17 @@ from app.main import app
 from app.api.v1.endpoints import assignments as assignments_endpoint
 from app.api.v1.endpoints import analytics as analytics_endpoint
 from app.api.v1.endpoints import audit_logs as audit_logs_endpoint
+from app.api.v1.endpoints import club_events as club_events_endpoint
+from app.api.v1.endpoints import clubs as clubs_endpoint
+from app.api.v1.endpoints import enrollments as enrollments_endpoint
+from app.api.v1.endpoints import event_registrations as event_registrations_endpoint
 from app.api.v1.endpoints import auth as auth_endpoint
 from app.api.v1.endpoints import classes as classes_endpoint
 from app.api.v1.endpoints import courses as courses_endpoint
 from app.api.v1.endpoints import evaluations as evaluations_endpoint
+from app.api.v1.endpoints import notices as notices_endpoint
 from app.api.v1.endpoints import notifications as notifications_endpoint
+from app.api.v1.endpoints import review_tickets as review_tickets_endpoint
 from app.api.v1.endpoints import section_subjects as section_subjects_endpoint
 from app.api.v1.endpoints import sections as sections_endpoint
 from app.api.v1.endpoints import similarity as similarity_endpoint
@@ -114,6 +120,16 @@ def _matches_query(item: Dict[str, Any], query: Dict[str, Any]) -> bool:
             if pattern not in field_val:
                 return False
             continue
+        if isinstance(value, dict) and "$in" in value:
+            allowed_values = value["$in"]
+            item_val = item.get(key)
+            if isinstance(item_val, list):
+                if not any(v in item_val for v in allowed_values):
+                    return False
+            else:
+                if item_val not in allowed_values:
+                    return False
+            continue
         if item.get(key) != value:
             return False
     return True
@@ -134,7 +150,13 @@ class FakeDB:
         self.evaluations = FakeUsersCollection()
         self.similarity_logs = FakeUsersCollection()
         self.notifications = FakeUsersCollection()
+        self.notices = FakeUsersCollection()
+        self.clubs = FakeUsersCollection()
+        self.club_events = FakeUsersCollection()
+        self.event_registrations = FakeUsersCollection()
         self.audit_logs = FakeUsersCollection()
+        self.enrollments = FakeUsersCollection()
+        self.review_tickets = FakeUsersCollection()
 
 
 def _setup_fake_db() -> FakeDB:
@@ -154,7 +176,13 @@ def _setup_fake_db() -> FakeDB:
     similarity_endpoint.db = fake_db
     analytics_endpoint.db = fake_db
     notifications_endpoint.db = fake_db
+    notices_endpoint.db = fake_db
+    clubs_endpoint.db = fake_db
+    club_events_endpoint.db = fake_db
+    event_registrations_endpoint.db = fake_db
+    review_tickets_endpoint.db = fake_db
     audit_logs_endpoint.db = fake_db
+    enrollments_endpoint.db = fake_db
     notifications_service.db = fake_db
     audit_service.db = fake_db
     security_core.db = fake_db
@@ -622,6 +650,28 @@ def test_student_can_upload_and_list_own_submissions() -> None:
     _setup_fake_db()
     client = TestClient(app)
 
+    admin_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin Maker",
+            "email": "admin_upload_setup@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    assert admin_register.status_code == 201
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_upload_setup@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={"title": "Submission Assignment", "description": "desc", "total_marks": 100},
+        headers=admin_headers,
+    )
+    assert assignment.status_code == 201
+
     register = client.post(
         "/api/v1/auth/register",
         json={
@@ -641,14 +691,14 @@ def test_student_can_upload_and_list_own_submissions() -> None:
 
     upload = client.post(
         "/api/v1/submissions/upload",
-        data={"assignment_id": "asg-1", "notes": "first submission"},
+        data={"assignment_id": assignment.json()["id"], "notes": "first submission"},
         files={"file": ("report.txt", b"my report content", "text/plain")},
         headers=headers,
     )
     assert upload.status_code == 201
-    assert upload.json()["assignment_id"] == "asg-1"
+    assert upload.json()["assignment_id"] == assignment.json()["id"]
 
-    listed = client.get("/api/v1/submissions/?assignment_id=asg-1", headers=headers)
+    listed = client.get(f"/api/v1/submissions/?assignment_id={assignment.json()['id']}", headers=headers)
     assert listed.status_code == 200
     assert len(listed.json()) == 1
 
@@ -975,3 +1025,1151 @@ def test_section_subject_create_validates_section_subject_and_teacher() -> None:
     )
     assert non_teacher.status_code == 400
     assert non_teacher.json()["detail"] == "teacher_user_id must belong to a teacher role"
+
+
+def test_admin_can_assign_teacher_extension_roles() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_extensions_flow@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Teacher",
+            "email": "teacher_extensions_flow@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert admin.status_code == 201
+    assert teacher.status_code == 201
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_extensions_flow@example.com", "password": "password123"},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    update = client.patch(
+        f"/api/v1/users/{teacher.json()['id']}/extensions",
+        json={"extended_roles": ["year_head", "class_coordinator"]},
+        headers=headers,
+    )
+    assert update.status_code == 200
+    assert update.json()["extended_roles"] == ["year_head", "class_coordinator"]
+
+
+def test_class_coordinator_enrollment_permissions_enforced() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_enroll_flow@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    teacher_one = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Coordinator One",
+            "email": "coordinator_one@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    teacher_two = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Coordinator Two",
+            "email": "coordinator_two@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    assert admin.status_code == 201
+    assert teacher_one.status_code == 201
+    assert teacher_two.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_enroll_flow@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BTech", "code": "BT1", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
+        headers=admin_headers,
+    )
+    class_one = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "Class One",
+            "class_coordinator_user_id": teacher_one.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    class_two = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "Class Two",
+            "class_coordinator_user_id": teacher_two.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    student = client.post(
+        "/api/v1/students/",
+        json={"full_name": "Student A", "roll_number": "E100", "email": "stud_e100@example.com"},
+        headers=admin_headers,
+    )
+    assert class_one.status_code == 201
+    assert class_two.status_code == 201
+    assert student.status_code == 201
+
+    teacher_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "coordinator_one@example.com", "password": "password123"},
+    )
+    teacher_headers = {"Authorization": f"Bearer {teacher_login.json()['access_token']}"}
+
+    denied = client.post(
+        "/api/v1/enrollments/",
+        json={"class_id": class_two.json()["id"], "student_id": student.json()["id"]},
+        headers=teacher_headers,
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "Not allowed to manage this class"
+
+    allowed = client.post(
+        "/api/v1/enrollments/",
+        json={"class_id": class_one.json()["id"], "student_id": student.json()["id"]},
+        headers=teacher_headers,
+    )
+    assert allowed.status_code == 201
+    assert allowed.json()["class_id"] == class_one.json()["id"]
+
+
+def test_year_head_can_enroll_students_across_classes() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_yearhead_enroll@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    year_head = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Year Head",
+            "email": "yearhead@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["year_head"],
+        },
+    )
+    coordinator = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Class Coordinator",
+            "email": "classcoord@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    assert admin.status_code == 201
+    assert year_head.status_code == 201
+    assert coordinator.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_yearhead_enroll@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BSc", "code": "BSC1", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
+        headers=admin_headers,
+    )
+    class_item = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "General Class",
+            "class_coordinator_user_id": coordinator.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    student = client.post(
+        "/api/v1/students/",
+        json={"full_name": "Student B", "roll_number": "E101", "email": "stud_e101@example.com"},
+        headers=admin_headers,
+    )
+    assert class_item.status_code == 201
+    assert student.status_code == 201
+
+    year_head_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "yearhead@example.com", "password": "password123"},
+    )
+    year_head_headers = {"Authorization": f"Bearer {year_head_login.json()['access_token']}"}
+
+    enrolled = client.post(
+        "/api/v1/enrollments/",
+        json={"class_id": class_item.json()["id"], "student_id": student.json()["id"]},
+        headers=year_head_headers,
+    )
+    assert enrolled.status_code == 201
+
+
+def test_student_cannot_upload_when_assignment_closed() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_closed_assignment@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    student_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student",
+            "email": "student_closed_assignment@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin_register.status_code == 201
+    assert student_register.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_closed_assignment@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={"title": "Closed A", "description": "desc", "total_marks": 100, "status": "closed"},
+        headers=admin_headers,
+    )
+    assert assignment.status_code == 201
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_closed_assignment@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    upload = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment.json()["id"]},
+        files={"file": ("report.txt", b"submission body", "text/plain")},
+        headers=student_headers,
+    )
+    assert upload.status_code == 400
+    assert upload.json()["detail"] == "Assignment is closed"
+
+
+def test_teacher_cannot_access_out_of_scope_submission() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_scope_submission@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    teacher_owner = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Owner Teacher",
+            "email": "owner_teacher@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    teacher_other = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Other Teacher",
+            "email": "other_teacher@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student C",
+            "email": "student_scope_submission@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert teacher_owner.status_code == 201
+    assert teacher_other.status_code == 201
+    assert student.status_code == 201
+
+    owner_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner_teacher@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={"title": "Owner Assignment", "description": "desc", "total_marks": 100},
+        headers=owner_headers,
+    )
+    assert assignment.status_code == 201
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_scope_submission@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    upload = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment.json()["id"]},
+        files={"file": ("report.txt", b"scope body", "text/plain")},
+        headers=student_headers,
+    )
+    assert upload.status_code == 201
+    submission_id = upload.json()["id"]
+
+    other_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "other_teacher@example.com", "password": "password123"},
+    )
+    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+    denied = client.get(f"/api/v1/submissions/{submission_id}", headers=other_headers)
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "Not allowed to view this submission"
+
+    ai_denied = client.post(f"/api/v1/submissions/{submission_id}/ai-evaluate", headers=other_headers)
+    assert ai_denied.status_code == 403
+    assert ai_denied.json()["detail"] == "Not allowed to evaluate this submission"
+
+
+def test_second_admin_registration_is_blocked() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    first_admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin One",
+            "email": "admin_one@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    assert first_admin.status_code == 201
+
+    second_admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin Two",
+            "email": "admin_two@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    assert second_admin.status_code == 403
+    assert second_admin.json()["detail"] == "Admin account registration is closed"
+
+
+def test_student_cannot_tamper_submission_ai_fields() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_submission_tamper@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student",
+            "email": "student_submission_tamper@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_submission_tamper@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={"title": "Secure Assignment", "description": "desc", "total_marks": 100},
+        headers=admin_headers,
+    )
+    assert assignment.status_code == 201
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_submission_tamper@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    upload = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment.json()["id"]},
+        files={"file": ("report.txt", b"submission body", "text/plain")},
+        headers=student_headers,
+    )
+    assert upload.status_code == 201
+    submission_id = upload.json()["id"]
+
+    tamper = client.put(
+        f"/api/v1/submissions/{submission_id}",
+        json={"notes": "updated note", "ai_score": 10, "ai_feedback": "forged"},
+        headers=student_headers,
+    )
+    assert tamper.status_code == 200
+    assert tamper.json()["notes"] == "updated note"
+    assert tamper.json()["ai_score"] is None
+    assert tamper.json()["ai_feedback"] is None
+
+
+def test_class_coordinator_cannot_list_other_class_enrollments() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_enrollment_scope@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    coordinator_one = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Coordinator One",
+            "email": "coord_one_enrollment_scope@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    coordinator_two = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Coordinator Two",
+            "email": "coord_two_enrollment_scope@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student",
+            "email": "student_enrollment_scope@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert coordinator_one.status_code == 201
+    assert coordinator_two.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_enrollment_scope@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BCA", "code": "BCA2", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
+        headers=admin_headers,
+    )
+    class_one = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "Class One",
+            "class_coordinator_user_id": coordinator_one.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    class_two = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "Class Two",
+            "class_coordinator_user_id": coordinator_two.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    student_doc = client.post(
+        "/api/v1/students/",
+        json={"full_name": "Student A", "roll_number": "E302", "email": "student_a_e302@example.com"},
+        headers=admin_headers,
+    )
+    assert class_one.status_code == 201
+    assert class_two.status_code == 201
+    assert student_doc.status_code == 201
+
+    enroll_one = client.post(
+        "/api/v1/enrollments/",
+        json={"class_id": class_one.json()["id"], "student_id": student_doc.json()["id"]},
+        headers=admin_headers,
+    )
+    enroll_two = client.post(
+        "/api/v1/enrollments/",
+        json={"class_id": class_two.json()["id"], "student_id": student_doc.json()["id"]},
+        headers=admin_headers,
+    )
+    assert enroll_one.status_code == 201
+    assert enroll_two.status_code == 201
+
+    coordinator_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "coord_one_enrollment_scope@example.com", "password": "password123"},
+    )
+    coordinator_headers = {"Authorization": f"Bearer {coordinator_login.json()['access_token']}"}
+    listed = client.get("/api/v1/enrollments/", headers=coordinator_headers)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert len(body) == 1
+    assert body[0]["class_id"] == class_one.json()["id"]
+
+
+def test_students_only_receive_college_scope_notices() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_notice_scope@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student",
+            "email": "student_notice_scope@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_notice_scope@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    college_notice = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Campus Update",
+            "message": "General announcement",
+            "priority": "normal",
+            "scope": "college",
+        },
+        headers=admin_headers,
+    )
+    class_notice = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Class Internal",
+            "message": "Class-only announcement",
+            "priority": "normal",
+            "scope": "class",
+            "scope_ref_id": "class-1",
+        },
+        headers=admin_headers,
+    )
+    assert college_notice.status_code == 201
+    assert class_notice.status_code == 201
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_notice_scope@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    listed = client.get("/api/v1/notices/", headers=student_headers)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert len(body) == 1
+    assert body[0]["scope"] == "college"
+
+
+def test_club_coordinator_can_view_own_event_registrations() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_club_regs@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    coordinator = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Club Coordinator",
+            "email": "club_coord_regs@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["club_coordinator"],
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student Registrant",
+            "email": "student_regs@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert coordinator.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_club_regs@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    club = client.post(
+        "/api/v1/clubs/",
+        json={
+            "name": "Robotics Club",
+            "description": "Club",
+            "coordinator_user_id": coordinator.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert club.status_code == 201
+
+    coordinator_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "club_coord_regs@example.com", "password": "password123"},
+    )
+    coordinator_headers = {"Authorization": f"Bearer {coordinator_login.json()['access_token']}"}
+    event = client.post(
+        "/api/v1/club-events/",
+        json={"club_id": club.json()["id"], "title": "Demo Day", "capacity": 50},
+        headers=coordinator_headers,
+    )
+    assert event.status_code == 201
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_regs@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    registration = client.post(
+        "/api/v1/event-registrations/",
+        json={"event_id": event.json()["id"]},
+        headers=student_headers,
+    )
+    assert registration.status_code == 201
+
+    listed = client.get(
+        f"/api/v1/event-registrations/?event_id={event.json()['id']}",
+        headers=coordinator_headers,
+    )
+    assert listed.status_code == 200
+    body = listed.json()
+    assert len(body) == 1
+    assert body[0]["student_user_id"] == student.json()["id"]
+    assert body[0]["student_name"] == "Student Registrant"
+    assert body[0]["student_email"] == "student_regs@example.com"
+
+
+def test_teacher_cannot_view_other_club_event_registrations() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_club_regs_denied@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    owner = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Owner Coordinator",
+            "email": "owner_coord_regs@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["club_coordinator"],
+        },
+    )
+    other_teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Other Teacher",
+            "email": "other_teacher_regs@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["club_coordinator"],
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student Registrant 2",
+            "email": "student_regs_2@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert owner.status_code == 201
+    assert other_teacher.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_club_regs_denied@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    club = client.post(
+        "/api/v1/clubs/",
+        json={
+            "name": "Music Club",
+            "description": "Club",
+            "coordinator_user_id": owner.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert club.status_code == 201
+
+    owner_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner_coord_regs@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+    event = client.post(
+        "/api/v1/club-events/",
+        json={"club_id": club.json()["id"], "title": "Music Fest", "capacity": 25},
+        headers=owner_headers,
+    )
+    assert event.status_code == 201
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_regs_2@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    registration = client.post(
+        "/api/v1/event-registrations/",
+        json={"event_id": event.json()["id"]},
+        headers=student_headers,
+    )
+    assert registration.status_code == 201
+
+    other_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "other_teacher_regs@example.com", "password": "password123"},
+    )
+    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+    denied = client.get(
+        f"/api/v1/event-registrations/?event_id={event.json()['id']}",
+        headers=other_headers,
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "Not allowed to view registrations for this event"
+
+
+def test_student_can_submit_event_registration_profile_details() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_event_profile@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student Profile",
+            "email": "student_event_profile@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_event_profile@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    club = client.post(
+        "/api/v1/clubs/",
+        json={"name": "Drama Club", "description": "Club"},
+        headers=admin_headers,
+    )
+    assert club.status_code == 201
+
+    event = client.post(
+        "/api/v1/club-events/",
+        json={"club_id": club.json()["id"], "title": "Audition Day", "capacity": 20},
+        headers=admin_headers,
+    )
+    assert event.status_code == 201
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_event_profile@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    registration = client.post(
+        "/api/v1/event-registrations/submit",
+        data={
+            "event_id": event.json()["id"],
+            "enrollment_number": "ENR-1001",
+            "full_name": "Student Profile",
+            "email": "student_event_profile@example.com",
+            "year": "2nd Year",
+            "course_branch": "B.Tech CSE",
+            "section": "A",
+            "phone_number": "9999999999",
+            "whatsapp_number": "9999999999",
+            "payment_qr_code": "UPI-REF-12345",
+        },
+        headers=student_headers,
+    )
+    assert registration.status_code == 201
+    body = registration.json()
+    assert body["event_id"] == event.json()["id"]
+    assert body["enrollment_number"] == "ENR-1001"
+    assert body["course_branch"] == "B.Tech CSE"
+    assert body["payment_qr_code"] == "UPI-REF-12345"
+
+
+def test_admin_can_delete_club_event_but_teacher_cannot() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_delete_event@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Teacher",
+            "email": "teacher_delete_event@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["club_coordinator"],
+        },
+    )
+    assert admin.status_code == 201
+    assert teacher.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_delete_event@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    club = client.post(
+        "/api/v1/clubs/",
+        json={"name": "Delete Event Club", "description": "Club", "coordinator_user_id": teacher.json()["id"]},
+        headers=admin_headers,
+    )
+    assert club.status_code == 201
+
+    event = client.post(
+        "/api/v1/club-events/",
+        json={"club_id": club.json()["id"], "title": "Delete Event", "capacity": 10},
+        headers=admin_headers,
+    )
+    assert event.status_code == 201
+    event_id = event.json()["id"]
+
+    teacher_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "teacher_delete_event@example.com", "password": "password123"},
+    )
+    teacher_headers = {"Authorization": f"Bearer {teacher_login.json()['access_token']}"}
+    teacher_delete = client.delete(f"/api/v1/club-events/{event_id}", headers=teacher_headers)
+    assert teacher_delete.status_code == 403
+
+    admin_delete = client.delete(f"/api/v1/club-events/{event_id}", headers=admin_headers)
+    assert admin_delete.status_code == 200
+    assert admin_delete.json()["message"] == "Club event deleted"
+
+
+def test_club_coordinator_can_archive_club_event() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_archive_event@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    coordinator = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Coordinator",
+            "email": "coord_archive_event@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["club_coordinator"],
+        },
+    )
+    assert admin.status_code == 201
+    assert coordinator.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_archive_event@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    club = client.post(
+        "/api/v1/clubs/",
+        json={"name": "Archive Club", "description": "Club", "coordinator_user_id": coordinator.json()["id"]},
+        headers=admin_headers,
+    )
+    assert club.status_code == 201
+
+    coordinator_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "coord_archive_event@example.com", "password": "password123"},
+    )
+    coordinator_headers = {"Authorization": f"Bearer {coordinator_login.json()['access_token']}"}
+
+    event = client.post(
+        "/api/v1/club-events/",
+        json={"club_id": club.json()["id"], "title": "Archive Event", "capacity": 25},
+        headers=coordinator_headers,
+    )
+    assert event.status_code == 201
+    event_id = event.json()["id"]
+
+    archived = client.put(
+        f"/api/v1/club-events/{event_id}",
+        json={"status": "archived"},
+        headers=coordinator_headers,
+    )
+    assert archived.status_code == 200
+    assert archived.json()["status"] == "archived"
+
+
+def test_teacher_without_coordinator_classes_gets_empty_academic_structure() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_structure_scope@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    teacher_owner = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Owner Teacher",
+            "email": "owner_structure_scope@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    teacher_other = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Other Teacher",
+            "email": "other_structure_scope@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert admin.status_code == 201
+    assert teacher_owner.status_code == 201
+    assert teacher_other.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_structure_scope@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BTech", "code": "BTSC", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 2, "label": "2nd Year"},
+        headers=admin_headers,
+    )
+    class_item = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "Computer Science Engineering",
+            "faculty_name": "Faculty of Engineering",
+            "branch_name": "Computer Science Engineering",
+            "section": "CSE-B",
+            "class_coordinator_user_id": teacher_owner.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert class_item.status_code == 201
+
+    other_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "other_structure_scope@example.com", "password": "password123"},
+    )
+    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+    structure = client.get("/api/v1/analytics/academic-structure", headers=other_headers)
+    assert structure.status_code == 200
+    assert structure.json()["faculties"] == []
+
+
+def test_user_cannot_access_other_user_avatar() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    student_one = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student One",
+            "email": "student_avatar_one@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    student_two = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student Two",
+            "email": "student_avatar_two@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert student_one.status_code == 201
+    assert student_two.status_code == 201
+
+    one_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_avatar_one@example.com", "password": "password123"},
+    )
+    one_headers = {"Authorization": f"Bearer {one_login.json()['access_token']}"}
+    upload = client.post(
+        "/api/v1/auth/profile/avatar",
+        files={"file": ("avatar.png", b"fakepngcontent", "image/png")},
+        headers=one_headers,
+    )
+    assert upload.status_code == 200
+    target_user_id = upload.json()["id"]
+
+    two_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_avatar_two@example.com", "password": "password123"},
+    )
+    two_headers = {"Authorization": f"Bearer {two_login.json()['access_token']}"}
+    denied = client.get(f"/api/v1/auth/profile/avatar/{target_user_id}", headers=two_headers)
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "Not allowed to view this avatar"
+

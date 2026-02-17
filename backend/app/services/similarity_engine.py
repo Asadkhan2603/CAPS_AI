@@ -30,6 +30,7 @@ def compute_similarity_scores(
 
     results = []
     for (submission_id, _), score in zip(candidates, scores):
-        results.append((submission_id, float(score)))
+        normalized_score = max(0.0, min(1.0, float(score)))
+        results.append((submission_id, normalized_score))
     results.sort(key=lambda item: item[1], reverse=True)
     return results

@@ -17,5 +17,15 @@ const columns = [
 ];
 
 export default function CoursesPage() {
-  return <EntityManager title="Courses" endpoint="/courses/" filters={filters} createFields={createFields} columns={columns} enableDelete />;
+  return (
+    <EntityManager
+      title="Courses"
+      endpoint="/courses/"
+      filters={filters}
+      createFields={createFields}
+      columns={columns}
+      hideCreate
+      enableDelete={false}
+    />
+  );
 }

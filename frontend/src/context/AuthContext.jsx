@@ -41,6 +41,17 @@ export function AuthProvider({ children }) {
     validateToken();
   }, [token]);
 
+  async function refreshUser() {
+    if (!token) {
+      return null;
+    }
+    const response = await apiClient.get('/auth/me');
+    const me = response.data;
+    localStorage.setItem(USER_KEY, JSON.stringify(me));
+    setUser(me);
+    return me;
+  }
+
   async function login(email, password) {
     const response = await apiClient.post('/auth/login', { email, password });
     const nextToken = response.data.access_token;
@@ -64,8 +75,8 @@ export function AuthProvider({ children }) {
   }
 
   const value = useMemo(
-    () => ({ token, user, checking, isAuthenticated: Boolean(token), login, register, logout }),
-    [token, user, checking]
+    () => ({ token, user, checking, isAuthenticated: Boolean(token), login, register, logout, refreshUser }),
+    [token, user, checking, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

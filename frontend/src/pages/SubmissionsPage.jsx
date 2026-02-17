@@ -5,9 +5,11 @@ import FileUpload from '../components/ui/FileUpload';
 import Table from '../components/ui/Table';
 import { apiClient } from '../services/apiClient';
 import { useToast } from '../hooks/useToast';
+import { useAuth } from '../hooks/useAuth';
 
 export default function SubmissionsPage() {
   const { pushToast } = useToast();
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [assignmentIdFilter, setAssignmentIdFilter] = useState('');
   const [skip, setSkip] = useState(0);
@@ -17,26 +19,96 @@ export default function SubmissionsPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('idle');
   const [form, setForm] = useState({ assignment_id: '', notes: '', file: null });
+  const [assignments, setAssignments] = useState([]);
+  const canUploadSubmission = user?.role === 'student';
+  const canRunAi = user?.role === 'admin' || user?.role === 'teacher';
+  const canViewTeacherMarks = user?.role === 'admin';
+  const assignmentLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        assignments.map((item) => [item.id, item.title ? `${item.title} (${item.id})` : item.id])
+      ),
+    [assignments]
+  );
 
   const columns = useMemo(
-    () => [
-      { key: 'assignment_id', label: 'Assignment ID' },
-      { key: 'original_filename', label: 'File' },
-      { key: 'file_size_bytes', label: 'Size (bytes)' },
-      { key: 'status', label: 'Status' },
-      { key: 'created_at', label: 'Created At', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') }
-    ],
-    []
+    () => {
+      const baseColumns = [
+        {
+          key: 'assignment_id',
+          label: 'Assignment',
+          render: (row) => assignmentLabelById[row.assignment_id] || row.assignment_id
+        },
+        { key: 'original_filename', label: 'File' },
+        { key: 'file_size_bytes', label: 'Size (bytes)' },
+        { key: 'status', label: 'Status' },
+        { key: 'ai_status', label: 'AI Status' },
+        { key: 'ai_score', label: 'AI Score', render: (row) => (row.ai_score ?? '-') }
+      ];
+
+      const marksColumns = canViewTeacherMarks
+        ? [
+            { key: 'teacher_marks', label: 'Teacher Marks', render: (row) => (row.teacher_marks ?? '-') },
+            { key: 'grade', label: 'Grade', render: (row) => (row.grade ?? '-') },
+            { key: 'marks_status', label: 'Marks Status', render: (row) => (row.marks_status ?? '-') }
+          ]
+        : [];
+
+      return [
+        ...baseColumns,
+        ...marksColumns,
+        { key: 'created_at', label: 'Created At', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') }
+      ];
+    },
+    [assignmentLabelById, canViewTeacherMarks]
   );
+
+  useEffect(() => {
+    async function loadAssignments() {
+      try {
+        const response = await apiClient.get('/assignments/', { params: { skip: 0, limit: 100 } });
+        setAssignments(response.data || []);
+      } catch {
+        setAssignments([]);
+      }
+    }
+    loadAssignments();
+  }, []);
 
   async function loadData() {
     setLoading(true);
     setError('');
     try {
-      const response = await apiClient.get('/submissions/', {
+      const submissionsResponse = await apiClient.get('/submissions/', {
         params: { assignment_id: assignmentIdFilter || undefined, skip, limit }
       });
-      setRows(response.data);
+      const submissions = submissionsResponse.data || [];
+
+      if (canViewTeacherMarks && submissions.length > 0) {
+        const evaluationsResponse = await apiClient.get('/evaluations/', {
+          params: { skip: 0, limit: 100 }
+        });
+        const evaluations = evaluationsResponse.data || [];
+        const evaluationBySubmissionId = new Map();
+        evaluations.forEach((item) => {
+          if (item?.submission_id && !evaluationBySubmissionId.has(item.submission_id)) {
+            evaluationBySubmissionId.set(item.submission_id, item);
+          }
+        });
+
+        const merged = submissions.map((submission) => {
+          const evaluation = evaluationBySubmissionId.get(submission.id);
+          return {
+            ...submission,
+            teacher_marks: evaluation?.grand_total ?? null,
+            grade: evaluation?.grade ?? null,
+            marks_status: evaluation ? (evaluation.is_finalized ? 'Finalized' : 'Draft') : null
+          };
+        });
+        setRows(merged);
+      } else {
+        setRows(submissions);
+      }
     } catch (err) {
       const detail = err?.response?.data?.detail || 'Failed to load submissions';
       setError(String(detail));
@@ -86,39 +158,73 @@ export default function SubmissionsPage() {
     }
   }
 
+  async function onAiEvaluate(row) {
+    try {
+      await apiClient.post(`/submissions/${row.id}/ai-evaluate`);
+      pushToast({ title: 'AI evaluated', description: 'AI suggestion generated for submission.', variant: 'success' });
+      await loadData();
+    } catch (err) {
+      const detail = err?.response?.data?.detail || 'Failed to run AI evaluation';
+      pushToast({ title: 'AI evaluation failed', description: String(detail), variant: 'error' });
+    }
+  }
+
   return (
     <div className="space-y-4 page-fade">
       <Card className="space-y-4">
         <h1 className="text-2xl font-semibold">Submissions</h1>
         <div className="grid gap-3 sm:grid-cols-3">
           <FormInput
-            label="Filter Assignment ID"
+            as="select"
+            label="Filter Assignment"
             value={assignmentIdFilter}
             onChange={(e) => setAssignmentIdFilter(e.target.value)}
-            placeholder="asg-001"
-          />
+          >
+            <option value="">All Assignments</option>
+            {assignments.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title || item.id}
+              </option>
+            ))}
+          </FormInput>
           <div className="flex items-end gap-2">
             <button className="btn-secondary" onClick={() => { setSkip(0); loadData(); }}>Apply</button>
           </div>
         </div>
       </Card>
 
-      <Card className="space-y-4">
-        <h2 className="text-lg font-semibold">Upload File</h2>
-        <form onSubmit={onUpload} className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-3">
-            <FormInput label="Assignment ID" name="assignment_id" required value={form.assignment_id} onChange={(e) => setForm((p) => ({ ...p, assignment_id: e.target.value }))} />
-            <FormInput label="Notes" name="notes" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
-            <button className="btn-primary" type="submit">Upload Submission</button>
-          </div>
-          <FileUpload
-            onFileSelect={(file) => setForm((prev) => ({ ...prev, file }))}
-            progress={uploadProgress}
-            status={uploadStatus}
-          />
-        </form>
-        {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-      </Card>
+      {canUploadSubmission ? (
+        <Card className="space-y-4">
+          <h2 className="text-lg font-semibold">Upload File</h2>
+          <form onSubmit={onUpload} className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3">
+              <FormInput
+                as="select"
+                label="Assignment"
+                name="assignment_id"
+                required
+                value={form.assignment_id}
+                onChange={(e) => setForm((p) => ({ ...p, assignment_id: e.target.value }))}
+              >
+                <option value="">Select Assignment</option>
+                {assignments.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title || item.id}
+                  </option>
+                ))}
+              </FormInput>
+              <FormInput label="Notes" name="notes" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
+              <button className="btn-primary" type="submit">Upload Submission</button>
+            </div>
+            <FileUpload
+              onFileSelect={(file) => setForm((prev) => ({ ...prev, file }))}
+              progress={uploadProgress}
+              status={uploadStatus}
+            />
+          </form>
+          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+        </Card>
+      ) : null}
 
       <Card className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -136,7 +242,22 @@ export default function SubmissionsPage() {
         </div>
 
         {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
-        <Table columns={columns} data={rows} />
+        <Table
+          columns={columns}
+          data={rows}
+          rowActions={
+            canRunAi
+              ? [
+                  {
+                    key: 'ai-evaluate',
+                    label: 'Run AI',
+                    className: 'text-brand-600 dark:text-brand-300',
+                    onClick: onAiEvaluate
+                  }
+                ]
+              : []
+          }
+        />
       </Card>
     </div>
   );

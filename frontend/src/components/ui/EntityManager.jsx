@@ -5,6 +5,7 @@ import FormInput from './FormInput';
 import Table from './Table';
 import { apiClient } from '../../services/apiClient';
 import { useToast } from '../../hooks/useToast';
+import { formatApiError } from '../../utils/apiError';
 
 export default function EntityManager({
   title,
@@ -15,7 +16,8 @@ export default function EntityManager({
   pageSizeOptions = [5, 10, 20],
   createTransform,
   enableDelete = false,
-  hideCreate = false
+  hideCreate = false,
+  rowActions = []
 }) {
   const normalizedEndpoint = endpoint.replace(/\/+$/, '');
   const [rows, setRows] = useState([]);
@@ -28,7 +30,11 @@ export default function EntityManager({
   const initialFilterState = useMemo(
     () =>
       filters.reduce((acc, item) => {
-        acc[item.name] = item.defaultValue ?? '';
+        if (item.type === 'switch') {
+          acc[item.name] = item.defaultValue ?? null;
+        } else {
+          acc[item.name] = item.defaultValue ?? '';
+        }
         return acc;
       }, {}),
     [filters]
@@ -70,9 +76,9 @@ export default function EntityManager({
       const response = await apiClient.get(endpoint, { params });
       setRows(response.data);
     } catch (err) {
-      const detail = err?.response?.data?.detail || `Failed to load ${title.toLowerCase()}`;
-      setError(detail);
-      pushToast({ title: 'Load failed', description: String(detail), variant: 'error' });
+      const message = formatApiError(err, `Failed to load ${title.toLowerCase()}`);
+      setError(message);
+      pushToast({ title: 'Load failed', description: message, variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -96,11 +102,14 @@ export default function EntityManager({
     try {
       let payload = { ...createValues };
       payload = createFields.reduce((acc, field) => {
+        if (field.nullable && acc[field.name] === '') {
+          acc[field.name] = null;
+        }
         if (field.type === 'number') {
           acc[field.name] = Number(acc[field.name]);
         }
-        if (field.nullable && acc[field.name] === '') {
-          acc[field.name] = null;
+        if (field.type === 'datetime' && acc[field.name]) {
+          acc[field.name] = new Date(acc[field.name]).toISOString();
         }
         return acc;
       }, payload);
@@ -114,9 +123,9 @@ export default function EntityManager({
       pushToast({ title: 'Saved', description: `${title.slice(0, -1)} created successfully.`, variant: 'success' });
       await loadData();
     } catch (err) {
-      const detail = err?.response?.data?.detail || `Failed to create ${title.toLowerCase()}`;
-      setError(typeof detail === 'string' ? detail : 'Request failed');
-      pushToast({ title: 'Create failed', description: String(detail), variant: 'error' });
+      const message = formatApiError(err, `Failed to create ${title.toLowerCase()}`);
+      setError(message);
+      pushToast({ title: 'Create failed', description: message, variant: 'error' });
     }
   }
 
@@ -126,8 +135,8 @@ export default function EntityManager({
       pushToast({ title: 'Deleted', description: `${title.slice(0, -1)} removed.`, variant: 'success' });
       await loadData();
     } catch (err) {
-      const detail = err?.response?.data?.detail || `Failed to delete ${title.toLowerCase()}`;
-      pushToast({ title: 'Delete failed', description: String(detail), variant: 'error' });
+      const message = formatApiError(err, `Failed to delete ${title.toLowerCase()}`);
+      pushToast({ title: 'Delete failed', description: message, variant: 'error' });
     }
   }
 
@@ -147,14 +156,46 @@ export default function EntityManager({
           {filters.length ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {filters.map((field) => (
-                <FormInput
-                  key={field.name}
-                  label={field.label}
-                  type={field.type || 'text'}
-                  value={filterValues[field.name]}
-                  placeholder={field.placeholder}
-                  onChange={(e) => onFilterChange(field.name, e.target.value)}
-                />
+                field.type === 'switch' ? (
+                  <label key={field.name} className="block space-y-1">
+                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
+                    <button
+                      type="button"
+                      className="inline-flex h-11 min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                      onClick={() => {
+                        const current = filterValues[field.name];
+                        const next = current === null ? true : current === true ? false : null;
+                        onFilterChange(field.name, next);
+                      }}
+                    >
+                      {filterValues[field.name] === null ? 'Any' : filterValues[field.name] ? 'On' : 'Off'}
+                    </button>
+                  </label>
+                ) : field.type === 'select' ? (
+                  <FormInput
+                    key={field.name}
+                    as="select"
+                    label={field.label}
+                    value={filterValues[field.name]}
+                    onChange={(e) => onFilterChange(field.name, e.target.value)}
+                  >
+                    <option value="">{field.placeholder || `All ${field.label}`}</option>
+                    {(field.options || []).map((option) => (
+                      <option key={`${field.name}-${option.value}`} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </FormInput>
+                ) : (
+                  <FormInput
+                    key={field.name}
+                    label={field.label}
+                    type={field.type === 'datetime' ? 'datetime-local' : (field.type || 'text')}
+                    value={filterValues[field.name]}
+                    placeholder={field.placeholder}
+                    onChange={(e) => onFilterChange(field.name, e.target.value)}
+                  />
+                )
               ))}
             </div>
           ) : null}
@@ -167,17 +208,53 @@ export default function EntityManager({
             <h2 className="mb-3 text-lg font-semibold">Create {title.slice(0, -1)}</h2>
             <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {createFields.map((field) => (
-                <FormInput
-                  key={field.name}
-                  label={field.label}
-                  type={field.type || 'text'}
-                  min={field.min}
-                  max={field.max}
-                  required={field.required}
-                  value={createValues[field.name]}
-                  placeholder={field.placeholder}
-                  onChange={(e) => onCreateChange(field.name, e.target.value)}
-                />
+                field.type === 'switch' ? (
+                  <label key={field.name} className="block space-y-1">
+                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
+                    <div className="flex h-11 items-center">
+                      <label className="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="peer sr-only"
+                          checked={Boolean(createValues[field.name])}
+                          onChange={(e) => onCreateChange(field.name, e.target.checked)}
+                        />
+                        <span className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:bg-brand-500 peer-checked:after:translate-x-5 dark:bg-slate-700" />
+                        <span className="text-xs text-slate-600 dark:text-slate-300">
+                          {createValues[field.name] ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </label>
+                    </div>
+                  </label>
+                ) : field.type === 'select' ? (
+                  <FormInput
+                    key={field.name}
+                    as="select"
+                    label={field.label}
+                    required={field.required}
+                    value={createValues[field.name]}
+                    onChange={(e) => onCreateChange(field.name, e.target.value)}
+                  >
+                    <option value="">{field.placeholder || `Select ${field.label}`}</option>
+                    {(field.options || []).map((option) => (
+                      <option key={`${field.name}-${option.value}`} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </FormInput>
+                ) : (
+                  <FormInput
+                    key={field.name}
+                    label={field.label}
+                    type={field.type === 'datetime' ? 'datetime-local' : (field.type || 'text')}
+                    min={field.min}
+                    max={field.max}
+                    required={field.required}
+                    value={createValues[field.name]}
+                    placeholder={field.placeholder}
+                    onChange={(e) => onCreateChange(field.name, e.target.value)}
+                  />
+                )
               ))}
               <div className="flex items-end">
                 <button type="submit" className="btn-primary w-full">Create</button>
@@ -205,7 +282,22 @@ export default function EntityManager({
 
           {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-          <Table columns={columns} data={rows} onDelete={enableDelete ? onDelete : undefined} />
+          <Table
+            columns={columns}
+            data={rows}
+            onDelete={enableDelete ? onDelete : undefined}
+            rowActions={rowActions.map((action) => ({
+              ...action,
+              onClick: async (row) => {
+                try {
+                  await action.onClick(row, { reload: loadData, pushToast });
+                } catch (err) {
+                  const message = formatApiError(err, 'Action failed');
+                  pushToast({ title: 'Action failed', description: message, variant: 'error' });
+                }
+              }
+            }))}
+          />
         </Card>
       </motion.div>
     </div>

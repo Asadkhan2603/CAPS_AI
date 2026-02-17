@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get('/', response_model=List[CourseOut])
 async def list_courses(
     q: str | None = Query(default=None, min_length=1, max_length=100),
-    is_active: bool | None = Query(default=None),
+    is_active: bool | None = Query(default=True),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     _current_user=Depends(require_roles(['admin', 'teacher'])),

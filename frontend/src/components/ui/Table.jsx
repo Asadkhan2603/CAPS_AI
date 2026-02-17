@@ -1,7 +1,9 @@
 import { Edit3, Trash2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
-export default function Table({ columns, data, zebra = true, onEdit, onDelete }) {
+export default function Table({ columns, data, zebra = true, onEdit, onDelete, rowActions = [] }) {
+  const hasActions = Boolean(onEdit || onDelete || rowActions.length);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900">
       <div className="overflow-x-auto">
@@ -13,7 +15,7 @@ export default function Table({ columns, data, zebra = true, onEdit, onDelete })
                   {col.label}
                 </th>
               ))}
-              {(onEdit || onDelete) ? <th className="px-4 py-3 text-right">Actions</th> : null}
+              {hasActions ? <th className="px-4 py-3 text-right">Actions</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -30,9 +32,19 @@ export default function Table({ columns, data, zebra = true, onEdit, onDelete })
                     {col.render ? col.render(row) : row[col.key] ?? '-'}
                   </td>
                 ))}
-                {(onEdit || onDelete) ? (
+                {hasActions ? (
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
+                      {rowActions.map((action) => (
+                        <button
+                          key={action.key}
+                          className={cn('btn-secondary !px-2 !py-1 text-xs', action.className)}
+                          onClick={() => action.onClick(row)}
+                          title={action.label}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
                       {onEdit ? (
                         <button className="btn-secondary !p-2" onClick={() => onEdit(row)} title="Edit">
                           <Edit3 size={16} />
@@ -54,7 +66,7 @@ export default function Table({ columns, data, zebra = true, onEdit, onDelete })
             ))}
             {data.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + 1} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={columns.length + (hasActions ? 1 : 0)} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
                   No records found.
                 </td>
               </tr>

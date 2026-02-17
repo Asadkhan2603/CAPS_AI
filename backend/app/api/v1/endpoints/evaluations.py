@@ -8,6 +8,7 @@ from app.core.mongo import parse_object_id
 from app.core.security import require_roles
 from app.models.evaluations import evaluation_public
 from app.schemas.evaluation import EvaluationCreate, EvaluationOut, EvaluationUpdate
+from app.schemas.review_ticket import ReviewTicketDecision
 from app.services.ai_evaluation import generate_ai_feedback
 from app.services.audit import log_audit_event
 from app.services.grading import grade_from_total, grand_total, internal_total
@@ -35,6 +36,11 @@ def _compute_totals(payload: dict) -> tuple[float, float, str]:
     return float(internal), float(total), grade
 
 
+def _ensure_teacher_owns_evaluation(current_user: dict, evaluation: dict) -> None:
+    if current_user.get('role') == 'teacher' and evaluation.get('teacher_user_id') != str(current_user['_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to access this evaluation')
+
+
 @router.get('/', response_model=List[EvaluationOut])
 async def list_evaluations(
     submission_id: str | None = Query(default=None),
@@ -57,6 +63,8 @@ async def list_evaluations(
 
     if current_user.get('role') == 'student':
         query['student_user_id'] = str(current_user['_id'])
+    if current_user.get('role') == 'teacher':
+        query['teacher_user_id'] = str(current_user['_id'])
 
     cursor = db.evaluations.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
@@ -73,6 +81,7 @@ async def get_evaluation(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Evaluation not found')
     if current_user.get('role') == 'student' and item.get('student_user_id') != str(current_user['_id']):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to view this evaluation')
+    _ensure_teacher_owns_evaluation(current_user, item)
     return EvaluationOut(**evaluation_public(item))
 
 
@@ -91,7 +100,12 @@ async def create_evaluation(
 
     payload_data = payload.model_dump()
     internal, total, grade = _compute_totals(payload_data)
-    ai_feedback = generate_ai_feedback(submission.get('extracted_text', ''), max_score=10.0)
+    ai_feedback = {
+        'score': submission.get('ai_score'),
+        'summary': submission.get('ai_feedback'),
+    }
+    if ai_feedback.get('score') is None:
+        ai_feedback = generate_ai_feedback(submission.get('extracted_text', ''), max_score=10.0)
 
     document = {
         'submission_id': payload.submission_id,
@@ -137,6 +151,7 @@ async def update_evaluation(
     item = await db.evaluations.find_one({'_id': evaluation_obj_id})
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Evaluation not found')
+    _ensure_teacher_owns_evaluation(current_user, item)
 
     update_data = payload.model_dump(exclude_none=True)
     if not update_data:
@@ -169,4 +184,53 @@ async def update_evaluation(
         detail='Updated evaluation fields',
     )
 
+    return EvaluationOut(**evaluation_public(updated))
+
+
+@router.patch('/{evaluation_id}/finalize', response_model=EvaluationOut)
+async def finalize_evaluation(
+    evaluation_id: str,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> EvaluationOut:
+    evaluation_obj_id = parse_object_id(evaluation_id)
+    item = await db.evaluations.find_one({'_id': evaluation_obj_id})
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Evaluation not found')
+    _ensure_teacher_owns_evaluation(current_user, item)
+
+    await db.evaluations.update_one({'_id': evaluation_obj_id}, {'$set': {'is_finalized': True}})
+    updated = await db.evaluations.find_one({'_id': evaluation_obj_id})
+    await log_audit_event(
+        actor_user_id=str(current_user['_id']),
+        action='finalize',
+        entity_type='evaluation',
+        entity_id=evaluation_id,
+        detail='Finalized evaluation',
+    )
+    return EvaluationOut(**evaluation_public(updated))
+
+
+@router.patch('/{evaluation_id}/override-unfinalize', response_model=EvaluationOut)
+async def override_unfinalize_evaluation(
+    evaluation_id: str,
+    payload: ReviewTicketDecision,
+    current_user=Depends(require_roles(['admin'])),
+) -> EvaluationOut:
+    if not payload.reason or len(payload.reason.strip()) < 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Reason is required for override')
+
+    evaluation_obj_id = parse_object_id(evaluation_id)
+    item = await db.evaluations.find_one({'_id': evaluation_obj_id})
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Evaluation not found')
+
+    await db.evaluations.update_one({'_id': evaluation_obj_id}, {'$set': {'is_finalized': False}})
+    updated = await db.evaluations.find_one({'_id': evaluation_obj_id})
+    await log_audit_event(
+        actor_user_id=str(current_user['_id']),
+        action='override_unfinalize',
+        entity_type='evaluation',
+        entity_id=evaluation_id,
+        detail=f"Admin override unfinalized evaluation. Reason: {payload.reason.strip()}",
+    )
     return EvaluationOut(**evaluation_public(updated))

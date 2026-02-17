@@ -16,6 +16,8 @@ router = APIRouter()
 async def list_classes(
     course_id: str | None = Query(default=None),
     year_id: str | None = Query(default=None),
+    faculty_name: str | None = Query(default=None),
+    branch_name: str | None = Query(default=None),
     section: str | None = Query(default=None),
     q: str | None = Query(default=None, min_length=1, max_length=100),
     is_active: bool | None = Query(default=None),
@@ -28,6 +30,10 @@ async def list_classes(
         query['course_id'] = course_id
     if year_id:
         query['year_id'] = year_id
+    if faculty_name:
+        query['faculty_name'] = faculty_name
+    if branch_name:
+        query['branch_name'] = branch_name
     if section:
         query['section'] = section
     if q:
@@ -74,6 +80,8 @@ async def create_class(
         'course_id': payload.course_id,
         'year_id': payload.year_id,
         'name': payload.name.strip(),
+        'faculty_name': payload.faculty_name.strip() if payload.faculty_name else None,
+        'branch_name': payload.branch_name.strip() if payload.branch_name else None,
         'section': payload.section,
         'class_coordinator_user_id': payload.class_coordinator_user_id,
         'is_active': True,
@@ -98,6 +106,10 @@ async def update_class(
     update_data = payload.model_dump(exclude_none=True)
     if 'name' in update_data and update_data['name']:
         update_data['name'] = update_data['name'].strip()
+    if 'faculty_name' in update_data and update_data['faculty_name']:
+        update_data['faculty_name'] = update_data['faculty_name'].strip()
+    if 'branch_name' in update_data and update_data['branch_name']:
+        update_data['branch_name'] = update_data['branch_name'].strip()
 
     target_course_id = update_data.get('course_id', current.get('course_id'))
     target_year_id = update_data.get('year_id', current.get('year_id'))
