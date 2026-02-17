@@ -420,13 +420,6 @@ def test_similarity_threshold_alerts_generate_logs_notifications_and_scope_views
     assert coordinator_teacher.status_code == 201
     assert plain_teacher.status_code == 201
 
-    section = client.post(
-        "/api/v1/sections/",
-        json={"name": "A", "program": "BCA", "academic_year": "2026-27", "semester": 2},
-        headers=admin_headers,
-    )
-    assert section.status_code == 201
-
     course = client.post(
         "/api/v1/courses/",
         json={"name": "BCA", "code": "BCA-SIM", "description": "desc"},
@@ -443,7 +436,6 @@ def test_similarity_threshold_alerts_generate_logs_notifications_and_scope_views
             "course_id": course.json()["id"],
             "year_id": year.json()["id"],
             "name": "BCA FY",
-            "section": "A",
             "class_coordinator_user_id": coordinator_teacher.json()["id"],
         },
         headers=admin_headers,
@@ -460,7 +452,7 @@ def test_similarity_threshold_alerts_generate_logs_notifications_and_scope_views
         json={
             "title": "Similarity Alert Assignment",
             "description": "desc",
-            "section_id": section.json()["id"],
+            "class_id": class_item.json()["id"],
             "total_marks": 100,
         },
         headers=owner_headers,

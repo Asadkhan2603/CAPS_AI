@@ -17,8 +17,6 @@ from app.api.v1.endpoints import (
     notices,
     notifications,
     review_tickets,
-    section_subjects,
-    sections,
     similarity,
     students,
     subjects,
@@ -35,10 +33,6 @@ api_router.include_router(departments.router, prefix="/departments", tags=["depa
 api_router.include_router(branches.router, prefix="/branches", tags=["branches"])
 api_router.include_router(years.router, prefix="/years", tags=["years"])
 api_router.include_router(classes.router, prefix="/classes", tags=["classes"])
-api_router.include_router(sections.router, prefix="/sections", tags=["sections"])
-api_router.include_router(
-    section_subjects.router, prefix="/section-subjects", tags=["section-subjects"]
-)
 api_router.include_router(students.router, prefix="/students", tags=["students"])
 api_router.include_router(subjects.router, prefix="/subjects", tags=["subjects"])
 api_router.include_router(assignments.router, prefix="/assignments", tags=["assignments"])

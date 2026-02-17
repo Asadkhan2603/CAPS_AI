@@ -20,12 +20,11 @@ export const FEATURE_ACCESS = {
   clubEvents: { allowedRoles: ['admin', 'teacher', 'student'] },
   eventRegistrations: { allowedRoles: ['admin', 'teacher', 'student'] },
   auditLogs: { allowedRoles: ['admin', 'teacher'] },
+  developerPanel: { allowedRoles: ['admin'] },
   users: { allowedRoles: ['admin'] },
   courses: { allowedRoles: ['admin'] },
   departments: { allowedRoles: ['admin'] },
   branches: { allowedRoles: ['admin'] },
   years: { allowedRoles: ['admin'] },
-  classes: { allowedRoles: ['admin'] },
-  sections: { allowedRoles: ['admin'] },
-  sectionSubjects: { allowedRoles: ['admin'] }
+  classes: { allowedRoles: ['admin'] }
 };

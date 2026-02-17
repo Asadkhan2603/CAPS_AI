@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -9,6 +9,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { useToast } from '../../hooks/useToast';
 
 export default function DashboardLayout() {
+  const location = useLocation();
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { toasts, removeToast } = useToast();
@@ -37,6 +38,7 @@ export default function DashboardLayout() {
             onLogout={logout}
           />
           <motion.main
+            key={location.pathname}
             className="flex-1 px-4 py-5 lg:px-6"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}

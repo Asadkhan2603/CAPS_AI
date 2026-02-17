@@ -23,29 +23,19 @@ async def _teacher_can_access_assignment(teacher_user_id: str, assignment_id: st
     if assignment.get('created_by') == teacher_user_id:
         return True
 
-    subject_id = assignment.get('subject_id')
-    section_id = assignment.get('section_id')
-    if not subject_id or not section_id:
+    class_id = assignment.get('class_id')
+    if not class_id:
         return False
 
-    mapping = await db.section_subjects.find_one(
-        {
-            'subject_id': subject_id,
-            'section_id': section_id,
-            'teacher_user_id': teacher_user_id,
-            'is_active': True,
-        }
-    )
-    return bool(mapping)
+    class_doc = await db.classes.find_one({'_id': parse_object_id(class_id)})
+    if not class_doc:
+        return False
+    return class_doc.get('class_coordinator_user_id') == teacher_user_id
 
 
-async def _class_coordinator_section_ids(user_id: str) -> Set[str]:
+async def _class_coordinator_class_ids(user_id: str) -> Set[str]:
     classes = await db.classes.find({'class_coordinator_user_id': user_id}).to_list(length=1000)
-    section_names = [item.get('section') for item in classes if item.get('section')]
-    if not section_names:
-        return set()
-    sections = await db.sections.find({'name': {'$in': section_names}}).to_list(length=1000)
-    return {str(section.get('_id')) for section in sections}
+    return {str(item.get('_id')) for item in classes if item.get('_id')}
 
 
 async def _can_view_similarity_log(current_user: dict, item: dict) -> bool:
@@ -60,8 +50,8 @@ async def _can_view_similarity_log(current_user: dict, item: dict) -> bool:
         return True
 
     if 'class_coordinator' in extensions:
-        coordinator_sections = await _class_coordinator_section_ids(user_id)
-        if item.get('source_section_id') in coordinator_sections or item.get('matched_section_id') in coordinator_sections:
+        coordinator_classes = await _class_coordinator_class_ids(user_id)
+        if item.get('source_class_id') in coordinator_classes or item.get('matched_class_id') in coordinator_classes:
             return True
 
     source_assignment_id = item.get('source_assignment_id')
@@ -87,25 +77,11 @@ async def _notify_similarity_alert(
     if source_assignment and source_assignment.get('created_by'):
         recipients.add(str(source_assignment.get('created_by')))
 
-    source_section_id = source_assignment.get('section_id') if source_assignment else None
-    source_subject_id = source_assignment.get('subject_id') if source_assignment else None
-    if source_section_id and source_subject_id:
-        mappings = await db.section_subjects.find(
-            {'section_id': source_section_id, 'subject_id': source_subject_id, 'is_active': True}
-        ).to_list(length=1000)
-        for mapping in mappings:
-            teacher_id = mapping.get('teacher_user_id')
-            if teacher_id:
-                recipients.add(str(teacher_id))
-
-    if source_section_id:
-        section = await db.sections.find_one({'_id': parse_object_id(source_section_id)})
-        if section:
-            classes = await db.classes.find({'section': section.get('name')}).to_list(length=1000)
-            for class_item in classes:
-                coordinator_id = class_item.get('class_coordinator_user_id')
-                if coordinator_id:
-                    recipients.add(str(coordinator_id))
+    source_class_id = source_assignment.get('class_id') if source_assignment else None
+    if source_class_id:
+        class_doc = await db.classes.find_one({'_id': parse_object_id(source_class_id)})
+        if class_doc and class_doc.get('class_coordinator_user_id'):
+            recipients.add(str(class_doc.get('class_coordinator_user_id')))
 
     year_heads = await db.users.find(
         {'role': 'teacher', 'extended_roles': {'$in': ['year_head']}}
@@ -217,8 +193,8 @@ async def run_similarity_check(
             'matched_submission_id': matched_submission_id,
             'source_assignment_id': source_assignment_id,
             'matched_assignment_id': matched_assignment_id,
-            'source_section_id': source_assignment.get('section_id') if source_assignment else None,
-            'matched_section_id': matched_assignment.get('section_id') if matched_assignment else None,
+            'source_class_id': source_assignment.get('class_id') if source_assignment else None,
+            'matched_class_id': matched_assignment.get('class_id') if matched_assignment else None,
             'visible_to_extensions': ['year_head', 'class_coordinator'],
             'score': score,
             'threshold': active_threshold,

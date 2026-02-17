@@ -11,7 +11,7 @@ def event_registration_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "email": document.get("email"),
         "year": document.get("year"),
         "course_branch": document.get("course_branch"),
-        "section": document.get("section"),
+        "class_name": document.get("class_name"),
         "phone_number": document.get("phone_number"),
         "whatsapp_number": document.get("whatsapp_number"),
         "payment_qr_code": document.get("payment_qr_code"),

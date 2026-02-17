@@ -52,6 +52,7 @@ class Settings:
     similarity_threshold: float = field(
         default_factory=lambda: _as_float(os.getenv("SIMILARITY_THRESHOLD", "0.8"), 0.8)
     )
+    log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
     cors_origins: List[str] = field(
         default_factory=lambda: _merge_cors_origins(
             os.getenv("CORS_ORIGINS", "http://localhost:5173")

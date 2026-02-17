@@ -65,14 +65,6 @@ async def create_enrollment(
     if not student:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Student not found for provided student_id")
 
-    if payload.section_id:
-        section = await db.sections.find_one({"_id": parse_object_id(payload.section_id)})
-        if not section:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Section not found for provided section_id",
-            )
-
     duplicate = await db.enrollments.find_one({"class_id": payload.class_id, "student_id": payload.student_id})
     if duplicate:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Student already enrolled in class")
@@ -80,7 +72,6 @@ async def create_enrollment(
     document = {
         "class_id": payload.class_id,
         "student_id": payload.student_id,
-        "section_id": payload.section_id,
         "assigned_by_user_id": str(current_user["_id"]),
         "created_at": datetime.now(timezone.utc),
     }

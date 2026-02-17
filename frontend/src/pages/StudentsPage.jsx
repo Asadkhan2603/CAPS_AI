@@ -3,40 +3,40 @@ import EntityManager from '../components/ui/EntityManager';
 import { apiClient } from '../services/apiClient';
 
 export default function StudentsPage() {
-  const [sections, setSections] = useState([]);
+  const [classes, setClasses] = useState([]);
 
   useEffect(() => {
-    async function loadSections() {
+    async function loadClasses() {
       try {
-        const response = await apiClient.get('/sections/', { params: { skip: 0, limit: 100 } });
-        setSections(response.data || []);
+        const response = await apiClient.get('/classes/', { params: { skip: 0, limit: 200 } });
+        setClasses(response.data || []);
       } catch {
-        setSections([]);
+        setClasses([]);
       }
     }
-    loadSections();
+    loadClasses();
   }, []);
 
-  const sectionOptions = useMemo(
+  const classOptions = useMemo(
     () =>
-      sections.map((section) => ({
-        value: section.id,
-        label: `${section.name} (${section.program} - ${section.academic_year})`
+      classes.map((item) => ({
+        value: item.id,
+        label: item.name
       })),
-    [sections]
+    [classes]
   );
 
-  const sectionNameById = useMemo(
-    () => Object.fromEntries(sectionOptions.map((item) => [item.value, item.label])),
-    [sectionOptions]
+  const classNameById = useMemo(
+    () => Object.fromEntries(classOptions.map((item) => [item.value, item.label])),
+    [classOptions]
   );
 
   const filters = useMemo(
     () => [
       { name: 'q', label: 'Search', placeholder: 'Name / roll / email' },
-      { name: 'section_id', label: 'Section', type: 'select', options: sectionOptions, placeholder: 'All Sections' }
+      { name: 'class_id', label: 'Class', type: 'select', options: classOptions, placeholder: 'All Classes' }
     ],
-    [sectionOptions]
+    [classOptions]
   );
 
   const createFields = useMemo(
@@ -44,9 +44,9 @@ export default function StudentsPage() {
       { name: 'full_name', label: 'Full Name', required: true },
       { name: 'roll_number', label: 'Roll Number', required: true },
       { name: 'email', label: 'Email', nullable: true },
-      { name: 'section_id', label: 'Section', type: 'select', options: sectionOptions, nullable: true, placeholder: 'No Section' }
+      { name: 'class_id', label: 'Class', type: 'select', options: classOptions, nullable: true, placeholder: 'No Class' }
     ],
-    [sectionOptions]
+    [classOptions]
   );
 
   const columns = useMemo(
@@ -54,9 +54,9 @@ export default function StudentsPage() {
       { key: 'full_name', label: 'Name' },
       { key: 'roll_number', label: 'Roll Number' },
       { key: 'email', label: 'Email' },
-      { key: 'section_id', label: 'Section', render: (row) => sectionNameById[row.section_id] || row.section_id || '-' }
+      { key: 'class_id', label: 'Class', render: (row) => classNameById[row.class_id] || row.class_id || '-' }
     ],
-    [sectionNameById]
+    [classNameById]
   );
 
   return <EntityManager title="Students" endpoint="/students/" filters={filters} createFields={createFields} columns={columns} enableDelete />;

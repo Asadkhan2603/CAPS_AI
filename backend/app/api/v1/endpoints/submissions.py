@@ -28,20 +28,14 @@ async def _teacher_can_access_assignment(teacher_user_id: str, assignment_id: st
     if assignment.get('created_by') == teacher_user_id:
         return True
 
-    subject_id = assignment.get('subject_id')
-    section_id = assignment.get('section_id')
-    if not subject_id or not section_id:
+    class_id = assignment.get('class_id')
+    if not class_id:
         return False
 
-    mapping = await db.section_subjects.find_one(
-        {
-            'subject_id': subject_id,
-            'section_id': section_id,
-            'teacher_user_id': teacher_user_id,
-            'is_active': True,
-        }
-    )
-    return bool(mapping)
+    class_doc = await db.classes.find_one({'_id': parse_object_id(class_id)})
+    if not class_doc:
+        return False
+    return class_doc.get('class_coordinator_user_id') == teacher_user_id
 
 
 async def _teacher_can_access_submission(teacher_user_id: str, submission: dict) -> bool:

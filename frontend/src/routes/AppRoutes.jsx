@@ -17,8 +17,6 @@ const DepartmentsPage = lazy(() => import('../pages/DepartmentsPage'));
 const BranchesPage = lazy(() => import('../pages/BranchesPage'));
 const YearsPage = lazy(() => import('../pages/YearsPage'));
 const ClassesPage = lazy(() => import('../pages/ClassesPage'));
-const SectionsPage = lazy(() => import('../pages/SectionsPage'));
-const SectionSubjectsPage = lazy(() => import('../pages/SectionSubjectsPage'));
 const StudentsPage = lazy(() => import('../pages/StudentsPage'));
 const SubjectsPage = lazy(() => import('../pages/SubjectsPage'));
 const AssignmentsPage = lazy(() => import('../pages/AssignmentsPage'));
@@ -31,6 +29,7 @@ const NotificationsPage = lazy(() => import('../pages/NotificationsPage'));
 const EvaluationsPage = lazy(() => import('../pages/EvaluationsPage'));
 const EnrollmentsPage = lazy(() => import('../pages/EnrollmentsPage'));
 const AuditLogsPage = lazy(() => import('../pages/AuditLogsPage'));
+const DeveloperPanelPage = lazy(() => import('../pages/DeveloperPanelPage'));
 const UsersPage = lazy(() => import('../pages/UsersPage'));
 const EventRegistrationsPage = lazy(() => import('../pages/EventRegistrationsPage'));
 
@@ -115,22 +114,6 @@ export function AppRoutes() {
             }
           />
           <Route
-            path="/sections"
-            element={
-              <ProtectedRoute {...FEATURE_ACCESS.sections}>
-                <SectionsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/section-subjects"
-            element={
-              <ProtectedRoute {...FEATURE_ACCESS.sectionSubjects}>
-                <SectionSubjectsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/students"
             element={
               <ProtectedRoute {...FEATURE_ACCESS.students}>
@@ -189,6 +172,14 @@ export function AppRoutes() {
             element={
               <ProtectedRoute {...FEATURE_ACCESS.auditLogs}>
                 <AuditLogsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/developer-panel"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.developerPanel}>
+                <DeveloperPanelPage />
               </ProtectedRoute>
             }
           />

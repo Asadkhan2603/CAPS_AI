@@ -6,10 +6,12 @@ import StatCard from '../components/ui/StatCard';
 import Card from '../components/ui/Card';
 import Alert from '../components/ui/Alert';
 import Badge from '../components/ui/Badge';
-import TeacherSectionTiles from '../components/ui/TeacherSectionTiles';
+import TeacherClassTiles from '../components/ui/TeacherClassTiles';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { apiClient } from '../services/apiClient';
+import { canAccessFeature } from '../utils/permissions';
+import { FEATURE_ACCESS } from '../config/featureAccess';
 
 const performanceData = [
   { month: 'Jan', avg: 67, submissions: 41 },
@@ -35,11 +37,20 @@ export default function DashboardPage() {
       return [
         { to: '/analytics', label: 'Analytics' },
         { to: '/courses', label: 'Manage Courses' },
+        { to: '/departments', label: 'Manage Departments' },
+        { to: '/branches', label: 'Manage Branches' },
         { to: '/years', label: 'Manage Years' },
         { to: '/classes', label: 'Manage Classes' },
-        { to: '/sections', label: 'Manage Sections' },
-        { to: '/section-subjects', label: 'Section-Subject Mapping' },
         { to: '/users', label: 'Manage Users' }
+      ];
+    }
+    if (user?.role === 'student') {
+      return [
+        { to: '/submissions', label: 'My Submissions' },
+        { to: '/evaluations', label: 'My Evaluations' },
+        { to: '/club-events', label: 'Club Events' },
+        { to: '/notices', label: 'Notices' },
+        { to: '/history', label: 'My History' }
       ];
     }
     return [
@@ -81,21 +92,38 @@ export default function DashboardPage() {
   }, [user?.role]);
 
   const statItems = useMemo(() => {
-    const pairs = Object.entries(summary);
-    if (!pairs.length) {
+    const value = (key) => String(summary[key] ?? 0);
+    const withAccess = (item) => {
+      if (!item.featureKey) return item;
+      if (!canAccessFeature(user, FEATURE_ACCESS[item.featureKey])) {
+        return { ...item, to: undefined };
+      }
+      return item;
+    };
+
+    if (user?.role === 'admin') {
       return [
-        { title: 'Active Subjects', value: '0', hint: 'No data' },
-        { title: 'Submissions', value: '0', hint: 'No data' },
-        { title: 'Evaluations', value: '0', hint: 'No data' },
-        { title: 'Alerts', value: '0', hint: 'No data' }
+        withAccess({ title: 'Users', value: value('users'), hint: 'Open user management', to: '/users', featureKey: 'users' }),
+        withAccess({ title: 'Students', value: value('students'), hint: 'Open students', to: '/students', featureKey: 'students' }),
+        withAccess({ title: 'Assignments', value: value('assignments'), hint: 'Open assignments', to: '/assignments', featureKey: 'assignments' }),
+        withAccess({ title: 'Similarity Flags', value: value('similarity_flags'), hint: 'Open analytics', to: '/analytics', featureKey: 'analytics' })
       ];
     }
-    return pairs.slice(0, 4).map(([key, value]) => ({
-      title: key.replaceAll('_', ' '),
-      value: String(value),
-      hint: 'Live from backend'
-    }));
-  }, [summary]);
+    if (user?.role === 'student') {
+      return [
+        withAccess({ title: 'My Submissions', value: value('total_submissions'), hint: 'Go to submissions', to: '/submissions', featureKey: 'submissions' }),
+        withAccess({ title: 'My Evaluations', value: value('total_evaluations'), hint: 'Go to evaluations', to: '/evaluations', featureKey: 'evaluations' }),
+        withAccess({ title: 'Pending Reviews', value: value('pending_reviews'), hint: 'Track review status', to: '/submissions', featureKey: 'submissions' }),
+        withAccess({ title: 'Urgent Notices', value: String(urgentNotices.length), hint: 'Read urgent notices', to: '/notices', featureKey: 'notices' })
+      ];
+    }
+    return [
+      withAccess({ title: 'My Assignments', value: value('my_assignments'), hint: 'Open assignments', to: '/assignments', featureKey: 'assignments' }),
+      withAccess({ title: 'My Submissions', value: value('my_submissions'), hint: 'Open submissions', to: '/submissions', featureKey: 'submissions' }),
+      withAccess({ title: 'My Evaluations', value: value('my_evaluations'), hint: 'Open evaluations', to: '/evaluations', featureKey: 'evaluations' }),
+      withAccess({ title: 'Similarity Alerts', value: value('my_similarity_flags'), hint: 'Open analytics', to: '/analytics', featureKey: 'analytics' })
+    ];
+  }, [summary, urgentNotices.length, user]);
 
   return (
     <div className="space-y-5 page-fade">
@@ -109,10 +137,10 @@ export default function DashboardPage() {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={BookOpenCheck} title={statItems[0]?.title} value={statItems[0]?.value} hint={statItems[0]?.hint} />
-        <StatCard icon={FileText} title={statItems[1]?.title} value={statItems[1]?.value} hint={statItems[1]?.hint} gradient="from-sky-600 to-cyan-500" />
-        <StatCard icon={ChartLine} title={statItems[2]?.title} value={statItems[2]?.value} hint={statItems[2]?.hint} gradient="from-emerald-600 to-lime-500" />
-        <StatCard icon={Bell} title={statItems[3]?.title} value={statItems[3]?.value} hint={statItems[3]?.hint} gradient="from-rose-600 to-orange-500" />
+        <StatCard icon={BookOpenCheck} title={statItems[0]?.title} value={statItems[0]?.value} hint={statItems[0]?.hint} to={statItems[0]?.to} />
+        <StatCard icon={FileText} title={statItems[1]?.title} value={statItems[1]?.value} hint={statItems[1]?.hint} to={statItems[1]?.to} gradient="from-sky-600 to-cyan-500" />
+        <StatCard icon={ChartLine} title={statItems[2]?.title} value={statItems[2]?.value} hint={statItems[2]?.hint} to={statItems[2]?.to} gradient="from-emerald-600 to-lime-500" />
+        <StatCard icon={Bell} title={statItems[3]?.title} value={statItems[3]?.value} hint={statItems[3]?.hint} to={statItems[3]?.to} gradient="from-rose-600 to-orange-500" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -186,7 +214,7 @@ export default function DashboardPage() {
         </Card>
       ) : null}
 
-      {user?.role === 'teacher' ? <TeacherSectionTiles items={teacherTiles} /> : null}
+      {user?.role === 'teacher' ? <TeacherClassTiles items={teacherTiles} /> : null}
     </div>
   );
 }

@@ -7,7 +7,7 @@ def assignment_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "title": document.get("title", ""),
         "description": document.get("description"),
         "subject_id": document.get("subject_id"),
-        "section_id": document.get("section_id"),
+        "class_id": document.get("class_id"),
         "due_date": document.get("due_date"),
         "total_marks": document.get("total_marks", 100.0),
         "status": document.get("status", "open"),

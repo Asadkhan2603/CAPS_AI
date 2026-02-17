@@ -2,12 +2,20 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.database import db
 from app.core.config import settings
+from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_roles
 
 router = APIRouter()
+
+
+async def _student_ids_for_class(class_id: str) -> set[str]:
+    enrollment_rows = await db.enrollments.find({'class_id': class_id}).to_list(length=10000)
+    student_ids = {row.get('student_id') for row in enrollment_rows if row.get('student_id')}
+    direct_student_rows = await db.students.find({'class_id': class_id, 'is_active': True}).to_list(length=10000)
+    student_ids.update(str(row.get('_id')) for row in direct_student_rows if row.get('_id'))
+    return {sid for sid in student_ids if sid}
 
 
 @router.get('/summary')
@@ -32,7 +40,7 @@ async def analytics_summary(
 
     if role == 'teacher':
         my_assignments = await db.assignments.count_documents({'created_by': user_id})
-        my_assignment_docs = await db.assignments.find({'created_by': user_id}).to_list(length=1000)
+        my_assignment_docs = await db.assignments.find({'created_by': user_id}).to_list(length=2000)
         my_assignment_ids = [str(item.get('_id')) for item in my_assignment_docs]
         my_submissions = await db.submissions.count_documents({'assignment_id': {'$in': my_assignment_ids}})
         my_evaluations = await db.evaluations.count_documents({'teacher_user_id': user_id})
@@ -58,7 +66,6 @@ async def analytics_summary(
             'courses': await db.courses.count_documents({}),
             'years': await db.years.count_documents({}),
             'classes': await db.classes.count_documents({}),
-            'sections': await db.sections.count_documents({}),
             'subjects': await db.subjects.count_documents({}),
             'students': await db.students.count_documents({}),
             'assignments': await db.assignments.count_documents({}),
@@ -73,33 +80,31 @@ async def analytics_summary(
 
 
 @router.get('/teacher/classes')
-async def teacher_section_tiles(
+async def teacher_class_tiles(
     current_user=Depends(require_roles(['teacher'])),
 ) -> dict:
     user_id = str(current_user.get('_id'))
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid user context')
 
-    mappings = await db.section_subjects.find({'teacher_user_id': user_id, 'is_active': True}).to_list(length=1000)
-    tiles = []
     now = datetime.now(timezone.utc)
+    classes = await db.classes.find({'class_coordinator_user_id': user_id, 'is_active': True}).to_list(length=2000)
+    teacher_assignment_classes = await db.assignments.distinct('class_id', {'created_by': user_id})
+    extra_classes = await db.classes.find({'_id': {'$in': [parse_object_id(cid) for cid in teacher_assignment_classes if cid]}}).to_list(length=2000)
 
-    for mapping in mappings:
-        section_id = mapping.get('section_id')
-        subject_id = mapping.get('subject_id')
-        if not section_id or not subject_id:
-            continue
+    class_by_id = {str(item.get('_id')): item for item in classes}
+    for class_doc in extra_classes:
+        class_by_id[str(class_doc.get('_id'))] = class_doc
 
-        section = await db.sections.find_one({'_id': parse_object_id(section_id)})
-        subject = await db.subjects.find_one({'_id': parse_object_id(subject_id)})
-
-        total_students = await db.students.count_documents({'section_id': section_id})
-        active_assignments = await db.assignments.count_documents(
-            {'section_id': section_id, 'subject_id': subject_id, 'status': 'open'}
-        )
-
-        assignment_docs = await db.assignments.find({'section_id': section_id, 'subject_id': subject_id}).to_list(length=1000)
+    subject_by_id = {str(item.get('_id')): item for item in await db.subjects.find({'is_active': True}).to_list(length=5000)}
+    items = []
+    for class_id, class_doc in class_by_id.items():
+        assignment_docs = await db.assignments.find({'class_id': class_id}).to_list(length=5000)
         assignment_ids = [str(item.get('_id')) for item in assignment_docs]
+
+        student_ids = await _student_ids_for_class(class_id)
+        total_students = len(student_ids)
+        active_assignments = len([item for item in assignment_docs if item.get('status') == 'open'])
 
         late_submissions_count = 0
         for assignment in assignment_docs:
@@ -116,7 +121,7 @@ async def teacher_section_tiles(
 
         risk_student_count = 0
         if assignment_ids:
-            submission_docs = await db.submissions.find({'assignment_id': {'$in': assignment_ids}}).to_list(length=2000)
+            submission_docs = await db.submissions.find({'assignment_id': {'$in': assignment_ids}}).to_list(length=20000)
             submission_ids = [str(item.get('_id')) for item in submission_docs]
             if submission_ids:
                 risky = await db.evaluations.find(
@@ -124,7 +129,7 @@ async def teacher_section_tiles(
                         'submission_id': {'$in': submission_ids},
                         '$or': [{'grand_total': {'$lt': 40}}, {'attendance_percent': {'$lt': 70}}],
                     }
-                ).to_list(length=2000)
+                ).to_list(length=20000)
                 risk_student_count = len({item.get('student_user_id') for item in risky if item.get('student_user_id')})
 
         if risk_student_count >= 3 or similarity_alert_count >= 3 or late_submissions_count >= 5:
@@ -134,23 +139,25 @@ async def teacher_section_tiles(
         else:
             health_status = 'healthy'
 
-        tiles.append(
+        class_subject_ids = sorted({item.get('subject_id') for item in assignment_docs if item.get('subject_id')})
+        class_subject_names = [subject_by_id.get(subject_id, {}).get('name', subject_id) for subject_id in class_subject_ids]
+
+        items.append(
             {
-                'section_id': section_id,
-                'subject_name': (subject or {}).get('name', 'Unknown Subject'),
-                'year': (section or {}).get('academic_year'),
-                'class_name': (section or {}).get('program'),
-                'section_name': (section or {}).get('name', section_id),
+                'class_id': class_id,
+                'class_name': class_doc.get('name', class_id),
+                'year_id': class_doc.get('year_id'),
                 'total_students': total_students,
                 'active_assignments': active_assignments,
                 'late_submissions_count': late_submissions_count,
                 'similarity_alert_count': similarity_alert_count,
                 'risk_student_count': risk_student_count,
                 'health_status': health_status,
+                'subjects': class_subject_names,
             }
         )
 
-    return {'items': tiles}
+    return {'items': items}
 
 
 @router.get('/academic-structure')
@@ -162,11 +169,13 @@ async def academic_structure(
     user_email = str(current_user.get('email') or '').lower()
 
     courses = await db.courses.find({'is_active': True}).to_list(length=2000)
-    years = await db.years.find({'is_active': True}).to_list(length=4000)
-    classes = await db.classes.find({'is_active': True}).to_list(length=8000)
-    enrollments = await db.enrollments.find({}).to_list(length=20000)
-    students = await db.students.find({'is_active': True}).to_list(length=20000)
-    users = await db.users.find({}).to_list(length=4000)
+    years = await db.years.find({'is_active': True}).to_list(length=5000)
+    classes = await db.classes.find({'is_active': True}).to_list(length=20000)
+    enrollments = await db.enrollments.find({}).to_list(length=50000)
+    students = await db.students.find({'is_active': True}).to_list(length=50000)
+    subjects = await db.subjects.find({'is_active': True}).to_list(length=5000)
+    assignments = await db.assignments.find({}).to_list(length=50000)
+    users = await db.users.find({}).to_list(length=5000)
 
     if role == 'student':
         student_ids_by_email = {
@@ -181,43 +190,50 @@ async def academic_structure(
         }
         classes = [item for item in classes if str(item.get('_id')) in allowed_class_ids]
     elif role == 'teacher':
-        teacher_class_ids = {
+        allowed_class_ids = {
             str(item.get('_id'))
             for item in classes
             if item.get('class_coordinator_user_id') == user_id
         }
-        classes = [item for item in classes if str(item.get('_id')) in teacher_class_ids] if teacher_class_ids else []
+        classes = [item for item in classes if str(item.get('_id')) in allowed_class_ids] if allowed_class_ids else []
 
     course_by_id = {str(item.get('_id')): item for item in courses}
-    years_by_course_id: dict[str, list[dict]] = {}
-    for year in years:
-        years_by_course_id.setdefault(year.get('course_id'), []).append(year)
+    year_by_id = {str(item.get('_id')): item for item in years}
+    subject_by_id = {str(item.get('_id')): item for item in subjects}
     users_by_id = {str(item.get('_id')): item for item in users}
-
     students_by_id = {str(item.get('_id')): item for item in students}
-    students_by_section_key: dict[str, list[dict]] = {}
-    for student in students:
-        section_key = str(student.get('section_id') or '')
-        if section_key:
-            students_by_section_key.setdefault(section_key, []).append(student)
 
-    enrollments_by_class_id: dict[str, list[dict]] = {}
-    for enrollment in enrollments:
-        enrollments_by_class_id.setdefault(enrollment.get('class_id'), []).append(enrollment)
+    class_student_ids: dict[str, set[str]] = {}
+    for row in enrollments:
+        class_id = row.get('class_id')
+        student_id = row.get('student_id')
+        if class_id and student_id:
+            class_student_ids.setdefault(class_id, set()).add(student_id)
+    for row in students:
+        class_id = row.get('class_id')
+        if class_id and row.get('_id'):
+            class_student_ids.setdefault(class_id, set()).add(str(row.get('_id')))
 
-    candidate_student_user_ids: set[str] = set()
-    student_user_id_by_student_id: dict[str, str] = {}
+    class_subject_ids: dict[str, set[str]] = {}
+    for row in assignments:
+        class_id = row.get('class_id')
+        subject_id = row.get('subject_id')
+        if class_id and subject_id:
+            class_subject_ids.setdefault(class_id, set()).add(subject_id)
+
+    candidate_user_ids: set[str] = set()
+    student_user_by_student_id: dict[str, str] = {}
     users_by_email = {str(item.get('email') or '').lower(): str(item.get('_id')) for item in users if item.get('email')}
     for student in students:
         student_id = str(student.get('_id'))
         email = str(student.get('email') or '').lower()
         mapped_user_id = users_by_email.get(email)
         if mapped_user_id:
-            student_user_id_by_student_id[student_id] = mapped_user_id
-            candidate_student_user_ids.add(mapped_user_id)
+            student_user_by_student_id[student_id] = mapped_user_id
+            candidate_user_ids.add(mapped_user_id)
 
-    submissions = await db.submissions.find({'student_user_id': {'$in': list(candidate_student_user_ids)}}).to_list(length=50000)
-    event_regs = await db.event_registrations.find({'student_user_id': {'$in': list(candidate_student_user_ids)}}).to_list(length=50000)
+    submissions = await db.submissions.find({'student_user_id': {'$in': list(candidate_user_ids)}}).to_list(length=50000)
+    event_regs = await db.event_registrations.find({'student_user_id': {'$in': list(candidate_user_ids)}}).to_list(length=50000)
     submissions_count_by_user: dict[str, int] = {}
     regs_count_by_user: dict[str, int] = {}
     for row in submissions:
@@ -229,7 +245,7 @@ async def academic_structure(
         if key:
             regs_count_by_user[key] = regs_count_by_user.get(key, 0) + 1
 
-    faculty_groups: dict[str, dict] = {}
+    tree: dict[str, dict] = {}
     for class_doc in classes:
         class_id = str(class_doc.get('_id'))
         course_id = class_doc.get('course_id')
@@ -238,115 +254,90 @@ async def academic_structure(
             continue
 
         course = course_by_id.get(course_id)
-        if not course:
-            continue
-        year = next((item for item in years_by_course_id.get(course_id, []) if str(item.get('_id')) == year_id), None)
-        if not year:
+        year = year_by_id.get(year_id)
+        if not course or not year:
             continue
 
-        faculty_name = class_doc.get('faculty_name') or 'Faculty of Engineering'
-        branch_name = class_doc.get('branch_name') or class_doc.get('name') or 'General Branch'
-        section_name = class_doc.get('section') or class_doc.get('name') or f'Section-{class_id[:6]}'
+        course_node = tree.setdefault(
+            course_id,
+            {
+                'id': course_id,
+                'name': course.get('name') or 'Course',
+                'years': {},
+            },
+        )
+        year_node = course_node['years'].setdefault(
+            year_id,
+            {
+                'id': year_id,
+                'name': year.get('label') or f"Year {year.get('year_number')}",
+                'classes': [],
+            },
+        )
+
         teacher_name = 'Unassigned'
-        teacher_user_id = class_doc.get('class_coordinator_user_id')
-        if teacher_user_id and teacher_user_id in users_by_id:
-            teacher_name = users_by_id[teacher_user_id].get('full_name') or 'Unassigned'
-
-        class_enrollments = enrollments_by_class_id.get(class_id, [])
-        section_students = [students_by_id[item.get('student_id')] for item in class_enrollments if item.get('student_id') in students_by_id]
-        if not section_students:
-            section_students = students_by_section_key.get(section_name, [])
+        coordinator_id = class_doc.get('class_coordinator_user_id')
+        if coordinator_id and coordinator_id in users_by_id:
+            teacher_name = users_by_id[coordinator_id].get('full_name') or 'Unassigned'
 
         student_items = []
-        for student in section_students:
-            student_id = str(student.get('_id'))
-            mapped_user_id = student_user_id_by_student_id.get(student_id)
+        for student_id in sorted(class_student_ids.get(class_id, set())):
+            student = students_by_id.get(student_id)
+            if not student:
+                continue
+            mapped_user_id = student_user_by_student_id.get(student_id, '')
             student_items.append(
                 {
                     'id': student_id,
                     'name': student.get('full_name'),
                     'rollNo': student.get('roll_number'),
                     'logs': {
-                        'assignment_submissions': submissions_count_by_user.get(mapped_user_id or '', 0),
-                        'event_registrations': regs_count_by_user.get(mapped_user_id or '', 0),
+                        'assignment_submissions': submissions_count_by_user.get(mapped_user_id, 0),
+                        'event_registrations': regs_count_by_user.get(mapped_user_id, 0),
                     },
                 }
             )
 
-        faculty_node = faculty_groups.setdefault(
-            faculty_name,
-            {
-                'id': f"FAC-{abs(hash(faculty_name)) % 100000:05d}",
-                'name': faculty_name,
-                'courses': {},
-            },
-        )
-        course_key = str(course.get('_id'))
-        course_node = faculty_node['courses'].setdefault(
-            course_key,
-            {
-                'id': course_key,
-                'name': course.get('name') or 'Course',
-                'years': {},
-            },
-        )
-        year_key = str(year.get('_id'))
-        year_node = course_node['years'].setdefault(
-            year_key,
-            {
-                'id': year_key,
-                'name': year.get('label') or f"Year {year.get('year_number')}",
-                'branches': {},
-            },
-        )
-        branch_key = branch_name.lower()
-        branch_node = year_node['branches'].setdefault(
-            branch_key,
-            {
-                'id': f"BR-{abs(hash(branch_name + year_key)) % 100000:05d}",
-                'name': branch_name,
-                'sections': [],
-            },
-        )
-        branch_node['sections'].append(
+        subject_items = []
+        for subject_id in sorted(class_subject_ids.get(class_id, set())):
+            subject_doc = subject_by_id.get(subject_id)
+            if subject_doc:
+                subject_items.append(
+                    {
+                        'id': subject_id,
+                        'name': subject_doc.get('name') or subject_id,
+                        'code': subject_doc.get('code'),
+                    }
+                )
+
+        year_node['classes'].append(
             {
                 'id': class_id,
-                'name': section_name,
-                'teacher': teacher_name,
+                'name': class_doc.get('name') or class_id,
+                'coordinator': teacher_name,
                 'students': student_items,
+                'subjects': subject_items,
             }
         )
 
-    faculty_items = []
-    for faculty in faculty_groups.values():
-        course_items = []
-        for course in faculty['courses'].values():
-            year_items = []
-            for year in course['years'].values():
-                branch_items = []
-                for branch in year['branches'].values():
-                    branch_items.append(
-                        {
-                            'id': branch['id'],
-                            'name': branch['name'],
-                            'sections': branch['sections'],
-                        }
-                    )
-                year_items.append(
-                    {
-                        'id': year['id'],
-                        'name': year['name'],
-                        'branches': branch_items,
-                    }
-                )
-            course_items.append(
+    course_items = []
+    for course in tree.values():
+        year_items = []
+        for year in course['years'].values():
+            year_items.append(
                 {
-                    'id': course['id'],
-                    'name': course['name'],
-                    'years': year_items,
+                    'id': year['id'],
+                    'name': year['name'],
+                    'classes': year['classes'],
                 }
             )
-        faculty_items.append({'id': faculty['id'], 'name': faculty['name'], 'courses': course_items})
+        course_items.append(
+            {
+                'id': course['id'],
+                'name': course['name'],
+                'years': year_items,
+            }
+        )
 
     return {
         'university': {
@@ -354,5 +345,5 @@ async def academic_structure(
             'name': settings.app_name,
             'location': 'Indore, India',
         },
-        'faculties': faculty_items,
+        'courses': course_items,
     }

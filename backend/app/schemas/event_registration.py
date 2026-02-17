@@ -13,7 +13,7 @@ class EventRegistrationCreate(BaseModel):
     email: str | None = Field(default=None, max_length=320)
     year: str | None = Field(default=None, max_length=100)
     course_branch: str | None = Field(default=None, max_length=200)
-    section: str | None = Field(default=None, max_length=100)
+    class_name: str | None = Field(default=None, max_length=100)
     phone_number: str | None = Field(default=None, max_length=50)
     whatsapp_number: str | None = Field(default=None, max_length=50)
     payment_qr_code: str | None = Field(default=None, max_length=500)
@@ -28,7 +28,7 @@ class EventRegistrationOut(BaseModel):
     email: str | None = None
     year: str | None = None
     course_branch: str | None = None
-    section: str | None = None
+    class_name: str | None = None
     phone_number: str | None = None
     whatsapp_number: str | None = None
     payment_qr_code: str | None = None

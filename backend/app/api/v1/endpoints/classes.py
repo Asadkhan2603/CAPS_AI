@@ -18,7 +18,6 @@ async def list_classes(
     year_id: str | None = Query(default=None),
     faculty_name: str | None = Query(default=None),
     branch_name: str | None = Query(default=None),
-    section: str | None = Query(default=None),
     q: str | None = Query(default=None, min_length=1, max_length=100),
     is_active: bool | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
@@ -34,8 +33,6 @@ async def list_classes(
         query['faculty_name'] = faculty_name
     if branch_name:
         query['branch_name'] = branch_name
-    if section:
-        query['section'] = section
     if q:
         query['name'] = {'$regex': q, '$options': 'i'}
     if is_active is not None:
@@ -82,7 +79,6 @@ async def create_class(
         'name': payload.name.strip(),
         'faculty_name': payload.faculty_name.strip() if payload.faculty_name else None,
         'branch_name': payload.branch_name.strip() if payload.branch_name else None,
-        'section': payload.section,
         'class_coordinator_user_id': payload.class_coordinator_user_id,
         'is_active': True,
         'created_at': datetime.now(timezone.utc),

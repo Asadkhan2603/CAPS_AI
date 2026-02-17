@@ -9,7 +9,6 @@ class ClassCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     faculty_name: str | None = Field(default=None, max_length=120)
     branch_name: str | None = Field(default=None, max_length=120)
-    section: str | None = Field(default=None, max_length=20)
     class_coordinator_user_id: str | None = None
 
 
@@ -17,7 +16,6 @@ class ClassUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     faculty_name: str | None = Field(default=None, max_length=120)
     branch_name: str | None = Field(default=None, max_length=120)
-    section: str | None = Field(default=None, max_length=20)
     class_coordinator_user_id: str | None = None
     is_active: bool | None = None
 
@@ -29,7 +27,6 @@ class ClassOut(BaseModel):
     name: str
     faculty_name: str | None = None
     branch_name: str | None = None
-    section: str | None = None
     class_coordinator_user_id: str | None = None
     is_active: bool = True
     created_at: datetime | None = None

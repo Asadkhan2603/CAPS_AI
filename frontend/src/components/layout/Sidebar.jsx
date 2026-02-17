@@ -2,6 +2,8 @@ import {
   LogOut,
   LayoutDashboard,
   ChartNoAxesCombined,
+  ChevronDown,
+  ChevronRight,
   GraduationCap,
   BookOpen,
   FileText,
@@ -17,13 +19,13 @@ import {
   Library,
   CalendarRange,
   School,
-  Layers,
   Network,
   Building2,
-  GitBranch
+  GitBranch,
+  Wrench
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 import { canAccessFeature } from '../../utils/permissions';
 import { FEATURE_ACCESS } from '../../config/featureAccess';
@@ -31,50 +33,101 @@ import { apiClient } from '../../services/apiClient';
 import { useToast } from '../../hooks/useToast';
 import { formatApiError } from '../../utils/apiError';
 
-const mainItems = [
-  { to: '/dashboard', label: 'Dashboard', featureKey: 'dashboard', icon: LayoutDashboard },
-  { to: '/analytics', label: 'Analytics', featureKey: 'analytics', icon: ChartNoAxesCombined },
-  { to: '/academic-structure', label: 'Academic Structure', featureKey: 'academicStructure', icon: Network },
-  { to: '/students', label: 'Students', featureKey: 'students', icon: GraduationCap },
-  { to: '/subjects', label: 'Subjects', featureKey: 'subjects', icon: BookOpen },
-  { to: '/assignments', label: 'Assignments', featureKey: 'assignments', icon: FileText },
-  { to: '/submissions', label: 'Submissions', featureKey: 'submissions', icon: ClipboardCheck },
-  { to: '/review-tickets', label: 'Review Tickets', featureKey: 'reviewTickets', icon: ScrollText },
-  { to: '/evaluations', label: 'Evaluations', featureKey: 'evaluations', icon: CheckSquare },
-  { to: '/enrollments', label: 'Enrollments', featureKey: 'enrollments', icon: UserCheck },
-  { to: '/notices', label: 'Notices', featureKey: 'notices', icon: Megaphone },
-  { to: '/notifications', label: 'Notifications', featureKey: 'notifications', icon: Bell },
-  { to: '/clubs', label: 'Clubs', featureKey: 'clubs', icon: Users },
-  { to: '/club-events', label: 'Club Events', featureKey: 'clubEvents', icon: CalendarDays },
-  { to: '/audit-logs', label: 'Audit Logs', featureKey: 'auditLogs', icon: Shield },
-  { to: '/users', label: 'Users', featureKey: 'users', icon: Users }
-];
-
-const adminItems = [
-  { to: '/courses', label: 'Courses', featureKey: 'courses', icon: Library },
-  { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
-  { to: '/branches', label: 'Branches', featureKey: 'branches', icon: GitBranch },
-  { to: '/years', label: 'Years', featureKey: 'years', icon: CalendarRange },
-  { to: '/classes', label: 'Classes', featureKey: 'classes', icon: School },
-  { to: '/sections', label: 'Sections', featureKey: 'sections', icon: Layers },
-  { to: '/section-subjects', label: 'Section Subjects', featureKey: 'sectionSubjects', icon: Layers }
+const groupedItems = [
+  {
+    key: 'overview',
+    label: 'Overview',
+    items: [
+      { to: '/dashboard', label: 'Dashboard', featureKey: 'dashboard', icon: LayoutDashboard },
+      { to: '/analytics', label: 'Analytics', featureKey: 'analytics', icon: ChartNoAxesCombined },
+      { to: '/academic-structure', label: 'Academic Structure', featureKey: 'academicStructure', icon: Network }
+    ]
+  },
+  {
+    key: 'academics',
+    label: 'Academics',
+    items: [
+      { to: '/students', label: 'Students', featureKey: 'students', icon: GraduationCap },
+      { to: '/subjects', label: 'Subjects', featureKey: 'subjects', icon: BookOpen },
+      { to: '/assignments', label: 'Assignments', featureKey: 'assignments', icon: FileText },
+      { to: '/submissions', label: 'Submissions', featureKey: 'submissions', icon: ClipboardCheck },
+      { to: '/review-tickets', label: 'Review Tickets', featureKey: 'reviewTickets', icon: ScrollText },
+      { to: '/evaluations', label: 'Evaluations', featureKey: 'evaluations', icon: CheckSquare },
+      { to: '/enrollments', label: 'Enrollments', featureKey: 'enrollments', icon: UserCheck }
+    ]
+  },
+  {
+    key: 'communication',
+    label: 'Communication',
+    items: [
+      { to: '/notices', label: 'Notices', featureKey: 'notices', icon: Megaphone },
+      { to: '/notifications', label: 'Notifications', featureKey: 'notifications', icon: Bell }
+    ]
+  },
+  {
+    key: 'clubs',
+    label: 'Clubs',
+    items: [
+      { to: '/clubs', label: 'Clubs', featureKey: 'clubs', icon: Users },
+      { to: '/club-events', label: 'Club Events', featureKey: 'clubEvents', icon: CalendarDays }
+    ]
+  },
+  {
+    key: 'operations',
+    label: 'Operations',
+    items: [
+      { to: '/audit-logs', label: 'Audit Logs', featureKey: 'auditLogs', icon: Shield },
+      { to: '/developer-panel', label: 'Developer Panel', featureKey: 'developerPanel', icon: Wrench },
+      { to: '/users', label: 'Users', featureKey: 'users', icon: Users }
+    ]
+  },
+  {
+    key: 'setup',
+    label: 'Academic Setup',
+    items: [
+      { to: '/courses', label: 'Courses', featureKey: 'courses', icon: Library },
+      { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
+      { to: '/branches', label: 'Branches', featureKey: 'branches', icon: GitBranch },
+      { to: '/years', label: 'Years', featureKey: 'years', icon: CalendarRange },
+      { to: '/classes', label: 'Classes', featureKey: 'classes', icon: School }
+    ]
+  }
 ];
 
 export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, onLogout }) {
+  const location = useLocation();
   const { pushToast } = useToast();
   const role = user?.role;
   const isAdmin = role === 'admin';
   const [hasLogo, setHasLogo] = useState(false);
   const [logoVersion, setLogoVersion] = useState('');
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [openGroups, setOpenGroups] = useState({});
   const logoInputRef = useRef(null);
-  const visibleMainItems = mainItems.filter((item) =>
-    canAccessFeature(user, FEATURE_ACCESS[item.featureKey])
+  const roleGroupOrder = useMemo(() => {
+    if (role === 'admin') {
+      return ['overview', 'academics', 'communication', 'clubs', 'operations', 'setup'];
+    }
+    if (role === 'teacher') {
+      return ['overview', 'academics', 'communication', 'clubs', 'operations'];
+    }
+    return ['overview', 'academics', 'communication', 'clubs'];
+  }, [role]);
+  const visibleGroups = useMemo(
+    () =>
+      groupedItems
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => canAccessFeature(user, FEATURE_ACCESS[item.featureKey]))
+        }))
+        .filter((group) => group.items.length > 0)
+        .sort((a, b) => roleGroupOrder.indexOf(a.key) - roleGroupOrder.indexOf(b.key)),
+    [roleGroupOrder, user]
   );
-  const visibleAdminItems = adminItems.filter((item) =>
-    canAccessFeature(user, FEATURE_ACCESS[item.featureKey])
+  const flatVisibleItems = useMemo(
+    () => visibleGroups.flatMap((group) => group.items),
+    [visibleGroups]
   );
-  const items = role === 'admin' ? [...visibleMainItems, ...visibleAdminItems] : visibleMainItems;
   const backendBaseUrl = useMemo(() => {
     const base = apiClient.defaults.baseURL || '';
     return base.replace(/\/api\/v1\/?$/, '');
@@ -82,6 +135,23 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
   const logoUrl = hasLogo
     ? `${backendBaseUrl}/api/v1/branding/logo${logoVersion ? `?v=${encodeURIComponent(logoVersion)}` : ''}`
     : null;
+
+  useEffect(() => {
+    const next = {};
+    for (const group of visibleGroups) {
+      next[group.key] = group.key === 'overview';
+    }
+    setOpenGroups(next);
+  }, [visibleGroups]);
+
+  useEffect(() => {
+    const activeGroup = visibleGroups.find((group) =>
+      group.items.some((item) => location.pathname.startsWith(item.to))
+    );
+    if (activeGroup) {
+      setOpenGroups((prev) => ({ ...prev, [activeGroup.key]: true }));
+    }
+  }, [location.pathname, visibleGroups]);
 
   useEffect(() => {
     async function loadLogoMeta() {
@@ -178,26 +248,63 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
       </p>
 
       <nav className="flex-1 space-y-1 overflow-y-auto">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={onCloseMobile}
-            title={item.label}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition',
-                isActive
-                  ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
-                collapsed && 'justify-center px-2'
-              )
-            }
-          >
-            {item.icon ? <item.icon size={16} /> : null}
-            <span className={cn(collapsed && 'lg:hidden')}>{item.label}</span>
-          </NavLink>
-        ))}
+        {collapsed ? (
+          flatVisibleItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              onClick={onCloseMobile}
+              title={item.label}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition',
+                  isActive
+                    ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
+                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+                  'justify-center px-2'
+                )
+              }
+            >
+              {item.icon ? <item.icon size={16} /> : null}
+            </NavLink>
+          ))
+        ) : (
+          visibleGroups.map((group) => (
+            <div key={group.key} className="space-y-1">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                onClick={() => setOpenGroups((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
+              >
+                <span>{group.label}</span>
+                {openGroups[group.key] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {openGroups[group.key] ? (
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={onCloseMobile}
+                      title={item.label}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition',
+                          isActive
+                            ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
+                            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                        )
+                      }
+                    >
+                      {item.icon ? <item.icon size={16} /> : null}
+                      <span>{item.label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))
+        )}
       </nav>
 
       <button className="btn-secondary mt-4 justify-start" onClick={onLogout}>

@@ -22,7 +22,7 @@ router = APIRouter()
 async def list_assignments(
     q: str | None = Query(default=None, min_length=1, max_length=100),
     subject_id: str | None = Query(default=None),
-    section_id: str | None = Query(default=None),
+    class_id: str | None = Query(default=None),
     created_by: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     skip: int = Query(default=0, ge=0),
@@ -34,8 +34,8 @@ async def list_assignments(
         query["title"] = {"$regex": q, "$options": "i"}
     if subject_id:
         query["subject_id"] = subject_id
-    if section_id:
-        query["section_id"] = section_id
+    if class_id:
+        query["class_id"] = class_id
     if created_by:
         query["created_by"] = created_by
     if status_filter:
@@ -70,7 +70,7 @@ async def create_assignment(
         "title": payload.title.strip(),
         "description": payload.description,
         "subject_id": payload.subject_id,
-        "section_id": payload.section_id,
+        "class_id": payload.class_id,
         "due_date": payload.due_date,
         "total_marks": payload.total_marks,
         "status": payload.status,

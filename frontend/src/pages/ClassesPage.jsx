@@ -24,7 +24,6 @@ export default function ClassesPage() {
     name: '',
     department_code: '',
     branch_code: '',
-    section: '',
     class_coordinator_user_id: ''
   });
 
@@ -63,23 +62,34 @@ export default function ClassesPage() {
   );
 
   async function loadLookups() {
-    try {
-      const [coursesRes, yearsRes, usersRes, departmentsRes, branchesRes] = await Promise.all([
-        apiClient.get('/courses/', { params: { skip: 0, limit: 100 } }),
-        apiClient.get('/years/', { params: { skip: 0, limit: 100 } }),
-        apiClient.get('/users/'),
-        apiClient.get('/departments/', { params: { skip: 0, limit: 100 } }),
-        apiClient.get('/branches/', { params: { skip: 0, limit: 300 } })
-      ]);
-      setCourses(coursesRes.data || []);
-      setYears(yearsRes.data || []);
-      setTeachers((usersRes.data || []).filter((user) => user.role === 'teacher'));
-      setDepartments(departmentsRes.data || []);
-      setBranches(branchesRes.data || []);
-    } catch (err) {
+    const [coursesRes, yearsRes, usersRes, departmentsRes, branchesRes] = await Promise.allSettled([
+      apiClient.get('/courses/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/years/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/users/'),
+      apiClient.get('/departments/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/branches/', { params: { skip: 0, limit: 200 } })
+    ]);
+
+    setCourses(coursesRes.status === 'fulfilled' ? (coursesRes.value.data || []) : []);
+    setYears(yearsRes.status === 'fulfilled' ? (yearsRes.value.data || []) : []);
+    setTeachers(
+      usersRes.status === 'fulfilled'
+        ? ((usersRes.value.data || []).filter((user) => user.role === 'teacher'))
+        : []
+    );
+    setDepartments(departmentsRes.status === 'fulfilled' ? (departmentsRes.value.data || []) : []);
+    setBranches(branchesRes.status === 'fulfilled' ? (branchesRes.value.data || []) : []);
+
+    if (
+      coursesRes.status === 'rejected' ||
+      yearsRes.status === 'rejected' ||
+      usersRes.status === 'rejected' ||
+      departmentsRes.status === 'rejected' ||
+      branchesRes.status === 'rejected'
+    ) {
       pushToast({
-        title: 'Load failed',
-        description: formatApiError(err, 'Failed to load reference data'),
+        title: 'Partial load warning',
+        description: 'Some reference data failed to load. Try Refresh.',
         variant: 'error'
       });
     }
@@ -129,7 +139,6 @@ export default function ClassesPage() {
         name: form.name,
         faculty_name: form.department_code ? (departmentNameByCode[form.department_code] || null) : null,
         branch_name: form.branch_code ? (branchNameByCode[form.branch_code] || null) : null,
-        section: form.section || null,
         class_coordinator_user_id: form.class_coordinator_user_id || null
       });
       pushToast({ title: 'Created', description: 'Class created successfully.', variant: 'success' });
@@ -139,7 +148,6 @@ export default function ClassesPage() {
         name: '',
         department_code: '',
         branch_code: '',
-        section: '',
         class_coordinator_user_id: ''
       });
       setSkip(0);
@@ -158,7 +166,6 @@ export default function ClassesPage() {
       { key: 'branch_name', label: 'Branch', render: (row) => row.branch_name || '-' },
       { key: 'course_id', label: 'Course', render: (row) => courseNameById[row.course_id] || row.course_id },
       { key: 'year_id', label: 'Year', render: (row) => yearLabelById[row.year_id] || row.year_id },
-      { key: 'section', label: 'Section' },
       {
         key: 'class_coordinator_user_id',
         label: 'Coordinator',
@@ -326,16 +333,6 @@ export default function ClassesPage() {
                 <option key={branch.id} value={branch.code}>{branch.name}</option>
               ))}
             </select>
-          </label>
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Section</span>
-            <input
-              className="input"
-              value={form.section}
-              onChange={(e) => setForm((prev) => ({ ...prev, section: e.target.value }))}
-              placeholder="A / B / C"
-            />
           </label>
 
           <label className="block space-y-1">

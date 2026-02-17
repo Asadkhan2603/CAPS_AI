@@ -9,6 +9,7 @@ def user_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "email": document.get("email", ""),
         "role": document.get("role", ""),
         "extended_roles": document.get("extended_roles", []),
+        "role_scope": document.get("role_scope", {}) or {},
         "is_active": document.get("is_active", True),
         "profile": document.get("profile", {}) or {},
         "avatar_url": f"/api/v1/auth/profile/avatar/{user_id}" if document.get("avatar_filename") else None,

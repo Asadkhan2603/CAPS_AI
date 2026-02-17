@@ -7,28 +7,29 @@ function statusTone(status) {
   return 'success';
 }
 
-export default function TeacherSectionTiles({ items = [] }) {
+export default function TeacherClassTiles({ items = [] }) {
   if (!items.length) {
     return (
       <Card>
-        <h2 className="text-lg font-semibold">My Sections</h2>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No section-subject mappings found for this teacher.</p>
+        <h2 className="text-lg font-semibold">My Classes</h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No class analytics found for this teacher.</p>
       </Card>
     );
   }
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-semibold">My Sections</h2>
+      <h2 className="text-lg font-semibold">My Classes</h2>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {items.map((tile) => (
-          <Card key={`${tile.section_id}-${tile.subject_name}`} className="border-l-4 border-l-brand-500 transition hover:-translate-y-0.5">
+          <Card key={tile.class_id} className="border-l-4 border-l-brand-500 transition hover:-translate-y-0.5">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-base font-semibold">{tile.subject_name}</p>
+                <p className="text-base font-semibold">{tile.class_name}</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {tile.year || '-'} | {tile.class_name || '-'} | {tile.section_name || tile.section_id}
+                  Year: {tile.year_id || '-'}
                 </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Subjects: {(tile.subjects || []).join(', ') || '-'}</p>
               </div>
               <Badge variant={statusTone(tile.health_status)}>
                 {tile.health_status}
@@ -48,4 +49,3 @@ export default function TeacherSectionTiles({ items = [] }) {
     </div>
   );
 }
-

@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get("/", response_model=List[StudentOut])
 async def list_students(
     q: str | None = Query(default=None, min_length=1, max_length=100),
-    section_id: str | None = Query(default=None),
+    class_id: str | None = Query(default=None),
     is_active: bool | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
@@ -28,8 +28,8 @@ async def list_students(
             {"roll_number": {"$regex": q, "$options": "i"}},
             {"email": {"$regex": q, "$options": "i"}},
         ]
-    if section_id:
-        query["section_id"] = section_id
+    if class_id:
+        query["class_id"] = class_id
     if is_active is not None:
         query["is_active"] = is_active
 
@@ -58,19 +58,19 @@ async def create_student(
     if duplicate_roll:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Roll number already exists")
 
-    if payload.section_id:
-        section = await db.sections.find_one({"_id": parse_object_id(payload.section_id)})
-        if not section:
+    if payload.class_id:
+        class_doc = await db.classes.find_one({"_id": parse_object_id(payload.class_id)})
+        if not class_doc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Section not found for provided section_id",
+                detail="Class not found for provided class_id",
             )
 
     document = {
         "full_name": payload.full_name.strip(),
         "roll_number": payload.roll_number.strip(),
         "email": payload.email.lower().strip() if payload.email else None,
-        "section_id": payload.section_id,
+        "class_id": payload.class_id,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
     }
@@ -100,12 +100,12 @@ async def update_student(
         duplicate_roll = await db.students.find_one({"roll_number": update_data["roll_number"]})
         if duplicate_roll and duplicate_roll.get("_id") != student_obj_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Roll number already exists")
-    if "section_id" in update_data and update_data["section_id"]:
-        section = await db.sections.find_one({"_id": parse_object_id(update_data["section_id"])})
-        if not section:
+    if "class_id" in update_data and update_data["class_id"]:
+        class_doc = await db.classes.find_one({"_id": parse_object_id(update_data["class_id"])})
+        if not class_doc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Section not found for provided section_id",
+                detail="Class not found for provided class_id",
             )
 
     if not update_data:

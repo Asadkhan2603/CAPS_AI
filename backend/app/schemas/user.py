@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 UserRole = Literal["admin", "teacher", "student"]
-TeacherExtensionRole = Literal["year_head", "class_coordinator", "club_coordinator"]
+UserExtensionRole = Literal["year_head", "class_coordinator", "club_coordinator", "club_president"]
 
 
 class UserCreate(BaseModel):
@@ -12,7 +12,7 @@ class UserCreate(BaseModel):
     email: str = Field(min_length=5, max_length=255)
     password: str = Field(min_length=8, max_length=128)
     role: UserRole
-    extended_roles: list[TeacherExtensionRole] = Field(default_factory=list)
+    extended_roles: list[UserExtensionRole] = Field(default_factory=list)
 
 
 class UserLogin(BaseModel):
@@ -38,12 +38,29 @@ class UserProfile(BaseModel):
     website_url: str | None = Field(default=None, max_length=255)
 
 
+class ClassCoordinatorScope(BaseModel):
+    department_code: str | None = Field(default=None, max_length=60)
+    course_id: str | None = None
+    year_id: str | None = None
+    class_id: str | None = None
+
+
+class ClubPresidentScope(BaseModel):
+    club_id: str | None = None
+
+
+class UserRoleScope(BaseModel):
+    class_coordinator: ClassCoordinatorScope | None = None
+    club_president: ClubPresidentScope | None = None
+
+
 class UserOut(BaseModel):
     id: str
     full_name: str
     email: str
     role: UserRole
-    extended_roles: list[TeacherExtensionRole] = Field(default_factory=list)
+    extended_roles: list[UserExtensionRole] = Field(default_factory=list)
+    role_scope: UserRoleScope = Field(default_factory=UserRoleScope)
     is_active: bool = True
     profile: UserProfile = Field(default_factory=UserProfile)
     avatar_url: str | None = None
@@ -52,7 +69,8 @@ class UserOut(BaseModel):
 
 
 class UserExtensionRolesUpdate(BaseModel):
-    extended_roles: list[TeacherExtensionRole] = Field(default_factory=list)
+    extended_roles: list[UserExtensionRole] = Field(default_factory=list)
+    role_scope: UserRoleScope | None = None
 
 
 class UserProfileUpdate(BaseModel):

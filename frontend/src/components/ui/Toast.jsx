@@ -13,12 +13,29 @@ const tones = {
   info: 'border-brand-300 bg-brand-50 text-brand-900 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-100'
 };
 
+function extractErrorId(description = '') {
+  const match = String(description).match(/Error ID:\s*([A-Za-z0-9._:-]+)/i);
+  return match?.[1] || '';
+}
+
 export default function Toast({ toasts, onDismiss }) {
+  async function copyErrorId(errorId) {
+    if (!errorId || !navigator?.clipboard?.writeText) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(errorId);
+    } catch {
+      // no-op
+    }
+  }
+
   return (
     <div className="pointer-events-none fixed right-4 top-4 z-[70] space-y-3">
       <AnimatePresence>
         {toasts.map((toast) => {
           const Icon = icons[toast.variant] ?? Info;
+          const errorId = extractErrorId(toast.description);
           return (
             <motion.div
               key={toast.id}
@@ -32,6 +49,11 @@ export default function Toast({ toasts, onDismiss }) {
                 <div className="flex-1">
                   <p className="text-sm font-semibold">{toast.title}</p>
                   {toast.description ? <p className="mt-1 text-xs opacity-90">{toast.description}</p> : null}
+                  {errorId ? (
+                    <button className="btn-secondary mt-2 !px-2 !py-1 text-xs" onClick={() => copyErrorId(errorId)}>
+                      Copy Error ID
+                    </button>
+                  ) : null}
                 </div>
                 <button className="btn-secondary !p-1.5" onClick={() => onDismiss(toast.id)}>
                   <X size={14} />

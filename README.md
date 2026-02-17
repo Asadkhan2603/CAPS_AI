@@ -68,7 +68,7 @@ cd backend
 ## Core API Domains
 
 - Auth and users: `/api/v1/auth`, `/api/v1/users`
-- Academic structure: `/courses`, `/years`, `/classes`, `/sections`, `/section-subjects`, `/students`, `/subjects`
+- Academic structure: `/courses`, `/years`, `/classes`, `/students`, `/subjects`
 - Academic operations: `/assignments`, `/submissions`, `/evaluations`
 - Intelligence: `/similarity`, AI submission evaluation via `/submissions/{id}/ai-evaluate`
 - Institutional modules: `/analytics`, `/notices`, `/notifications`, `/clubs`, `/club-events`, `/event-registrations`

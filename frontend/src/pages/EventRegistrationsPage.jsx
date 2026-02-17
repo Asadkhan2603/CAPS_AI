@@ -16,7 +16,7 @@ const initialForm = {
   email: '',
   year: '',
   course_branch: '',
-  section: '',
+  class_name: '',
   phone_number: '',
   whatsapp_number: '',
   payment_qr_code: '',
@@ -54,7 +54,7 @@ export default function EventRegistrationsPage() {
       { key: 'email', label: 'Email', render: (row) => row.email || row.student_email || '-' },
       { key: 'year', label: 'Year' },
       { key: 'course_branch', label: 'Course Branch' },
-      { key: 'section', label: 'Section' },
+      { key: 'class_name', label: 'Class' },
       { key: 'phone_number', label: 'Phone' },
       { key: 'whatsapp_number', label: 'WhatsApp' },
       { key: 'status', label: 'Status' },
@@ -123,7 +123,7 @@ export default function EventRegistrationsPage() {
       multipart.append('email', form.email);
       multipart.append('year', form.year);
       multipart.append('course_branch', form.course_branch);
-      multipart.append('section', form.section);
+      multipart.append('class_name', form.class_name);
       multipart.append('phone_number', form.phone_number);
       multipart.append('whatsapp_number', form.whatsapp_number);
       if (form.payment_qr_code) {
@@ -199,7 +199,7 @@ export default function EventRegistrationsPage() {
               <FormInput label="Email" required type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
               <FormInput label="Year" required value={form.year} onChange={(e) => setForm((p) => ({ ...p, year: e.target.value }))} />
               <FormInput label="Course Branch" required value={form.course_branch} onChange={(e) => setForm((p) => ({ ...p, course_branch: e.target.value }))} />
-              <FormInput label="Section" required value={form.section} onChange={(e) => setForm((p) => ({ ...p, section: e.target.value }))} />
+              <FormInput label="Class" required value={form.class_name} onChange={(e) => setForm((p) => ({ ...p, class_name: e.target.value }))} />
               <FormInput label="Phone Number" required value={form.phone_number} onChange={(e) => setForm((p) => ({ ...p, phone_number: e.target.value }))} />
               <FormInput label="WhatsApp Number" required value={form.whatsapp_number} onChange={(e) => setForm((p) => ({ ...p, whatsapp_number: e.target.value }))} />
               <FormInput label="Payment QR Code (Optional)" value={form.payment_qr_code} onChange={(e) => setForm((p) => ({ ...p, payment_qr_code: e.target.value }))} />

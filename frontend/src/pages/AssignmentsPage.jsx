@@ -9,20 +9,20 @@ export default function AssignmentsPage() {
   const { pushToast } = useToast();
   const [pendingToggleIds, setPendingToggleIds] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [sections, setSections] = useState([]);
+  const [classes, setClasses] = useState([]);
 
   useEffect(() => {
     async function loadLookups() {
       try {
-        const [subjectsRes, sectionsRes] = await Promise.all([
+        const [subjectsRes, classesRes] = await Promise.all([
           apiClient.get('/subjects/', { params: { skip: 0, limit: 100 } }),
-          apiClient.get('/sections/', { params: { skip: 0, limit: 100 } })
+          apiClient.get('/classes/', { params: { skip: 0, limit: 200 } })
         ]);
         setSubjects(subjectsRes.data || []);
-        setSections(sectionsRes.data || []);
+        setClasses(classesRes.data || []);
       } catch {
         setSubjects([]);
-        setSections([]);
+        setClasses([]);
       }
     }
     loadLookups();
@@ -32,31 +32,31 @@ export default function AssignmentsPage() {
     () => subjects.map((subject) => ({ value: subject.id, label: `${subject.name} (${subject.code})` })),
     [subjects]
   );
-  const sectionOptions = useMemo(
+  const classOptions = useMemo(
     () =>
-      sections.map((section) => ({
-        value: section.id,
-        label: `${section.name} (${section.program} - ${section.academic_year})`
+      classes.map((item) => ({
+        value: item.id,
+        label: item.name
       })),
-    [sections]
+    [classes]
   );
   const subjectNameById = useMemo(
     () => Object.fromEntries(subjectOptions.map((item) => [item.value, item.label])),
     [subjectOptions]
   );
-  const sectionNameById = useMemo(
-    () => Object.fromEntries(sectionOptions.map((item) => [item.value, item.label])),
-    [sectionOptions]
+  const classNameById = useMemo(
+    () => Object.fromEntries(classOptions.map((item) => [item.value, item.label])),
+    [classOptions]
   );
 
   const filters = useMemo(
     () => [
       { name: 'q', label: 'Search', placeholder: 'Title' },
       { name: 'subject_id', label: 'Subject', type: 'select', options: subjectOptions, placeholder: 'All Subjects' },
-      { name: 'section_id', label: 'Section', type: 'select', options: sectionOptions, placeholder: 'All Sections' },
+      { name: 'class_id', label: 'Class', type: 'select', options: classOptions, placeholder: 'All Classes' },
       { name: 'status', label: 'Status', placeholder: 'open / closed' }
     ],
-    [sectionOptions, subjectOptions]
+    [classOptions, subjectOptions]
   );
 
   const createFields = useMemo(
@@ -64,13 +64,13 @@ export default function AssignmentsPage() {
       { name: 'title', label: 'Title', required: true },
       { name: 'description', label: 'Description', nullable: true },
       { name: 'subject_id', label: 'Subject', type: 'select', options: subjectOptions, nullable: true, placeholder: 'No Subject' },
-      { name: 'section_id', label: 'Section', type: 'select', options: sectionOptions, nullable: true, placeholder: 'No Section' },
+      { name: 'class_id', label: 'Class', type: 'select', options: classOptions, nullable: true, placeholder: 'No Class' },
       { name: 'due_date', label: 'Deadline', type: 'datetime', nullable: true },
       { name: 'total_marks', label: 'Total Marks', type: 'number', min: 1, max: 1000, defaultValue: 100, required: true },
       { name: 'status', label: 'Status', defaultValue: 'open', required: true },
       { name: 'plagiarism_enabled', label: 'Plagiarism Enabled', type: 'switch', defaultValue: true, required: true }
     ],
-    [sectionOptions, subjectOptions]
+    [classOptions, subjectOptions]
   );
 
   const onTogglePlagiarism = useCallback(async (row, nextValue) => {
@@ -97,7 +97,7 @@ export default function AssignmentsPage() {
     () => [
       { key: 'title', label: 'Title' },
       { key: 'subject_id', label: 'Subject', render: (row) => subjectNameById[row.subject_id] || row.subject_id || '-' },
-      { key: 'section_id', label: 'Section', render: (row) => sectionNameById[row.section_id] || row.section_id || '-' },
+      { key: 'class_id', label: 'Class', render: (row) => classNameById[row.class_id] || row.class_id || '-' },
       { key: 'due_date', label: 'Deadline', render: (row) => (row.due_date ? new Date(row.due_date).toLocaleString() : '-') },
       { key: 'total_marks', label: 'Marks' },
       { key: 'status', label: 'Status' },
@@ -134,7 +134,7 @@ export default function AssignmentsPage() {
         }
       }
     ],
-    [onTogglePlagiarism, pendingToggleIds, sectionNameById, subjectNameById, user?.role]
+    [classNameById, onTogglePlagiarism, pendingToggleIds, subjectNameById, user?.role]
   );
 
   return (

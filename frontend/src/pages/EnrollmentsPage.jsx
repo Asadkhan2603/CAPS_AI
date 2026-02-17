@@ -15,23 +15,19 @@ export default function EnrollmentsPage() {
   const { user } = useAuth();
   const [classes, setClasses] = useState([]);
   const [students, setStudents] = useState([]);
-  const [sections, setSections] = useState([]);
 
   useEffect(() => {
     async function loadLookups() {
       try {
-        const [classesRes, studentsRes, sectionsRes] = await Promise.all([
+        const [classesRes, studentsRes] = await Promise.all([
           apiClient.get('/classes/', { params: { skip: 0, limit: 100 } }),
-          apiClient.get('/students/', { params: { skip: 0, limit: 100 } }),
-          apiClient.get('/sections/', { params: { skip: 0, limit: 100 } })
+          apiClient.get('/students/', { params: { skip: 0, limit: 100 } })
         ]);
         setClasses(classesRes.data || []);
         setStudents(studentsRes.data || []);
-        setSections(sectionsRes.data || []);
       } catch {
         setClasses([]);
         setStudents([]);
-        setSections([]);
       }
     }
     loadLookups();
@@ -45,10 +41,6 @@ export default function EnrollmentsPage() {
     () => students.map((item) => ({ value: item.id, label: `${item.full_name} (${item.roll_number})` })),
     [students]
   );
-  const sectionOptions = useMemo(
-    () => sections.map((item) => ({ value: item.id, label: `${item.name} (${item.program})` })),
-    [sections]
-  );
   const classNameById = useMemo(
     () => Object.fromEntries(classOptions.map((item) => [item.value, item.label])),
     [classOptions]
@@ -57,11 +49,6 @@ export default function EnrollmentsPage() {
     () => Object.fromEntries(studentOptions.map((item) => [item.value, item.label])),
     [studentOptions]
   );
-  const sectionNameById = useMemo(
-    () => Object.fromEntries(sectionOptions.map((item) => [item.value, item.label])),
-    [sectionOptions]
-  );
-
   const filters = useMemo(
     () => [
       { name: 'class_id', label: 'Class', type: 'select', options: classOptions, placeholder: 'All Classes' },
@@ -73,21 +60,19 @@ export default function EnrollmentsPage() {
   const createFields = useMemo(
     () => [
       { name: 'class_id', label: 'Class', type: 'select', options: classOptions, required: true },
-      { name: 'student_id', label: 'Student', type: 'select', options: studentOptions, required: true },
-      { name: 'section_id', label: 'Section', type: 'select', options: sectionOptions, nullable: true, placeholder: 'No Section' }
+      { name: 'student_id', label: 'Student', type: 'select', options: studentOptions, required: true }
     ],
-    [classOptions, sectionOptions, studentOptions]
+    [classOptions, studentOptions]
   );
 
   const columns = useMemo(
     () => [
       { key: 'class_id', label: 'Class', render: (row) => classNameById[row.class_id] || row.class_id },
       { key: 'student_id', label: 'Student', render: (row) => studentNameById[row.student_id] || row.student_id },
-      { key: 'section_id', label: 'Section', render: (row) => sectionNameById[row.section_id] || row.section_id || '-' },
       { key: 'assigned_by_user_id', label: 'Assigned By' },
       { key: 'created_at', label: 'Created At', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') }
     ],
-    [classNameById, sectionNameById, studentNameById]
+    [classNameById, studentNameById]
   );
 
   return (
@@ -98,10 +83,6 @@ export default function EnrollmentsPage() {
       createFields={createFields}
       columns={columns}
       hideCreate={!canManageEnrollments(user)}
-      createTransform={(payload) => ({
-        ...payload,
-        section_id: payload.section_id || null
-      })}
     />
   );
 }
