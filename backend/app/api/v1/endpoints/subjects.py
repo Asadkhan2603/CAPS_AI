@@ -50,9 +50,14 @@ async def create_subject(
     payload: SubjectCreate,
     _current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> SubjectOut:
+    normalized_code = payload.code.strip().upper()
+    existing = await db.subjects.find_one({"code": normalized_code})
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subject code already exists")
+
     document = {
         "name": payload.name.strip(),
-        "code": payload.code.strip().upper(),
+        "code": normalized_code,
         "description": payload.description,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
@@ -68,22 +73,26 @@ async def update_subject(
     payload: SubjectUpdate,
     _current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> SubjectOut:
+    subject_obj_id = parse_object_id(subject_id)
     update_data = payload.model_dump(exclude_none=True)
     if "name" in update_data and update_data["name"]:
         update_data["name"] = update_data["name"].strip()
     if "code" in update_data and update_data["code"]:
         update_data["code"] = update_data["code"].strip().upper()
+        duplicate = await db.subjects.find_one({"code": update_data["code"]})
+        if duplicate and duplicate.get("_id") != subject_obj_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subject code already exists")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
     result = await db.subjects.update_one(
-        {"_id": parse_object_id(subject_id)},
+        {"_id": subject_obj_id},
         {"$set": update_data},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
 
-    updated = await db.subjects.find_one({"_id": parse_object_id(subject_id)})
+    updated = await db.subjects.find_one({"_id": subject_obj_id})
     return SubjectOut(**subject_public(updated))
 
 

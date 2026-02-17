@@ -59,6 +59,27 @@ async def create_section_subject(
     payload: SectionSubjectCreate,
     _current_user=Depends(require_roles(["admin"])),
 ) -> SectionSubjectOut:
+    section = await db.sections.find_one({"_id": parse_object_id(payload.section_id)})
+    if not section:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Section not found for provided section_id")
+
+    subject = await db.subjects.find_one({"_id": parse_object_id(payload.subject_id)})
+    if not subject:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subject not found for provided subject_id")
+
+    if payload.teacher_user_id:
+        teacher = await db.users.find_one({"_id": parse_object_id(payload.teacher_user_id)})
+        if not teacher:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Teacher not found for provided teacher_user_id",
+            )
+        if teacher.get("role") != "teacher":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="teacher_user_id must belong to a teacher role",
+            )
+
     existing = await db.section_subjects.find_one(
         {
             "section_id": payload.section_id,
@@ -89,19 +110,33 @@ async def update_section_subject(
     payload: SectionSubjectUpdate,
     _current_user=Depends(require_roles(["admin"])),
 ) -> SectionSubjectOut:
+    mapping_obj_id = parse_object_id(mapping_id)
     update_data = payload.model_dump(exclude_none=True)
+    if "teacher_user_id" in update_data and update_data["teacher_user_id"]:
+        teacher = await db.users.find_one({"_id": parse_object_id(update_data["teacher_user_id"])})
+        if not teacher:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Teacher not found for provided teacher_user_id",
+            )
+        if teacher.get("role") != "teacher":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="teacher_user_id must belong to a teacher role",
+            )
+
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
     result = await db.section_subjects.update_one(
-        {"_id": parse_object_id(mapping_id)},
+        {"_id": mapping_obj_id},
         {"$set": update_data},
     )
     if result.matched_count == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Section-subject mapping not found"
         )
-    updated = await db.section_subjects.find_one({"_id": parse_object_id(mapping_id)})
+    updated = await db.section_subjects.find_one({"_id": mapping_obj_id})
     return SectionSubjectOut(**section_subject_public(updated))
 
 

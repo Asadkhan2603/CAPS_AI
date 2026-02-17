@@ -50,9 +50,14 @@ async def create_course(
     payload: CourseCreate,
     _current_user=Depends(require_roles(['admin'])),
 ) -> CourseOut:
+    normalized_code = payload.code.strip().upper()
+    existing = await db.courses.find_one({'code': normalized_code})
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Course code already exists')
+
     document = {
         'name': payload.name.strip(),
-        'code': payload.code.strip().upper(),
+        'code': normalized_code,
         'description': payload.description,
         'is_active': True,
         'created_at': datetime.now(timezone.utc),
@@ -68,18 +73,22 @@ async def update_course(
     payload: CourseUpdate,
     _current_user=Depends(require_roles(['admin'])),
 ) -> CourseOut:
+    course_obj_id = parse_object_id(course_id)
     update_data = payload.model_dump(exclude_none=True)
     if 'name' in update_data and update_data['name']:
         update_data['name'] = update_data['name'].strip()
     if 'code' in update_data and update_data['code']:
         update_data['code'] = update_data['code'].strip().upper()
+        duplicate = await db.courses.find_one({'code': update_data['code']})
+        if duplicate and duplicate.get('_id') != course_obj_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Course code already exists')
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
-    result = await db.courses.update_one({'_id': parse_object_id(course_id)}, {'$set': update_data})
+    result = await db.courses.update_one({'_id': course_obj_id}, {'$set': update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Course not found')
-    updated = await db.courses.find_one({'_id': parse_object_id(course_id)})
+    updated = await db.courses.find_one({'_id': course_obj_id})
     return CourseOut(**course_public(updated))
 
 

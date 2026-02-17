@@ -53,6 +53,17 @@ async def create_year(
     payload: YearCreate,
     _current_user=Depends(require_roles(['admin'])),
 ) -> YearOut:
+    course = await db.courses.find_one({'_id': parse_object_id(payload.course_id)})
+    if not course:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Course not found for provided course_id')
+
+    existing = await db.years.find_one({'course_id': payload.course_id, 'year_number': payload.year_number})
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Year already exists for this course and year number',
+        )
+
     document = {
         'course_id': payload.course_id,
         'year_number': payload.year_number,
@@ -71,16 +82,33 @@ async def update_year(
     payload: YearUpdate,
     _current_user=Depends(require_roles(['admin'])),
 ) -> YearOut:
+    year_obj_id = parse_object_id(year_id)
+    current = await db.years.find_one({'_id': year_obj_id})
+    if not current:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Year not found')
+
     update_data = payload.model_dump(exclude_none=True)
     if 'label' in update_data and update_data['label']:
         update_data['label'] = update_data['label'].strip()
+    if 'year_number' in update_data:
+        duplicate = await db.years.find_one(
+            {
+                'course_id': current['course_id'],
+                'year_number': update_data['year_number'],
+            }
+        )
+        if duplicate and duplicate.get('_id') != year_obj_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Year already exists for this course and year number',
+            )
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
-    result = await db.years.update_one({'_id': parse_object_id(year_id)}, {'$set': update_data})
+    result = await db.years.update_one({'_id': year_obj_id}, {'$set': update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Year not found')
-    updated = await db.years.find_one({'_id': parse_object_id(year_id)})
+    updated = await db.years.find_one({'_id': year_obj_id})
     return YearOut(**year_public(updated))
 
 

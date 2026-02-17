@@ -56,6 +56,20 @@ async def create_class(
     payload: ClassCreate,
     _current_user=Depends(require_roles(['admin'])),
 ) -> ClassOut:
+    course = await db.courses.find_one({'_id': parse_object_id(payload.course_id)})
+    if not course:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Course not found for provided course_id')
+
+    year = await db.years.find_one({'_id': parse_object_id(payload.year_id)})
+    if not year:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Year not found for provided year_id')
+
+    if year.get('course_id') != payload.course_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='year_id does not belong to provided course_id',
+        )
+
     document = {
         'course_id': payload.course_id,
         'year_id': payload.year_id,
@@ -76,16 +90,43 @@ async def update_class(
     payload: ClassUpdate,
     _current_user=Depends(require_roles(['admin'])),
 ) -> ClassOut:
+    class_obj_id = parse_object_id(class_id)
+    current = await db.classes.find_one({'_id': class_obj_id})
+    if not current:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
+
     update_data = payload.model_dump(exclude_none=True)
     if 'name' in update_data and update_data['name']:
         update_data['name'] = update_data['name'].strip()
+
+    target_course_id = update_data.get('course_id', current.get('course_id'))
+    target_year_id = update_data.get('year_id', current.get('year_id'))
+    if target_course_id and target_year_id:
+        course = await db.courses.find_one({'_id': parse_object_id(target_course_id)})
+        if not course:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Course not found for provided course_id',
+            )
+        year = await db.years.find_one({'_id': parse_object_id(target_year_id)})
+        if not year:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Year not found for provided year_id',
+            )
+        if year.get('course_id') != target_course_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='year_id does not belong to provided course_id',
+            )
+
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
-    result = await db.classes.update_one({'_id': parse_object_id(class_id)}, {'$set': update_data})
+    result = await db.classes.update_one({'_id': class_obj_id}, {'$set': update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
-    updated = await db.classes.find_one({'_id': parse_object_id(class_id)})
+    updated = await db.classes.find_one({'_id': class_obj_id})
     return ClassOut(**class_public(updated))
 
 
