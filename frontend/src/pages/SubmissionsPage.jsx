@@ -20,6 +20,7 @@ export default function SubmissionsPage() {
   const [uploadStatus, setUploadStatus] = useState('idle');
   const [form, setForm] = useState({ assignment_id: '', notes: '', file: null });
   const [assignments, setAssignments] = useState([]);
+  const [bulkRunning, setBulkRunning] = useState(false);
   const canUploadSubmission = user?.role === 'student';
   const canRunAi = user?.role === 'admin' || user?.role === 'teacher';
   const canViewTeacherMarks = user?.role === 'admin';
@@ -43,7 +44,17 @@ export default function SubmissionsPage() {
         { key: 'file_size_bytes', label: 'Size (bytes)' },
         { key: 'status', label: 'Status' },
         { key: 'ai_status', label: 'AI Status' },
-        { key: 'ai_score', label: 'AI Score', render: (row) => (row.ai_score ?? '-') }
+        { key: 'ai_score', label: 'AI Score', render: (row) => (row.ai_score ?? '-') },
+        { key: 'ai_provider', label: 'AI Provider', render: (row) => row.ai_provider || '-' },
+        {
+          key: 'ai_feedback',
+          label: 'AI Feedback',
+          render: (row) => {
+            const text = row.ai_feedback || '-';
+            if (!row.ai_feedback) return text;
+            return text.length > 120 ? `${text.slice(0, 120)}...` : text;
+          }
+        }
       ];
 
       const marksColumns = canViewTeacherMarks
@@ -160,19 +171,52 @@ export default function SubmissionsPage() {
 
   async function onAiEvaluate(row) {
     try {
-      await apiClient.post(`/submissions/${row.id}/ai-evaluate`);
+      await apiClient.post(`/submissions/${row.id}/ai-evaluate`, null, {
+        params: { force: row.ai_status === 'completed' }
+      });
       pushToast({ title: 'AI evaluated', description: 'AI suggestion generated for submission.', variant: 'success' });
       await loadData();
     } catch (err) {
-      const detail = err?.response?.data?.detail || 'Failed to run AI evaluation';
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || 'Failed to run AI evaluation';
       pushToast({ title: 'AI evaluation failed', description: String(detail), variant: 'error' });
+    }
+  }
+
+  async function onRunPendingAi() {
+    setBulkRunning(true);
+    try {
+      const response = await apiClient.post('/submissions/ai-evaluate/pending', null, {
+        params: {
+          assignment_id: assignmentIdFilter || undefined,
+          limit: 50
+        }
+      });
+      const count = response?.data?.count ?? 0;
+      pushToast({
+        title: 'Bulk AI completed',
+        description: `${count} pending submissions evaluated.`,
+        variant: 'success'
+      });
+      await loadData();
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || 'Failed to run bulk AI evaluation';
+      pushToast({ title: 'Bulk AI failed', description: String(detail), variant: 'error' });
+    } finally {
+      setBulkRunning(false);
     }
   }
 
   return (
     <div className="space-y-4 page-fade">
       <Card className="space-y-4">
-        <h1 className="text-2xl font-semibold">Submissions</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-2xl font-semibold">Submissions</h1>
+          {canRunAi ? (
+            <button className="btn-secondary" onClick={onRunPendingAi} disabled={bulkRunning}>
+              {bulkRunning ? 'Running AI...' : 'Run AI For Pending'}
+            </button>
+          ) : null}
+        </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <FormInput
             as="select"
@@ -250,7 +294,7 @@ export default function SubmissionsPage() {
               ? [
                   {
                     key: 'ai-evaluate',
-                    label: 'Run AI',
+                    label: 'Run/Rerun AI',
                     className: 'text-brand-600 dark:text-brand-300',
                     onClick: onAiEvaluate
                   }

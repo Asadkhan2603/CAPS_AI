@@ -90,6 +90,16 @@ export default function EvaluationsPage() {
       { key: 'submission_id', label: 'Submission', render: (row) => submissionLabelById[row.submission_id] || row.submission_id },
       { key: 'student_user_id', label: 'Student', render: (row) => studentLabelById[row.student_user_id] || row.student_user_id },
       { key: 'teacher_user_id', label: 'Teacher', render: (row) => teacherLabelById[row.teacher_user_id] || row.teacher_user_id },
+      { key: 'ai_score', label: 'AI Score', render: (row) => (row.ai_score ?? '-') },
+      {
+        key: 'ai_feedback',
+        label: 'AI Feedback',
+        render: (row) => {
+          const text = row.ai_feedback || '-';
+          if (!row.ai_feedback) return text;
+          return text.length > 120 ? `${text.slice(0, 120)}...` : text;
+        }
+      },
       { key: 'internal_total', label: 'Internal' },
       { key: 'grand_total', label: 'Total' },
       { key: 'grade', label: 'Grade' },

@@ -49,6 +49,13 @@ class Settings:
         default_factory=lambda: _as_int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"), 60)
     )
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    openai_timeout_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("OPENAI_TIMEOUT_SECONDS", "20"), 20)
+    )
+    openai_max_output_tokens: int = field(
+        default_factory=lambda: _as_int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "400"), 400)
+    )
     similarity_threshold: float = field(
         default_factory=lambda: _as_float(os.getenv("SIMILARITY_THRESHOLD", "0.8"), 0.8)
     )

@@ -45,6 +45,22 @@ async def _teacher_can_access_submission(teacher_user_id: str, submission: dict)
     return await _teacher_can_access_assignment(teacher_user_id, assignment_id)
 
 
+async def _evaluate_submission_and_save(submission_obj_id, item: dict) -> dict:
+    extracted_text = item.get('extracted_text', '')
+    feedback = generate_ai_feedback(extracted_text, max_score=10.0)
+    ai_status = str(feedback.get('status') or 'failed')
+    update_data = {
+        'ai_status': ai_status,
+        'ai_score': feedback.get('score'),
+        'ai_feedback': feedback.get('summary'),
+        'ai_provider': feedback.get('provider'),
+        'ai_error': feedback.get('error'),
+    }
+    await db.submissions.update_one({'_id': submission_obj_id}, {'$set': update_data})
+    updated = await db.submissions.find_one({'_id': submission_obj_id})
+    return updated or item
+
+
 @router.get('/', response_model=List[SubmissionOut])
 async def list_submissions(
     assignment_id: str | None = Query(default=None),
@@ -159,6 +175,7 @@ async def upload_submission(
 @router.post('/{submission_id}/ai-evaluate', response_model=SubmissionOut)
 async def ai_evaluate_submission(
     submission_id: str,
+    force: bool = Query(default=False),
     current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> SubmissionOut:
     submission_obj_id = parse_object_id(submission_id)
@@ -171,27 +188,63 @@ async def ai_evaluate_submission(
         if not allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to evaluate this submission')
 
-    extracted_text = item.get('extracted_text', '')
-    feedback = generate_ai_feedback(extracted_text, max_score=10.0)
-    ai_status = str(feedback.get('status') or 'failed')
-    update_data = {
-        'ai_status': ai_status,
-        'ai_score': feedback.get('score'),
-        'ai_feedback': feedback.get('summary'),
-        'ai_provider': feedback.get('provider'),
-        'ai_error': feedback.get('error'),
-    }
+    if item.get('ai_status') == 'completed' and not force:
+        return SubmissionOut(**submission_public(item))
 
-    await db.submissions.update_one({'_id': submission_obj_id}, {'$set': update_data})
-    updated = await db.submissions.find_one({'_id': submission_obj_id})
+    await db.submissions.update_one({'_id': submission_obj_id}, {'$set': {'ai_status': 'running'}})
+    updated = await _evaluate_submission_and_save(submission_obj_id, item)
     await log_audit_event(
         actor_user_id=str(current_user['_id']),
         action='ai_evaluate',
         entity_type='submission',
         entity_id=submission_id,
-        detail=f"AI evaluation status={ai_status}",
+        detail=f"AI evaluation status={updated.get('ai_status')}",
     )
     return SubmissionOut(**submission_public(updated))
+
+
+@router.post('/ai-evaluate/pending')
+async def ai_evaluate_pending_submissions(
+    assignment_id: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> dict:
+    query = {'ai_status': {'$in': ['pending', 'failed', None]}}
+    if assignment_id:
+        query['assignment_id'] = assignment_id
+
+    items = await db.submissions.find(query).limit(limit).to_list(length=limit)
+    evaluated = []
+    teacher_user_id = str(current_user['_id'])
+
+    for item in items:
+        if current_user.get('role') == 'teacher':
+            allowed = await _teacher_can_access_submission(teacher_user_id, item)
+            if not allowed:
+                continue
+        submission_id = str(item.get('_id'))
+        submission_obj_id = parse_object_id(submission_id)
+        await db.submissions.update_one({'_id': submission_obj_id}, {'$set': {'ai_status': 'running'}})
+        updated = await _evaluate_submission_and_save(submission_obj_id, item)
+        await log_audit_event(
+            actor_user_id=str(current_user['_id']),
+            action='ai_evaluate',
+            entity_type='submission',
+            entity_id=submission_id,
+            detail=f"Bulk AI evaluation status={updated.get('ai_status')}",
+        )
+        evaluated.append(
+            {
+                'submission_id': submission_id,
+                'ai_status': updated.get('ai_status'),
+                'ai_score': updated.get('ai_score'),
+            }
+        )
+
+    return {
+        'count': len(evaluated),
+        'items': evaluated,
+    }
 
 
 @router.put('/{submission_id}', response_model=SubmissionOut)
