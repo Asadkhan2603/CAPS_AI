@@ -33,30 +33,40 @@ def generate_ai_feedback(text: str, *, max_score: float = 10.0) -> Dict[str, str
             }
 
         client = OpenAI(api_key=settings.openai_api_key, timeout=float(settings.openai_timeout_seconds))
-        response = client.responses.create(
-            model=settings.openai_model,
-            max_output_tokens=settings.openai_max_output_tokens,
-            temperature=0.2,
-            input=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You evaluate student submissions. Return strict JSON only with keys "
-                        "`score` (number) and `summary` (string). Score must be between 0 and 10."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        "Evaluate the following submission text. Focus on clarity, relevance, structure, "
-                        "and technical quality. Keep summary concise (max 80 words).\n\n"
-                        f"Submission:\n{text or ''}"
-                    ),
-                },
-            ],
+        system_prompt = (
+            "You evaluate student submissions. Return strict JSON only with keys "
+            "`score` (number) and `summary` (string). Score must be between 0 and 10."
+        )
+        user_prompt = (
+            "Evaluate the following submission text. Focus on clarity, relevance, structure, "
+            "and technical quality. Keep summary concise (max 80 words).\n\n"
+            f"Submission:\n{text or ''}"
         )
 
-        raw = (getattr(response, "output_text", "") or "").strip()
+        raw = ""
+        if hasattr(client, "responses"):
+            response = client.responses.create(
+                model=settings.openai_model,
+                max_output_tokens=settings.openai_max_output_tokens,
+                temperature=0.2,
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            raw = (getattr(response, "output_text", "") or "").strip()
+        else:
+            response = client.chat.completions.create(
+                model=settings.openai_model,
+                temperature=0.2,
+                max_tokens=settings.openai_max_output_tokens,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            raw = ((response.choices[0].message.content or "") if response.choices else "").strip()
+
         if not raw:
             raise ValueError("Empty AI response text")
 
