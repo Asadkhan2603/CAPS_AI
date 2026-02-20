@@ -1,0 +1,30 @@
+export const FEATURE_ACCESS = {
+  dashboard: { allowedRoles: ['admin', 'teacher', 'student'] },
+  analytics: { allowedRoles: ['admin', 'teacher', 'student'] },
+  history: { allowedRoles: ['admin', 'teacher', 'student'] },
+  profile: { allowedRoles: ['admin', 'teacher', 'student'] },
+  academicStructure: { allowedRoles: ['admin', 'teacher', 'student'] },
+  students: { allowedRoles: ['admin', 'teacher'] },
+  subjects: { allowedRoles: ['admin', 'teacher'] },
+  assignments: { allowedRoles: ['admin', 'teacher'] },
+  submissions: { allowedRoles: ['admin', 'teacher', 'student'] },
+  reviewTickets: { allowedRoles: ['admin', 'teacher'] },
+  evaluations: { allowedRoles: ['admin', 'teacher', 'student'] },
+  enrollments: {
+    allowedRoles: ['admin', 'teacher'],
+    requiredTeacherExtensions: ['year_head', 'class_coordinator']
+  },
+  notices: { allowedRoles: ['admin', 'teacher', 'student'] },
+  notifications: { allowedRoles: ['admin', 'teacher', 'student'] },
+  clubs: { allowedRoles: ['admin', 'teacher', 'student'] },
+  clubEvents: { allowedRoles: ['admin', 'teacher', 'student'] },
+  eventRegistrations: { allowedRoles: ['admin', 'teacher', 'student'] },
+  auditLogs: { allowedRoles: ['admin', 'teacher'] },
+  developerPanel: { allowedRoles: ['admin'] },
+  users: { allowedRoles: ['admin'] },
+  courses: { allowedRoles: ['admin'] },
+  departments: { allowedRoles: ['admin'] },
+  branches: { allowedRoles: ['admin'] },
+  years: { allowedRoles: ['admin'] },
+  classes: { allowedRoles: ['admin'] }
+};

@@ -1,39 +1,51 @@
-:root {
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  color: #121826;
-  background: #f3f4f6;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-slate-100 text-slate-800 antialiased dark:bg-slate-950 dark:text-slate-100;
+  }
 }
 
-* {
-  box-sizing: border-box;
+@layer components {
+  .panel {
+    @apply rounded-2xl bg-white/95 p-5 shadow-soft ring-1 ring-slate-200/60 dark:bg-slate-900 dark:ring-slate-800;
+  }
+
+  .page-fade {
+    @apply motion-safe:animate-[fadeIn_220ms_ease-out];
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-500 hover:shadow-lg hover:shadow-brand-600/25;
+  }
+
+  .btn-secondary {
+    @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:focus:border-brand-400 dark:focus:ring-brand-900/60;
+  }
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 
-.page {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-}
-
-.card {
-  width: min(680px, 100%);
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.07);
-}
-
-h1 {
-  margin: 0 0 12px;
-}
-
-p {
-  margin: 0 0 8px;
-  line-height: 1.5;
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

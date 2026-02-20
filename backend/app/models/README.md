@@ -1,10 +1,11 @@
 ﻿# MongoDB Collections
 Planned collections from roadmap:
 - Users
-- Sections
+- Courses
+- Years
+- Classes
 - Students
 - Subjects
-- SectionSubjects
 - Assignments
 - Submissions
 - Evaluations

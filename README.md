@@ -1,68 +1,83 @@
-# CAPS AI
+﻿# CAPS AI
 
-AI-assisted academic evaluation and plagiarism monitoring system.
+Enterprise academic governance and AI-assisted evaluation platform.
 
-## Current Baseline (Week 1 Setup)
+Master plan reference:
+- `DOC'S/CAPS_AI_ULTRA_PRO_MASTER_ROADMAP.md`
 
-- Backend: FastAPI project with modular API routers and health endpoints.
-- Frontend: React + Vite app with routing and API connectivity check.
-- Database target: MongoDB (via Motor driver in backend core).
+## Current Implementation Status
+
+Completed backend phases (roadmap-aligned):
+- Phase 1: Foundation setup, auth, RBAC, health APIs
+- Phase 2: Academic core CRUD, role extensions, enrollment mapping
+- Phase 3: Assignments, submissions, evaluation lock workflow
+- Phase 4: AI suggestion pipeline and similarity engine
+- Phase 5: Analytics, notices, clubs/events, registration constraints
+- Phase 6 (in progress): hardening and release readiness
 
 ## Project Structure
 
-- `backend/` FastAPI app, services, schemas, tests, and Python dependencies.
-- `frontend/` React app scaffold, routes, styles, and API client.
-- `docs/` Documentation files.
-- `scripts/` Helper scripts.
+- `backend/` FastAPI services, endpoints, schemas, models, tests
+- `frontend/` React (Vite) SaaS dashboard frontend
+- `DOC'S/` authoritative roadmap and planning documents
+- `docs/` supplementary notes
 
 ## Prerequisites
 
-- Python 3.11+ (recommended)
-- Node.js 20+ and npm
-- MongoDB local instance on `mongodb://localhost:27017`
+- Python 3.11+
+- Node.js 20+
+- MongoDB on `mongodb://localhost:27017`
 
-## Backend Setup
+## Backend Run
 
 ```bash
 cd backend
 python -m venv .venv
-.venv\\Scripts\\activate
+.venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Backend URLs:
-
 - API: `http://localhost:8000`
-- Docs: `http://localhost:8000/docs`
+- OpenAPI docs: `http://localhost:8000/docs`
 - Health: `http://localhost:8000/health`
 
-## Frontend Setup
+## Frontend Run
 
 ```bash
 cd frontend
 npm install
 copy .env.example .env
-npm run dev
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
 Frontend URL:
-
 - App: `http://localhost:5173`
 
-## Run Tests
+## Test Commands
+
+Use project virtualenv Python to avoid global-package conflicts:
 
 ```bash
 cd backend
-pytest -q
+.venv\Scripts\python.exe -m pytest -q
 ```
 
-## Immediate Next Development Targets
+## Core API Domains
 
-1. Implement authentication (JWT login/register and role guards).
-2. Add MongoDB CRUD for sections, students, subjects, assignments.
-3. Connect submission upload parsing and similarity engine.
-4. Build analytics and evaluation workflows end-to-end.
+- Auth and users: `/api/v1/auth`, `/api/v1/users`
+- Academic structure: `/courses`, `/years`, `/classes`, `/students`, `/subjects`
+- Academic operations: `/assignments`, `/submissions`, `/evaluations`
+- Intelligence: `/similarity`, AI submission evaluation via `/submissions/{id}/ai-evaluate`
+- Institutional modules: `/analytics`, `/notices`, `/notifications`, `/clubs`, `/club-events`, `/event-registrations`
+- Governance: `/audit-logs`, `/enrollments`
 
-Roadmap reference: `DOC'S/CAPS_AI_Project_Roadmap.md`.
+## Security Baseline
+
+- JWT auth with role and extension-role checks
+- PBKDF2-SHA256 password hashing
+- File type and upload size validation
+- CORS-configured local origins
+- Security response headers (`X-Content-Type-Options`, `X-Frame-Options`, etc.)
