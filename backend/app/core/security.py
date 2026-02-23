@@ -14,6 +14,31 @@ from app.core.database import db
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/login")
 
+ROLE_PERMISSIONS = {
+    "super_admin": {"*"},
+    "admin": {
+        "users.read",
+        "users.update",
+        "clubs.manage",
+        "courses.manage",
+        "announcements.publish",
+        "audit.read",
+        "analytics.read",
+        "system.read",
+    },
+    "academic_admin": {
+        "courses.manage",
+        "departments.manage",
+        "sections.manage",
+        "analytics.read",
+    },
+    "compliance_admin": {
+        "audit.read",
+        "analytics.read",
+        "system.read",
+    },
+}
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
@@ -48,6 +73,7 @@ def create_access_token(
     user_id: str,
     email: str,
     role: str,
+    admin_type: str | None = None,
     extended_roles: List[str] | None = None,
     minutes: int | None = None,
 ) -> str:
@@ -57,6 +83,7 @@ def create_access_token(
         "sub": user_id,
         "email": email,
         "role": role,
+        "admin_type": admin_type,
         "extended_roles": extended_roles or [],
         "exp": expire,
     }
@@ -159,3 +186,35 @@ def require_admin_or_teacher_extensions(allowed_extensions: List[str]) -> Callab
         return current_user
 
     return dependency
+
+
+def _resolved_admin_type(current_user: Dict[str, str]) -> str:
+    admin_type = current_user.get("admin_type")
+    if admin_type:
+        return admin_type
+    # Backward compatibility for legacy admin users without admin_type.
+    if current_user.get("role") == "admin":
+        return "admin"
+    return ""
+
+
+def has_permission(current_user: Dict[str, str], permission: str) -> bool:
+    if current_user.get("role") != "admin":
+        return False
+    admin_type = _resolved_admin_type(current_user)
+    allowed = ROLE_PERMISSIONS.get(admin_type, set())
+    return "*" in allowed or permission in allowed
+
+
+def require_permission(permission: str) -> Callable:
+    async def permission_dependency(
+        current_user: Dict[str, str] = Depends(get_current_user),
+    ) -> Dict[str, str]:
+        if not has_permission(current_user, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required permission: {permission}",
+            )
+        return current_user
+
+    return permission_dependency

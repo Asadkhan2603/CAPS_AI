@@ -8,6 +8,7 @@ def user_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "full_name": document.get("full_name", ""),
         "email": document.get("email", ""),
         "role": document.get("role", ""),
+        "admin_type": document.get("admin_type", "admin" if document.get("role") == "admin" else None),
         "extended_roles": document.get("extended_roles", []),
         "role_scope": document.get("role_scope", {}) or {},
         "is_active": document.get("is_active", True),

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_roles
+from app.core.security import require_permission
 from app.models.users import user_public
 from app.schemas.user import UserExtensionRolesUpdate, UserOut
 from app.services.audit import log_audit_event
@@ -19,7 +19,7 @@ ROLE_ALLOWED_EXTENSIONS = {
 
 @router.get("/", response_model=List[UserOut])
 async def list_users(
-    _current_user=Depends(require_roles(["admin"])),
+    _current_user=Depends(require_permission("users.read")),
 ) -> List[UserOut]:
     users = await db.users.find({}).to_list(length=1000)
     return [UserOut(**user_public(user)) for user in users]
@@ -29,7 +29,7 @@ async def list_users(
 async def update_user_extension_roles(
     user_id: str,
     payload: UserExtensionRolesUpdate,
-    current_user=Depends(require_roles(["admin"])),
+    current_user=Depends(require_permission("users.update")),
 ) -> UserOut:
     user_obj_id = parse_object_id(user_id)
     user = await db.users.find_one({"_id": user_obj_id})

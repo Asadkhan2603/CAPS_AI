@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
+    admin_system,
     ai,
     analytics,
     assignments,
@@ -57,3 +58,4 @@ api_router.include_router(
     prefix="/event-registrations",
     tags=["event-registrations"],
 )
+api_router.include_router(admin_system.router, prefix="/admin/system", tags=["admin-system"])

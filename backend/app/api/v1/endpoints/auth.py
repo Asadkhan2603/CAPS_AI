@@ -39,6 +39,14 @@ async def register_user(payload: UserCreate) -> UserOut:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin account registration is closed",
             )
+        admin_type = payload.admin_type or "super_admin"
+    else:
+        if payload.admin_type is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="admin_type is allowed only for admin accounts",
+            )
+        admin_type = None
 
     existing_user = await db.users.find_one({"email": email})
     if existing_user:
@@ -53,6 +61,7 @@ async def register_user(payload: UserCreate) -> UserOut:
         "email": email,
         "hashed_password": get_password_hash(payload.password),
         "role": payload.role,
+        "admin_type": admin_type,
         "extended_roles": extended_roles,
         "is_active": True,
         "must_change_password": False,
@@ -99,6 +108,7 @@ async def login_user(payload: UserLogin) -> Token:
         user_id=str(user["_id"]),
         email=user["email"],
         role=user["role"],
+        admin_type=user.get("admin_type"),
         extended_roles=user.get("extended_roles", []),
     )
     return Token(access_token=token, user=UserOut(**user_public(user)))
