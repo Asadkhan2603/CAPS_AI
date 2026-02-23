@@ -7,6 +7,7 @@ import { apiClient } from '../../services/apiClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
 import { formatApiError } from '../../utils/apiError';
+import { isNoticeRead, markNoticeRead, markNoticesRead, unreadNoticeCount } from '../../utils/noticeReadTracker';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -31,6 +32,7 @@ export default function AnnouncementsPage() {
   const [years, setYears] = useState([]);
   const [sections, setSections] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [noticeReadVersion, setNoticeReadVersion] = useState(0);
 
   const canCreate = user?.role === 'admin' || user?.role === 'teacher';
 
@@ -188,7 +190,9 @@ export default function AnnouncementsPage() {
     });
 
     return filtered;
-  }, [activeFilter, notices, search, user?.id]);
+  }, [activeFilter, notices, search, user?.id, noticeReadVersion]);
+
+  const unreadCount = useMemo(() => unreadNoticeCount(user?.id, visibleNotices), [user?.id, visibleNotices, noticeReadVersion]);
 
   const paged = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -232,6 +236,17 @@ export default function AnnouncementsPage() {
     }
   }
 
+  function handleMarkRead(noticeId) {
+    markNoticeRead(user?.id, noticeId);
+    setNoticeReadVersion((v) => v + 1);
+  }
+
+  function handleMarkAllRead() {
+    markNoticesRead(user?.id, visibleNotices.map((item) => item.id));
+    setNoticeReadVersion((v) => v + 1);
+    pushToast({ title: 'Done', description: 'All visible announcements marked as read.', variant: 'success' });
+  }
+
   return (
     <div className="page-fade">
       <div className="mx-auto max-w-5xl">
@@ -272,6 +287,9 @@ export default function AnnouncementsPage() {
                 <Plus size={15} /> New Announcement
               </button>
             ) : null}
+            <button className="btn-secondary" onClick={handleMarkAllRead} disabled={visibleNotices.length === 0}>
+              Mark All Read ({unreadCount})
+            </button>
           </div>
         </div>
 
@@ -281,7 +299,15 @@ export default function AnnouncementsPage() {
 
           {paged.map((notice) => {
             const audienceText = notice.scope === 'college' ? 'Entire college' : audienceNameById[notice.scope_ref_id] || 'Targeted audience';
-            return <AnnouncementCard key={notice.id} notice={notice} audienceText={audienceText} />;
+            return (
+              <AnnouncementCard
+                key={notice.id}
+                notice={notice}
+                audienceText={audienceText}
+                isRead={isNoticeRead(user?.id, notice.id)}
+                onMarkRead={handleMarkRead}
+              />
+            );
           })}
         </div>
 

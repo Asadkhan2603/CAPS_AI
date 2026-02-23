@@ -9,6 +9,7 @@ const LoginPage = lazy(() => import('../pages/LoginPage'));
 const RegisterPage = lazy(() => import('../pages/RegisterPage'));
 const DashboardPage = lazy(() => import('../pages/DashboardPage'));
 const HistoryPage = lazy(() => import('../pages/HistoryPage'));
+const TimetablePage = lazy(() => import('../pages/TimetablePage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
 const AcademicStructurePage = lazy(() => import('../pages/AcademicStructurePage'));
 const AnalyticsPage = lazy(() => import('../pages/AnalyticsPage'));
@@ -27,14 +28,12 @@ const CommunicationAnnouncementsPage = lazy(() => import('../pages/Communication
 const CommunicationMessagesPage = lazy(() => import('../pages/Communication/MessagesPage'));
 const NoticesPage = lazy(() => import('../pages/NoticesPage'));
 const ClubsPage = lazy(() => import('../pages/ClubsPage'));
-const ClubEventsPage = lazy(() => import('../pages/ClubEventsPage'));
 const NotificationsPage = lazy(() => import('../pages/NotificationsPage'));
 const EvaluationsPage = lazy(() => import('../pages/EvaluationsPage'));
 const EnrollmentsPage = lazy(() => import('../pages/EnrollmentsPage'));
 const AuditLogsPage = lazy(() => import('../pages/AuditLogsPage'));
 const DeveloperPanelPage = lazy(() => import('../pages/DeveloperPanelPage'));
 const UsersPage = lazy(() => import('../pages/UsersPage'));
-const EventRegistrationsPage = lazy(() => import('../pages/EventRegistrationsPage'));
 const EvaluateSubmissionPage = lazy(() => import('../pages/Teacher/EvaluateSubmission'));
 
 export function AppRoutes() {
@@ -57,6 +56,14 @@ export function AppRoutes() {
             element={
               <ProtectedRoute {...FEATURE_ACCESS.history}>
                 <HistoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/timetable"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.timetable}>
+                <TimetablePage />
               </ProtectedRoute>
             }
           />
@@ -223,8 +230,8 @@ export function AppRoutes() {
           <Route
             path="/club-events"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.clubEvents}>
-                <ClubEventsPage />
+              <ProtectedRoute {...FEATURE_ACCESS.clubs}>
+                <Navigate to="/clubs" replace />
               </ProtectedRoute>
             }
           />
@@ -247,8 +254,8 @@ export function AppRoutes() {
           <Route
             path="/event-registrations"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.eventRegistrations}>
-                <EventRegistrationsPage />
+              <ProtectedRoute {...FEATURE_ACCESS.clubs}>
+                <Navigate to="/clubs" replace />
               </ProtectedRoute>
             }
           />

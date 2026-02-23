@@ -22,7 +22,8 @@ import {
   Network,
   Building2,
   GitBranch,
-  Wrench
+  Wrench,
+  History
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -40,6 +41,8 @@ const groupedItems = [
     items: [
       { to: '/dashboard', label: 'Dashboard', featureKey: 'dashboard', icon: LayoutDashboard },
       { to: '/analytics', label: 'Analytics', featureKey: 'analytics', icon: ChartNoAxesCombined },
+      { to: '/history', label: 'History', featureKey: 'history', icon: History },
+      { to: '/timetable', label: 'Timetable', featureKey: 'timetable', icon: CalendarDays },
       { to: '/academic-structure', label: 'Academic Structure', featureKey: 'academicStructure', icon: Network }
     ]
   },
@@ -69,8 +72,7 @@ const groupedItems = [
     key: 'clubs',
     label: 'Clubs',
     items: [
-      { to: '/clubs', label: 'Clubs', featureKey: 'clubs', icon: Users },
-      { to: '/club-events', label: 'Club Events', featureKey: 'clubEvents', icon: CalendarDays }
+      { to: '/clubs', label: 'Clubs Hub', featureKey: 'clubs', icon: Users }
     ]
   },
   {
@@ -119,11 +121,16 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
       groupedItems
         .map((group) => ({
           ...group,
-          items: group.items.filter((item) => canAccessFeature(user, FEATURE_ACCESS[item.featureKey]))
+          items: group.items.filter((item) => {
+            if (role === 'student' && item.to === '/academic-structure') {
+              return false;
+            }
+            return canAccessFeature(user, FEATURE_ACCESS[item.featureKey]);
+          })
         }))
         .filter((group) => group.items.length > 0)
         .sort((a, b) => roleGroupOrder.indexOf(a.key) - roleGroupOrder.indexOf(b.key)),
-    [roleGroupOrder, user]
+    [role, roleGroupOrder, user]
   );
   const flatVisibleItems = useMemo(
     () => visibleGroups.flatMap((group) => group.items),

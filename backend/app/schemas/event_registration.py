@@ -3,7 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-RegistrationStatus = Literal["registered", "cancelled"]
+RegistrationStatus = Literal["registered", "pending", "approved", "rejected", "cancelled"]
+AttendanceStatus = Literal["present", "absent"]
 
 
 class EventRegistrationCreate(BaseModel):
@@ -39,5 +40,6 @@ class EventRegistrationOut(BaseModel):
     student_name: str | None = None
     student_email: str | None = None
     status: RegistrationStatus = "registered"
+    attendance_status: AttendanceStatus | None = None
+    certificate_issued: bool = False
     created_at: datetime | None = None
-

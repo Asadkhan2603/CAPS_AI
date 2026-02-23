@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Clock3, FileCheck2, Files, Search } from 'lucide-react';
 import Card from '../components/ui/Card';
 import FormInput from '../components/ui/FormInput';
 import FileUpload from '../components/ui/FileUpload';
 import Table from '../components/ui/Table';
+import Badge from '../components/ui/Badge';
 import { apiClient } from '../services/apiClient';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../hooks/useAuth';
@@ -22,11 +24,14 @@ export default function SubmissionsPage() {
   const [uploadStatus, setUploadStatus] = useState('idle');
   const [form, setForm] = useState({ assignment_id: '', notes: '', file: null });
   const [assignments, setAssignments] = useState([]);
+  const [studentQuery, setStudentQuery] = useState('');
+  const [studentStatusFilter, setStudentStatusFilter] = useState('');
   const [bulkRunning, setBulkRunning] = useState(false);
   const canUploadSubmission = user?.role === 'student';
   const canRunAi = user?.role === 'admin' || user?.role === 'teacher';
   const canOpenEvaluationConsole = user?.role === 'admin' || user?.role === 'teacher';
   const canViewTeacherMarks = user?.role === 'admin';
+  const isStudent = user?.role === 'student';
   const assignmentLabelById = useMemo(
     () =>
       Object.fromEntries(
@@ -75,6 +80,41 @@ export default function SubmissionsPage() {
       ];
     },
     [assignmentLabelById, canViewTeacherMarks]
+  );
+
+  const studentColumns = useMemo(
+    () => [
+      {
+        key: 'assignment_id',
+        label: 'Assignment',
+        render: (row) => assignmentLabelById[row.assignment_id] || row.assignment_id
+      },
+      { key: 'original_filename', label: 'File' },
+      {
+        key: 'status',
+        label: 'Submission',
+        render: (row) => (
+          <Badge variant={row.status === 'submitted' ? 'success' : 'default'}>
+            {row.status || 'unknown'}
+          </Badge>
+        )
+      },
+      {
+        key: 'ai_status',
+        label: 'AI Review',
+        render: (row) => {
+          const value = row.ai_status || 'pending';
+          const variant = value === 'completed' ? 'success' : value === 'failed' ? 'danger' : value === 'running' ? 'info' : 'warning';
+          return <Badge variant={variant}>{value}</Badge>;
+        }
+      },
+      {
+        key: 'created_at',
+        label: 'Uploaded',
+        render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-')
+      }
+    ],
+    [assignmentLabelById]
   );
 
   useEffect(() => {
@@ -138,6 +178,10 @@ export default function SubmissionsPage() {
 
   async function onUpload(event) {
     event.preventDefault();
+    if (!form.assignment_id) {
+      setError('Please choose an assignment');
+      return;
+    }
     if (!form.file) {
       setError('Please choose a file before uploading');
       return;
@@ -207,6 +251,125 @@ export default function SubmissionsPage() {
     } finally {
       setBulkRunning(false);
     }
+  }
+
+  const studentVisibleRows = useMemo(() => {
+    return rows.filter((row) => {
+      const matchesStatus = !studentStatusFilter || row.status === studentStatusFilter || row.ai_status === studentStatusFilter;
+      if (!matchesStatus) return false;
+      if (!studentQuery.trim()) return true;
+      const q = studentQuery.toLowerCase();
+      const hay = `${assignmentLabelById[row.assignment_id] || row.assignment_id || ''} ${row.original_filename || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [assignmentLabelById, rows, studentQuery, studentStatusFilter]);
+
+  const studentSummary = useMemo(() => {
+    const total = rows.length;
+    const submitted = rows.filter((item) => item.status === 'submitted').length;
+    const aiDone = rows.filter((item) => item.ai_status === 'completed').length;
+    const pendingAi = rows.filter((item) => item.ai_status === 'pending' || item.ai_status === 'running').length;
+    return { total, submitted, aiDone, pendingAi };
+  }, [rows]);
+
+  if (isStudent) {
+    return (
+      <div className="space-y-5 page-fade">
+        <Card className="space-y-2">
+          <h1 className="text-2xl font-semibold">My Submissions</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Upload assignment files, track review progress, and monitor AI status.
+          </p>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card className="!p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Total Files</p>
+            <p className="mt-1 text-3xl font-bold">{studentSummary.total}</p>
+            <p className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500"><Files size={12} /> All uploads</p>
+          </Card>
+          <Card className="!p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Submitted</p>
+            <p className="mt-1 text-3xl font-bold">{studentSummary.submitted}</p>
+            <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-600"><FileCheck2 size={12} /> Successfully submitted</p>
+          </Card>
+          <Card className="!p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">AI Reviewed</p>
+            <p className="mt-1 text-3xl font-bold">{studentSummary.aiDone}</p>
+            <p className="mt-1 text-xs text-brand-600">Completed AI checks</p>
+          </Card>
+          <Card className="!p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Pending AI</p>
+            <p className="mt-1 text-3xl font-bold">{studentSummary.pendingAi}</p>
+            <p className="mt-1 inline-flex items-center gap-1 text-xs text-amber-600"><Clock3 size={12} /> Waiting for processing</p>
+          </Card>
+        </div>
+
+        <Card className="space-y-4">
+          <h2 className="text-lg font-semibold">Upload Assignment</h2>
+          <form onSubmit={onUpload} className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3">
+              <FormInput
+                as="select"
+                label="Assignment"
+                name="assignment_id"
+                required
+                value={form.assignment_id}
+                onChange={(e) => setForm((p) => ({ ...p, assignment_id: e.target.value }))}
+              >
+                <option value="">Select Assignment</option>
+                {assignments.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title || item.id}
+                  </option>
+                ))}
+              </FormInput>
+              <FormInput label="Notes (Optional)" name="notes" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
+              <button className="btn-primary" type="submit">Upload Submission</button>
+              <p className="text-xs text-slate-500">Allowed file types: PDF, DOCX, TXT, MD. Max size 10MB.</p>
+            </div>
+            <FileUpload
+              onFileSelect={(file) => setForm((prev) => ({ ...prev, file }))}
+              progress={uploadProgress}
+              status={uploadStatus}
+            />
+          </form>
+          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+        </Card>
+
+        <Card className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">Submission Records</h2>
+            <button className="btn-secondary" onClick={() => { setSkip(0); loadData(); }}>Refresh</button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block space-y-1 sm:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Search</span>
+              <span className="relative block">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="input pl-8"
+                  placeholder="Search by assignment or file"
+                  value={studentQuery}
+                  onChange={(e) => setStudentQuery(e.target.value)}
+                />
+              </span>
+            </label>
+            <FormInput as="select" label="Status" value={studentStatusFilter} onChange={(e) => setStudentStatusFilter(e.target.value)}>
+              <option value="">All</option>
+              <option value="submitted">Submitted</option>
+              <option value="pending">AI Pending</option>
+              <option value="running">AI Running</option>
+              <option value="completed">AI Completed</option>
+              <option value="failed">AI Failed</option>
+            </FormInput>
+          </div>
+
+          {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
+          <Table columns={studentColumns} data={studentVisibleRows} />
+        </Card>
+      </div>
+    );
   }
 
   return (

@@ -18,6 +18,33 @@ from app.services.audit import log_audit_event
 router = APIRouter()
 
 
+async def _student_visible_class_ids(current_user: dict) -> set[str]:
+    user_id = str(current_user["_id"])
+    user_email = (current_user.get("email") or "").strip().lower()
+
+    student_profiles = await db.students.find(
+        {"$or": [{"email": user_email}, {"user_id": user_id}]}
+    ).to_list(length=1000)
+    student_ids = [str(item["_id"]) for item in student_profiles]
+
+    class_ids: set[str] = set()
+    for profile in student_profiles:
+        class_id = profile.get("class_id")
+        if class_id:
+            class_ids.add(class_id)
+
+    if student_ids:
+        enrollments = await db.enrollments.find(
+            {"student_id": {"$in": student_ids}}
+        ).to_list(length=5000)
+        for enrollment in enrollments:
+            class_id = enrollment.get("class_id")
+            if class_id:
+                class_ids.add(class_id)
+
+    return class_ids
+
+
 @router.get("/", response_model=List[AssignmentOut])
 async def list_assignments(
     q: str | None = Query(default=None, min_length=1, max_length=100),
@@ -27,7 +54,7 @@ async def list_assignments(
     status_filter: str | None = Query(default=None, alias="status"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    current_user=Depends(require_roles(["admin", "teacher"])),
+    current_user=Depends(require_roles(["admin", "teacher", "student"])),
 ) -> List[AssignmentOut]:
     query = {}
     if q:
@@ -42,6 +69,11 @@ async def list_assignments(
         query["status"] = status_filter
     if current_user.get("role") == "teacher":
         query["created_by"] = str(current_user["_id"])
+    if current_user.get("role") == "student":
+        class_ids = await _student_visible_class_ids(current_user)
+        if not class_ids:
+            return []
+        query["class_id"] = {"$in": list(class_ids)}
 
     cursor = db.assignments.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
@@ -51,13 +83,17 @@ async def list_assignments(
 @router.get("/{assignment_id}", response_model=AssignmentOut)
 async def get_assignment(
     assignment_id: str,
-    current_user=Depends(require_roles(["admin", "teacher"])),
+    current_user=Depends(require_roles(["admin", "teacher", "student"])),
 ) -> AssignmentOut:
     item = await db.assignments.find_one({"_id": parse_object_id(assignment_id)})
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
     if current_user.get("role") == "teacher" and item.get("created_by") != str(current_user["_id"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this assignment")
+    if current_user.get("role") == "student":
+        class_ids = await _student_visible_class_ids(current_user)
+        if not class_ids or item.get("class_id") not in class_ids:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this assignment")
     return AssignmentOut(**assignment_public(item))
 
 

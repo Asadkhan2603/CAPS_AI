@@ -2,6 +2,7 @@ export const FEATURE_ACCESS = {
   dashboard: { allowedRoles: ['admin', 'teacher', 'student'] },
   analytics: { allowedRoles: ['admin', 'teacher', 'student'] },
   history: { allowedRoles: ['admin', 'teacher', 'student'] },
+  timetable: { allowedRoles: ['admin', 'teacher', 'student'] },
   profile: { allowedRoles: ['admin', 'teacher', 'student'] },
   academicStructure: { allowedRoles: ['admin', 'teacher', 'student'] },
   students: { allowedRoles: ['admin', 'teacher'] },

@@ -1,11 +1,13 @@
-import { Menu, Moon, Sun, UserCircle2, ChevronDown, LogOut, History, PanelLeftClose, PanelLeftOpen, UserRoundCog, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Menu, Moon, Sun, UserCircle2, ChevronDown, LogOut, History, PanelLeftClose, PanelLeftOpen, UserRoundCog, Search, Bell } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Breadcrumb from './Breadcrumb';
 import { apiClient } from '../../services/apiClient';
+import { unreadNoticeCount } from '../../utils/noticeReadTracker';
 
 export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse, isDark, onToggleTheme, onLogout }) {
   const [open, setOpen] = useState(false);
+  const [noticeCount, setNoticeCount] = useState(0);
   const backendBaseUrl = useMemo(() => {
     const base = apiClient.defaults.baseURL || '';
     return base.replace(/\/api\/v1\/?$/, '');
@@ -13,6 +15,26 @@ export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse
   const avatarSrc = user?.avatar_url
     ? `${backendBaseUrl}${user.avatar_url}${user.avatar_updated_at ? `?v=${encodeURIComponent(user.avatar_updated_at)}` : ''}`
     : '';
+
+  useEffect(() => {
+    let alive = true;
+    async function loadNoticeCount() {
+      try {
+        const resp = await apiClient.get('/notices/', { params: { include_expired: false, limit: 100 } });
+        if (!alive) return;
+        setNoticeCount(unreadNoticeCount(user?.id, resp.data || []));
+      } catch {
+        if (!alive) return;
+        setNoticeCount(0);
+      }
+    }
+    loadNoticeCount();
+    const timer = setInterval(loadNoticeCount, 30000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [user?.id, user?.role]);
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/80">
@@ -40,6 +62,14 @@ export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse
           </Link>
           <Link to="/history" className="btn-secondary !p-2" title="History">
             <History size={16} />
+          </Link>
+          <Link to="/communication/announcements" className="btn-secondary !p-2 relative" title="Notices">
+            <Bell size={16} />
+            {noticeCount > 0 ? (
+              <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold text-white">
+                {noticeCount > 9 ? '9+' : noticeCount}
+              </span>
+            ) : null}
           </Link>
           <button className="btn-secondary !p-2" onClick={onToggleTheme}>
             {isDark ? <Sun size={16} /> : <Moon size={16} />}

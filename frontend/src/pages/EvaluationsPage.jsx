@@ -1,17 +1,43 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BarChart3, CheckCircle2, Search } from 'lucide-react';
 import EntityManager from '../components/ui/EntityManager';
+import Card from '../components/ui/Card';
+import Table from '../components/ui/Table';
+import Badge from '../components/ui/Badge';
+import FormInput from '../components/ui/FormInput';
 import { apiClient } from '../services/apiClient';
 import { useAuth } from '../hooks/useAuth';
 
 export default function EvaluationsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isStudent = user?.role === 'student';
   const [submissions, setSubmissions] = useState([]);
   const [users, setUsers] = useState([]);
+  const [studentRows, setStudentRows] = useState([]);
+  const [studentLoading, setStudentLoading] = useState(false);
+  const [studentFilter, setStudentFilter] = useState({ finalized: '', query: '' });
 
   useEffect(() => {
     async function loadLookups() {
+      if (isStudent) {
+        try {
+          const [submissionsRes, evaluationsRes] = await Promise.all([
+            apiClient.get('/submissions/', { params: { skip: 0, limit: 200 } }),
+            apiClient.get('/evaluations/', { params: { skip: 0, limit: 200 } })
+          ]);
+          setSubmissions(submissionsRes.data || []);
+          setStudentRows(evaluationsRes.data || []);
+        } catch {
+          setSubmissions([]);
+          setStudentRows([]);
+        } finally {
+          setStudentLoading(false);
+        }
+        return;
+      }
+
       try {
         const [submissionsRes, usersRes] = await Promise.all([
           apiClient.get('/submissions/', { params: { skip: 0, limit: 100 } }),
@@ -24,8 +50,11 @@ export default function EvaluationsPage() {
         setUsers([]);
       }
     }
+    if (isStudent) {
+      setStudentLoading(true);
+    }
     loadLookups();
-  }, []);
+  }, [isStudent]);
 
   const submissionOptions = useMemo(
     () =>
@@ -158,6 +187,110 @@ export default function EvaluationsPage() {
 
     return actions;
   }, [user?.role]);
+
+  const studentSubmissionLabelById = useMemo(
+    () => Object.fromEntries(submissions.map((item) => [item.id, item.title || item.original_filename || item.id])),
+    [submissions]
+  );
+
+  const filteredStudentRows = useMemo(() => {
+    return studentRows.filter((row) => {
+      const q = studentFilter.query.trim().toLowerCase();
+      const matchesFinalized = studentFilter.finalized === '' || String(Boolean(row.is_finalized)) === studentFilter.finalized;
+      if (!matchesFinalized) return false;
+      if (!q) return true;
+      const hay = `${studentSubmissionLabelById[row.submission_id] || row.submission_id || ''} ${row.grade || ''} ${row.remarks || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [studentFilter.finalized, studentFilter.query, studentRows, studentSubmissionLabelById]);
+
+  const studentSummary = useMemo(() => {
+    const total = studentRows.length;
+    const finalized = studentRows.filter((item) => item.is_finalized).length;
+    const avg = total ? (studentRows.reduce((acc, item) => acc + Number(item.grand_total || 0), 0) / total).toFixed(1) : '0.0';
+    return { total, finalized, avg };
+  }, [studentRows]);
+
+  if (isStudent) {
+    const studentColumns = [
+      { key: 'submission_id', label: 'Submission', render: (row) => studentSubmissionLabelById[row.submission_id] || row.submission_id },
+      { key: 'grand_total', label: 'Total', render: (row) => row.grand_total ?? '-' },
+      { key: 'grade', label: 'Grade', render: (row) => row.grade || '-' },
+      {
+        key: 'is_finalized',
+        label: 'Status',
+        render: (row) => (
+          <Badge variant={row.is_finalized ? 'success' : 'warning'}>
+            {row.is_finalized ? 'Finalized' : 'In Progress'}
+          </Badge>
+        )
+      },
+      {
+        key: 'remarks',
+        label: 'Remarks',
+        render: (row) => (row.remarks ? (row.remarks.length > 80 ? `${row.remarks.slice(0, 80)}...` : row.remarks) : '-')
+      },
+      {
+        key: 'created_at',
+        label: 'Created',
+        render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-')
+      }
+    ];
+
+    return (
+      <div className="space-y-5 page-fade">
+        <Card className="space-y-2">
+          <h1 className="text-2xl font-semibold">My Evaluations</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            View grades, feedback status, and finalized result history.
+          </p>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card className="!p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Total Evaluations</p>
+            <p className="mt-1 text-3xl font-bold">{studentSummary.total}</p>
+          </Card>
+          <Card className="!p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Finalized</p>
+            <p className="mt-1 text-3xl font-bold">{studentSummary.finalized}</p>
+            <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 size={12} /> Published marks</p>
+          </Card>
+          <Card className="!p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Average Score</p>
+            <p className="mt-1 text-3xl font-bold">{studentSummary.avg}</p>
+            <p className="mt-1 inline-flex items-center gap-1 text-xs text-brand-600"><BarChart3 size={12} /> Across all evaluations</p>
+          </Card>
+        </div>
+
+        <Card className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="relative block sm:col-span-2">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                className="input pl-8"
+                placeholder="Search by submission, grade, remarks"
+                value={studentFilter.query}
+                onChange={(e) => setStudentFilter((prev) => ({ ...prev, query: e.target.value }))}
+              />
+            </label>
+            <FormInput
+              as="select"
+              label="Finalized"
+              value={studentFilter.finalized}
+              onChange={(e) => setStudentFilter((prev) => ({ ...prev, finalized: e.target.value }))}
+            >
+              <option value="">All</option>
+              <option value="true">Finalized</option>
+              <option value="false">In Progress</option>
+            </FormInput>
+          </div>
+          {studentLoading ? <p className="text-sm text-slate-500">Loading evaluations...</p> : null}
+          <Table columns={studentColumns} data={filteredStudentRows} />
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <EntityManager

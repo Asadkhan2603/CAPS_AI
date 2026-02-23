@@ -9,7 +9,7 @@ function scopeLabel(notice) {
   return `${normalized[0].toUpperCase()}${normalized.slice(1)}`;
 }
 
-function AnnouncementCard({ notice, audienceText }) {
+function AnnouncementCard({ notice, audienceText, isRead = false, onMarkRead }) {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -54,7 +54,18 @@ function AnnouncementCard({ notice, audienceText }) {
 
       <div className="mb-2 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">{notice.title}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">{notice.title}</h3>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                isRead
+                  ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                  : 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
+              }`}
+            >
+              {isRead ? 'Read' : 'Unread'}
+            </span>
+          </div>
           <p className="mt-1 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">{notice.message}</p>
         </div>
         <PriorityBadge priority={notice.priority} />
@@ -81,6 +92,15 @@ function AnnouncementCard({ notice, audienceText }) {
         <span className="rounded-md border border-slate-200 px-2 py-1 dark:border-slate-700">{audienceText}</span>
         <ExpiryIndicator expiresAt={notice.expires_at} />
         <span>Created {notice.created_at ? new Date(notice.created_at).toLocaleString() : '-'}</span>
+        {!isRead && onMarkRead ? (
+          <button
+            type="button"
+            className="rounded-md border border-brand-200 px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-brand-800 dark:text-brand-300 dark:hover:bg-brand-900/25"
+            onClick={() => onMarkRead(notice.id)}
+          >
+            Mark read
+          </button>
+        ) : null}
       </div>
 
       <Modal open={viewerOpen} title="Attachment Preview" onClose={() => setViewerOpen(false)}>

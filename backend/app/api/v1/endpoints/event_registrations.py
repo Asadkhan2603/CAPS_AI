@@ -35,15 +35,37 @@ async def _validate_and_prepare_registration(event_id: str, student_user_id: str
     if event.get('status') != 'open':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Event is closed for registration')
 
-    duplicate = await db.event_registrations.find_one({'event_id': event_id, 'student_user_id': student_user_id, 'status': 'registered'})
+    duplicate = await db.event_registrations.find_one(
+        {
+            'event_id': event_id,
+            'student_user_id': student_user_id,
+            'status': {'$in': ['registered', 'pending', 'approved']},
+        }
+    )
     if duplicate:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Already registered for this event')
 
-    registration_count = await db.event_registrations.count_documents({'event_id': event_id, 'status': 'registered'})
+    registration_count = await db.event_registrations.count_documents(
+        {'event_id': event_id, 'status': {'$in': ['registered', 'approved']}}
+    )
     if registration_count >= int(event.get('capacity', 0)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Event registration capacity reached')
 
     return event
+
+
+async def _auto_close_event_if_full(event_id: str) -> None:
+    event = await db.club_events.find_one({'_id': parse_object_id(event_id)})
+    if not event:
+        return
+    capacity = int(event.get('capacity') or 0)
+    if capacity <= 0:
+        return
+    confirmed = await db.event_registrations.count_documents(
+        {'event_id': event_id, 'status': {'$in': ['registered', 'approved']}}
+    )
+    if confirmed >= capacity and event.get('status') == 'open':
+        await db.club_events.update_one({'_id': event['_id']}, {'$set': {'status': 'closed'}})
 
 
 @router.get('/', response_model=List[EventRegistrationOut])
@@ -102,7 +124,7 @@ async def create_event_registration(
     current_user=Depends(require_roles(['student'])),
 ) -> EventRegistrationOut:
     student_user_id = str(current_user['_id'])
-    await _validate_and_prepare_registration(payload.event_id, student_user_id)
+    event = await _validate_and_prepare_registration(payload.event_id, student_user_id)
 
     document = {
         'event_id': payload.event_id,
@@ -116,7 +138,9 @@ async def create_event_registration(
         'phone_number': payload.phone_number,
         'whatsapp_number': payload.whatsapp_number,
         'payment_qr_code': payload.payment_qr_code,
-        'status': 'registered',
+        'status': 'pending' if event.get('approval_required') else 'registered',
+        'attendance_status': None,
+        'certificate_issued': False,
         'created_at': datetime.now(timezone.utc),
     }
     result = await db.event_registrations.insert_one(document)
@@ -129,6 +153,7 @@ async def create_event_registration(
         entity_id=str(result.inserted_id),
         detail=f"Registered for event {payload.event_id}",
     )
+    await _auto_close_event_if_full(payload.event_id)
     return EventRegistrationOut(**event_registration_public(created))
 
 
@@ -148,7 +173,7 @@ async def submit_event_registration(
     current_user=Depends(require_roles(['student'])),
 ) -> EventRegistrationOut:
     student_user_id = str(current_user['_id'])
-    await _validate_and_prepare_registration(event_id, student_user_id)
+    event = await _validate_and_prepare_registration(event_id, student_user_id)
 
     document = {
         'event_id': event_id,
@@ -162,7 +187,9 @@ async def submit_event_registration(
         'phone_number': phone_number.strip(),
         'whatsapp_number': whatsapp_number.strip(),
         'payment_qr_code': payment_qr_code.strip() if payment_qr_code else None,
-        'status': 'registered',
+        'status': 'pending' if event.get('approval_required') else 'registered',
+        'attendance_status': None,
+        'certificate_issued': False,
         'created_at': datetime.now(timezone.utc),
     }
 
@@ -198,5 +225,6 @@ async def submit_event_registration(
         entity_id=str(result.inserted_id),
         detail=f"Registered for event {event_id}",
     )
+    await _auto_close_event_if_full(event_id)
     return EventRegistrationOut(**event_registration_public(created))
 

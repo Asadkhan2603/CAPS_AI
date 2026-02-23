@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 from pymongo import ASCENDING
+from pymongo.errors import OperationFailure
 
 from app.core.database import db
 
 _indexes_ensured = False
+
+
+async def _safe_create_index(collection, keys, **kwargs) -> None:
+    try:
+        await collection.create_index(keys, **kwargs)
+    except OperationFailure as exc:
+        # Accept existing index with different generated name/options to keep startup resilient.
+        if getattr(exc, "code", None) in {85, 86}:
+            return
+        raise
 
 
 async def ensure_indexes() -> None:
@@ -12,14 +23,22 @@ async def ensure_indexes() -> None:
     if _indexes_ensured:
         return
 
-    await db.users.create_index([('email', ASCENDING)], unique=True, name='uniq_users_email')
-    await db.notices.create_index([('is_active', ASCENDING), ('created_at', ASCENDING)], name='idx_notices_active_created')
-    await db.notices.create_index([('scope', ASCENDING), ('scope_ref_id', ASCENDING)], name='idx_notices_scope_ref')
-    await db.assignments.create_index([('created_by', ASCENDING), ('created_at', ASCENDING)], name='idx_assignments_creator_created')
-    await db.submissions.create_index([('assignment_id', ASCENDING), ('created_at', ASCENDING)], name='idx_submissions_assignment_created')
-    await db.evaluations.create_index([('student_user_id', ASCENDING), ('created_at', ASCENDING)], name='idx_eval_student_created')
-    await db.evaluations.create_index([('teacher_user_id', ASCENDING), ('created_at', ASCENDING)], name='idx_eval_teacher_created')
-    await db.notifications.create_index([('target_user_id', ASCENDING), ('created_at', ASCENDING)], name='idx_notifications_target_created')
-    await db.audit_logs.create_index([('created_at', ASCENDING)], name='idx_audit_created')
+    await _safe_create_index(db.users, [('email', ASCENDING)], unique=True)
+    await _safe_create_index(db.notices, [('is_active', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.notices, [('scope', ASCENDING), ('scope_ref_id', ASCENDING)])
+    await _safe_create_index(db.assignments, [('created_by', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.submissions, [('assignment_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.evaluations, [('student_user_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.evaluations, [('teacher_user_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.notifications, [('target_user_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.audit_logs, [('created_at', ASCENDING)])
+    await _safe_create_index(db.clubs, [('slug', ASCENDING), ('academic_year', ASCENDING)], unique=True)
+    await _safe_create_index(db.clubs, [('status', ASCENDING), ('updated_at', ASCENDING)])
+    await _safe_create_index(db.clubs, [('coordinator_user_id', ASCENDING)])
+    await _safe_create_index(db.club_members, [('club_id', ASCENDING), ('student_user_id', ASCENDING)], unique=True)
+    await _safe_create_index(db.club_members, [('club_id', ASCENDING), ('status', ASCENDING)])
+    await _safe_create_index(db.club_applications, [('club_id', ASCENDING), ('student_user_id', ASCENDING), ('status', ASCENDING)])
+    await _safe_create_index(db.club_events, [('club_id', ASCENDING), ('status', ASCENDING), ('event_date', ASCENDING)])
+    await _safe_create_index(db.event_registrations, [('event_id', ASCENDING), ('student_user_id', ASCENDING)])
 
     _indexes_ensured = True
