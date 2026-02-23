@@ -60,6 +60,12 @@ class Settings:
         default_factory=lambda: _as_float(os.getenv("SIMILARITY_THRESHOLD", "0.8"), 0.8)
     )
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
+    rate_limit_max_requests: int = field(
+        default_factory=lambda: _as_int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"), 120)
+    )
+    rate_limit_window_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"), 60)
+    )
     cloudinary_cloud_name: str = field(default_factory=lambda: os.getenv("CLOUDINARY_CLOUD_NAME", "").strip())
     cloudinary_api_key: str = field(default_factory=lambda: os.getenv("CLOUDINARY_API_KEY", "").strip())
     cloudinary_api_secret: str = field(default_factory=lambda: os.getenv("CLOUDINARY_API_SECRET", "").strip())

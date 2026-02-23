@@ -13,17 +13,25 @@ import time
 from app.api.v1.router import api_router
 
 from app.core.config import settings
+from app.core.indexes import ensure_indexes
 from app.core.observability import (
     new_error_id,
     request_id_ctx,
     setup_logging,
     trace_id_ctx,
 )
+from app.core.rate_limit import RateLimitMiddleware
 
 setup_logging(settings.log_level)
 logger = logging.getLogger("caps_api")
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
+
+app.add_middleware(
+    RateLimitMiddleware,
+    max_requests=settings.rate_limit_max_requests,
+    window_seconds=settings.rate_limit_window_seconds,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,7 +82,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Response-Time-Ms"] = str(duration_ms)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         logger.info(
             {
@@ -97,6 +107,11 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
+@app.on_event("startup")
+async def startup_tasks() -> None:
+    await ensure_indexes()
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     error_id = new_error_id()
@@ -114,7 +129,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail, "error_id": error_id},
+        content={"success": False, "detail": exc.detail, "error_id": error_id},
         headers={"X-Error-Id": error_id},
     )
 
@@ -136,7 +151,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "error_id": error_id},
+        content={"success": False, "detail": exc.errors(), "error_id": error_id},
         headers={"X-Error-Id": error_id},
     )
 
@@ -157,7 +172,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "error_id": error_id},
+        content={"success": False, "detail": "Internal server error", "error_id": error_id},
         headers={"X-Error-Id": error_id},
     )
 

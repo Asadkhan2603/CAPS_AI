@@ -183,7 +183,9 @@ async def list_notices(
         query['priority'] = priority
 
     now = datetime.now(timezone.utc)
+    query['$or'] = [{'scheduled_at': None}, {'scheduled_at': {'$lte': now}}]
     items = await db.notices.find(query).skip(skip).limit(limit).to_list(length=limit)
+    items = sorted(items, key=lambda item: item.get('created_at') or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     if not include_expired:
         items = [item for item in items if not item.get('expires_at') or item.get('expires_at') > now]
 
@@ -238,6 +240,10 @@ async def create_notice(
             'scope_ref_id': scope_ref_id,
             'expires_at': payload.expires_at,
             'images': images,
+            'is_pinned': False,
+            'scheduled_at': None,
+            'read_count': 0,
+            'seen_by': [],
             'created_by': str(current_user['_id']),
             'is_active': True,
             'created_at': datetime.now(timezone.utc),
@@ -263,3 +269,35 @@ async def create_notice(
             resource_type = 'image' if (image.get('mime_type') or '').startswith('image/') else 'raw'
             delete_cloudinary_asset(image.get('public_id') or '', resource_type=resource_type)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Failed to create notice') from exc
+
+
+@router.delete('/{notice_id}')
+async def delete_notice(
+    notice_id: str,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> dict:
+    notice_obj_id = parse_object_id(notice_id)
+    current = await db.notices.find_one({'_id': notice_obj_id, 'is_active': True})
+    if not current:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Notice not found')
+
+    if current_user.get('role') == 'teacher' and current.get('created_by') != str(current_user['_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to delete this notice')
+
+    for file_item in current.get('images', []) or []:
+        mime = str(file_item.get('mime_type') or '').lower()
+        resource_type = 'image' if mime.startswith('image/') else 'raw'
+        delete_cloudinary_asset(file_item.get('public_id') or '', resource_type=resource_type)
+
+    await db.notices.update_one(
+        {'_id': notice_obj_id},
+        {'$set': {'is_active': False, 'deleted_at': datetime.now(timezone.utc)}},
+    )
+    await log_audit_event(
+        actor_user_id=str(current_user['_id']),
+        action='delete',
+        entity_type='notice',
+        entity_id=notice_id,
+        detail='Notice deleted and cloud attachments cleaned up',
+    )
+    return {'success': True, 'message': 'Notice deleted'}
