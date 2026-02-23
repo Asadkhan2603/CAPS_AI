@@ -1,6 +1,7 @@
+import { memo } from 'react';
 import PriorityBadge from './PriorityBadge';
 
-export default function FeedCard({ item }) {
+function FeedCard({ item }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-start justify-between gap-3">
@@ -22,3 +23,5 @@ export default function FeedCard({ item }) {
     </article>
   );
 }
+
+export default memo(FeedCard);

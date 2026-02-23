@@ -94,17 +94,20 @@ export default function AnnouncementsPage() {
 
   const audienceOptions = useMemo(() => {
     const options = [];
+    const seen = new Set();
     const role = user?.role;
     const extensions = user?.extended_roles || [];
 
     if (role === 'admin') {
-      options.push({
+      const item = {
         key: 'college:all',
         label: 'Entire college',
         searchText: 'entire college college-wide all college'.toLowerCase(),
         scope: 'college',
         scopeRefId: null
-      });
+      };
+      seen.add(item.key);
+      options.push(item);
     }
 
     const allowYear = role === 'admin' || (role === 'teacher' && extensions.includes('year_head'));
@@ -114,43 +117,55 @@ export default function AnnouncementsPage() {
     if (allowYear) {
       years.forEach((item) => {
         const label = item.label || `Year ${item.year_number}`;
-        options.push({
+        const option = {
           key: `year:${item.id}`,
           label,
           searchText: `${label} year ${item.year_number}`.toLowerCase(),
           scope: 'year',
           scopeRefId: item.id
-        });
+        };
+        if (!seen.has(option.key)) {
+          seen.add(option.key);
+          options.push(option);
+        }
       });
     }
 
     if (allowClass) {
       sections.forEach((item) => {
         const label = `${item.name}${item.faculty_name ? ` (${item.faculty_name})` : ''}`;
-        options.push({
+        const option = {
           key: `class:${item.id}`,
           label,
           searchText: `${label} section class ${item.branch_name || ''}`.toLowerCase(),
           scope: 'section',
           scopeRefId: item.id
-        });
+        };
+        if (!seen.has(option.key)) {
+          seen.add(option.key);
+          options.push(option);
+        }
       });
     }
 
     if (allowSubject) {
       subjects.forEach((item) => {
         const label = `${item.name}${item.code ? ` (${item.code})` : ''}`;
-        options.push({
+        const option = {
           key: `subject:${item.id}`,
           label,
           searchText: `${label} subject ${item.code || ''}`.toLowerCase(),
           scope: 'subject',
           scopeRefId: item.id
-        });
+        };
+        if (!seen.has(option.key)) {
+          seen.add(option.key);
+          options.push(option);
+        }
       });
     }
 
-    return options;
+    return options.sort((a, b) => a.label.localeCompare(b.label));
   }, [sections, subjects, user?.extended_roles, user?.role, years]);
 
   const visibleNotices = useMemo(() => {

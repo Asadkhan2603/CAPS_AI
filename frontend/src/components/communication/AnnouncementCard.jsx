@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import Modal from '../ui/Modal';
 import PriorityBadge from './PriorityBadge';
 import ExpiryIndicator from './ExpiryIndicator';
@@ -9,7 +9,7 @@ function scopeLabel(notice) {
   return `${normalized[0].toUpperCase()}${normalized.slice(1)}`;
 }
 
-export default function AnnouncementCard({ notice, audienceText }) {
+function AnnouncementCard({ notice, audienceText }) {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -43,7 +43,7 @@ export default function AnnouncementCard({ notice, audienceText }) {
             setViewerOpen(true);
           }}
         >
-          <img src={primaryImage.url} alt={notice.title} className="h-full w-full object-cover" />
+          <img src={primaryImage.url} alt={notice.title} className="h-full w-full object-cover" loading="lazy" />
           {imageFiles.length > 1 ? (
             <span className="absolute bottom-2 right-2 rounded-full bg-slate-900/75 px-2 py-1 text-xs text-white">
               +{imageFiles.length - 1} more
@@ -88,7 +88,7 @@ export default function AnnouncementCard({ notice, audienceText }) {
           <p className="text-sm text-slate-500">No image attachments.</p>
         ) : (
           <div className="space-y-3">
-            <img src={imageFiles[activeIndex]?.url} alt={`Image ${activeIndex + 1}`} className="max-h-[70vh] w-full rounded-xl object-contain" />
+            <img src={imageFiles[activeIndex]?.url} alt={`Image ${activeIndex + 1}`} className="max-h-[70vh] w-full rounded-xl object-contain" loading="lazy" />
             <div className="flex items-center justify-between">
               <button
                 type="button"
@@ -116,3 +116,5 @@ export default function AnnouncementCard({ notice, audienceText }) {
     </article>
   );
 }
+
+export default memo(AnnouncementCard);
