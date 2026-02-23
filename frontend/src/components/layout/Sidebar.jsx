@@ -60,8 +60,9 @@ const groupedItems = [
     key: 'communication',
     label: 'Communication',
     items: [
-      { to: '/notices', label: 'Notices', featureKey: 'notices', icon: Megaphone },
-      { to: '/notifications', label: 'Notifications', featureKey: 'notifications', icon: Bell }
+      { to: '/communication/feed', label: 'Feed', featureKey: 'communicationFeed', icon: Bell },
+      { to: '/communication/announcements', label: 'Announcements', featureKey: 'communicationAnnouncements', icon: Megaphone },
+      { to: '/communication/messages', label: 'Messages', featureKey: 'communicationMessages', icon: Users }
     ]
   },
   {
@@ -89,7 +90,7 @@ const groupedItems = [
       { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
       { to: '/branches', label: 'Branches', featureKey: 'branches', icon: GitBranch },
       { to: '/years', label: 'Years', featureKey: 'years', icon: CalendarRange },
-      { to: '/classes', label: 'Classes', featureKey: 'classes', icon: School }
+      { to: '/sections', label: 'Sections', featureKey: 'sections', icon: School }
     ]
   }
 ];
@@ -206,8 +207,8 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
     >
       <div className="mb-4">
         <div className={cn('transition-all', collapsed ? 'lg:opacity-0' : 'opacity-100')}>
-          <p className="text-xs uppercase tracking-widest text-brand-500">CAPS AI</p>
-          <h1 className="text-lg font-semibold">Control Center</h1>
+          <p className="text-xs uppercase tracking-[0.18em] text-brand-500">CAPS AI</p>
+          <h1 className="text-2xl font-bold leading-tight">Control Center</h1>
         </div>
         <div className={cn('mt-3', collapsed && 'hidden')}>
           {logoUrl ? (
@@ -243,7 +244,7 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
         ) : null}
       </div>
 
-      <p className={cn('mb-3 text-xs text-slate-500 dark:text-slate-400', collapsed && 'lg:hidden')}>
+      <p className={cn('mb-3 rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300', collapsed && 'lg:hidden')}>
         {user?.full_name} ({user?.role})
       </p>
 
@@ -259,7 +260,7 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
                 cn(
                   'flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition',
                   isActive
-                    ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
+                    ? 'bg-gradient-to-r from-brand-100 to-indigo-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
                     : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
                   'justify-center px-2'
                 )
@@ -291,7 +292,7 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
                         cn(
                           'flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition',
                           isActive
-                            ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
+                            ? 'bg-gradient-to-r from-brand-100 to-indigo-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
                             : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
                         )
                       }

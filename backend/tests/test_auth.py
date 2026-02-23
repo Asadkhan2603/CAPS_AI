@@ -5,6 +5,7 @@ from bson import ObjectId
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.api.v1.endpoints import ai as ai_endpoint
 from app.api.v1.endpoints import assignments as assignments_endpoint
 from app.api.v1.endpoints import analytics as analytics_endpoint
 from app.api.v1.endpoints import audit_logs as audit_logs_endpoint
@@ -143,6 +144,7 @@ class FakeDB:
         self.subjects = FakeUsersCollection()
         self.assignments = FakeUsersCollection()
         self.submissions = FakeUsersCollection()
+        self.ai_evaluation_chats = FakeUsersCollection()
         self.evaluations = FakeUsersCollection()
         self.similarity_logs = FakeUsersCollection()
         self.notifications = FakeUsersCollection()
@@ -166,6 +168,7 @@ def _setup_fake_db() -> FakeDB:
     subjects_endpoint.db = fake_db
     assignments_endpoint.db = fake_db
     submissions_endpoint.db = fake_db
+    ai_endpoint.db = fake_db
     evaluations_endpoint.db = fake_db
     similarity_endpoint.db = fake_db
     analytics_endpoint.db = fake_db
@@ -1446,7 +1449,7 @@ def test_class_coordinator_cannot_list_other_class_enrollments() -> None:
     assert body[0]["class_id"] == class_one.json()["id"]
 
 
-def test_students_only_receive_college_scope_notices() -> None:
+def test_students_receive_scoped_notices_for_their_class_year_and_subject() -> None:
     _setup_fake_db()
     client = TestClient(app)
 
@@ -1476,6 +1479,58 @@ def test_students_only_receive_college_scope_notices() -> None:
         json={"email": "admin_notice_scope@example.com", "password": "password123"},
     )
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BTech", "code": "BTNOT", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 2, "label": "Second Year"},
+        headers=admin_headers,
+    )
+    class_item = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "BTech Y2 A",
+        },
+        headers=admin_headers,
+    )
+    subject = client.post(
+        "/api/v1/subjects/",
+        json={"name": "Data Structures", "code": "DS-NOT", "description": "desc"},
+        headers=admin_headers,
+    )
+    student_profile = client.post(
+        "/api/v1/students/",
+        json={
+            "full_name": "Student",
+            "roll_number": "R-NOT-1",
+            "email": "student_notice_scope@example.com",
+            "class_id": class_item.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={
+            "title": "Notice Scope Assignment",
+            "description": "desc",
+            "class_id": class_item.json()["id"],
+            "subject_id": subject.json()["id"],
+            "total_marks": 100,
+        },
+        headers=admin_headers,
+    )
+    assert course.status_code == 201
+    assert year.status_code == 201
+    assert class_item.status_code == 201
+    assert subject.status_code == 201
+    assert student_profile.status_code == 201
+    assert assignment.status_code == 201
+
     college_notice = client.post(
         "/api/v1/notices/",
         json={
@@ -1493,12 +1548,36 @@ def test_students_only_receive_college_scope_notices() -> None:
             "message": "Class-only announcement",
             "priority": "normal",
             "scope": "class",
-            "scope_ref_id": "class-1",
+            "scope_ref_id": class_item.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    year_notice = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Year Internal",
+            "message": "Year-only announcement",
+            "priority": "normal",
+            "scope": "year",
+            "scope_ref_id": year.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    subject_notice = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Subject Internal",
+            "message": "Subject-only announcement",
+            "priority": "normal",
+            "scope": "subject",
+            "scope_ref_id": subject.json()["id"],
         },
         headers=admin_headers,
     )
     assert college_notice.status_code == 201
     assert class_notice.status_code == 201
+    assert year_notice.status_code == 201
+    assert subject_notice.status_code == 201
 
     student_login = client.post(
         "/api/v1/auth/login",
@@ -1508,8 +1587,440 @@ def test_students_only_receive_college_scope_notices() -> None:
     listed = client.get("/api/v1/notices/", headers=student_headers)
     assert listed.status_code == 200
     body = listed.json()
+    titles = {item["title"] for item in body}
+    assert "Campus Update" in titles
+    assert "Class Internal" in titles
+    assert "Year Internal" in titles
+    assert "Subject Internal" in titles
+
+
+def test_teacher_cannot_read_other_teacher_class_by_id() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_class_read_scope@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    teacher_owner = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Owner Teacher",
+            "email": "owner_class_read_scope@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    teacher_other = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Other Teacher",
+            "email": "other_class_read_scope@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert admin.status_code == 201
+    assert teacher_owner.status_code == 201
+    assert teacher_other.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_class_read_scope@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BTech", "code": "BTCLS", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 1, "label": "First Year"},
+        headers=admin_headers,
+    )
+    class_item = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "BTech Y1 A",
+            "class_coordinator_user_id": teacher_owner.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert class_item.status_code == 201
+
+    owner_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner_class_read_scope@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+    owner_get = client.get(f"/api/v1/classes/{class_item.json()['id']}", headers=owner_headers)
+    assert owner_get.status_code == 200
+
+    other_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "other_class_read_scope@example.com", "password": "password123"},
+    )
+    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+    denied = client.get(f"/api/v1/classes/{class_item.json()['id']}", headers=other_headers)
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "Not allowed to view this class"
+
+
+def test_teacher_notice_scope_requires_owned_class_and_valid_scope_ref() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_notice_validate@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Teacher Coordinator",
+            "email": "teacher_notice_validate@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    other_teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Other Coordinator",
+            "email": "other_teacher_notice_validate@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    assert admin.status_code == 201
+    assert teacher.status_code == 201
+    assert other_teacher.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_notice_validate@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    teacher_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "teacher_notice_validate@example.com", "password": "password123"},
+    )
+    teacher_headers = {"Authorization": f"Bearer {teacher_login.json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BCA", "code": "BCANOT", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
+        headers=admin_headers,
+    )
+    own_class = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "BCA FY A",
+            "class_coordinator_user_id": teacher.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    other_class = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "BCA FY B",
+            "class_coordinator_user_id": other_teacher.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert own_class.status_code == 201
+    assert other_class.status_code == 201
+
+    missing_ref = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Missing Ref",
+            "message": "Invalid",
+            "priority": "normal",
+            "scope": "class",
+        },
+        headers=teacher_headers,
+    )
+    assert missing_ref.status_code == 400
+
+    unauthorized_class = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Unauthorized",
+            "message": "Invalid",
+            "priority": "normal",
+            "scope": "class",
+            "scope_ref_id": other_class.json()["id"],
+        },
+        headers=teacher_headers,
+    )
+    assert unauthorized_class.status_code == 403
+
+    allowed = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Allowed",
+            "message": "Valid",
+            "priority": "normal",
+            "scope": "class",
+            "scope_ref_id": own_class.json()["id"],
+        },
+        headers=teacher_headers,
+    )
+    assert allowed.status_code == 201
+
+
+def test_teacher_submission_listing_applies_scope_before_pagination() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_submission_paging@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    teacher_owner = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Owner Teacher",
+            "email": "owner_submission_paging@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    teacher_coordinator = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Coordinator Teacher",
+            "email": "coord_submission_paging@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student",
+            "email": "student_submission_paging@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert teacher_owner.status_code == 201
+    assert teacher_coordinator.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_submission_paging@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    owner_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner_submission_paging@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+    coord_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "coord_submission_paging@example.com", "password": "password123"},
+    )
+    coord_headers = {"Authorization": f"Bearer {coord_login.json()['access_token']}"}
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_submission_paging@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BSc", "code": "BSCSUB", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
+        headers=admin_headers,
+    )
+    class_one = client.post(
+        "/api/v1/classes/",
+        json={"course_id": course.json()["id"], "year_id": year.json()["id"], "name": "Class One"},
+        headers=admin_headers,
+    )
+    class_two = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "Class Two",
+            "class_coordinator_user_id": teacher_coordinator.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert class_one.status_code == 201
+    assert class_two.status_code == 201
+
+    assignment_one = client.post(
+        "/api/v1/assignments/",
+        json={"title": "Out of Scope", "description": "desc", "class_id": class_one.json()["id"], "total_marks": 100},
+        headers=owner_headers,
+    )
+    assignment_two = client.post(
+        "/api/v1/assignments/",
+        json={"title": "In Scope", "description": "desc", "class_id": class_two.json()["id"], "total_marks": 100},
+        headers=owner_headers,
+    )
+    assert assignment_one.status_code == 201
+    assert assignment_two.status_code == 201
+
+    first_upload = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment_one.json()["id"]},
+        files={"file": ("one.txt", b"first", "text/plain")},
+        headers=student_headers,
+    )
+    second_upload = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment_two.json()["id"]},
+        files={"file": ("two.txt", b"second", "text/plain")},
+        headers=student_headers,
+    )
+    assert first_upload.status_code == 201
+    assert second_upload.status_code == 201
+
+    listed = client.get("/api/v1/submissions/?skip=0&limit=1", headers=coord_headers)
+    assert listed.status_code == 200
+    body = listed.json()
     assert len(body) == 1
-    assert body[0]["scope"] == "college"
+    assert body[0]["assignment_id"] == assignment_two.json()["id"]
+
+
+def test_teacher_enrollment_listing_applies_scope_before_pagination() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_enrollment_paging@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    coordinator = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Coordinator",
+            "email": "coord_enrollment_paging@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["class_coordinator"],
+        },
+    )
+    assert admin.status_code == 201
+    assert coordinator.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_enrollment_paging@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    coord_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "coord_enrollment_paging@example.com", "password": "password123"},
+    )
+    coord_headers = {"Authorization": f"Bearer {coord_login.json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses/",
+        json={"name": "BCom", "code": "BCOMENR", "description": "desc"},
+        headers=admin_headers,
+    )
+    year = client.post(
+        "/api/v1/years/",
+        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
+        headers=admin_headers,
+    )
+    class_one = client.post(
+        "/api/v1/classes/",
+        json={"course_id": course.json()["id"], "year_id": year.json()["id"], "name": "Class One"},
+        headers=admin_headers,
+    )
+    class_two = client.post(
+        "/api/v1/classes/",
+        json={
+            "course_id": course.json()["id"],
+            "year_id": year.json()["id"],
+            "name": "Class Two",
+            "class_coordinator_user_id": coordinator.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    student_one = client.post(
+        "/api/v1/students/",
+        json={"full_name": "Student One", "roll_number": "ENR-1"},
+        headers=admin_headers,
+    )
+    student_two = client.post(
+        "/api/v1/students/",
+        json={"full_name": "Student Two", "roll_number": "ENR-2"},
+        headers=admin_headers,
+    )
+    assert class_one.status_code == 201
+    assert class_two.status_code == 201
+    assert student_one.status_code == 201
+    assert student_two.status_code == 201
+
+    add_one = client.post(
+        "/api/v1/enrollments/",
+        json={"class_id": class_one.json()["id"], "student_id": student_one.json()["id"]},
+        headers=admin_headers,
+    )
+    add_two = client.post(
+        "/api/v1/enrollments/",
+        json={"class_id": class_two.json()["id"], "student_id": student_two.json()["id"]},
+        headers=admin_headers,
+    )
+    assert add_one.status_code == 201
+    assert add_two.status_code == 201
+
+    listed = client.get("/api/v1/enrollments/?skip=0&limit=1", headers=coord_headers)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert len(body) == 1
+    assert body[0]["class_id"] == class_two.json()["id"]
 
 
 def test_club_coordinator_can_view_own_event_registrations() -> None:

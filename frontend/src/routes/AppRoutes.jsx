@@ -16,12 +16,15 @@ const CoursesPage = lazy(() => import('../pages/CoursesPage'));
 const DepartmentsPage = lazy(() => import('../pages/DepartmentsPage'));
 const BranchesPage = lazy(() => import('../pages/BranchesPage'));
 const YearsPage = lazy(() => import('../pages/YearsPage'));
-const ClassesPage = lazy(() => import('../pages/ClassesPage'));
+const SectionsPage = lazy(() => import('../pages/ClassesPage'));
 const StudentsPage = lazy(() => import('../pages/StudentsPage'));
 const SubjectsPage = lazy(() => import('../pages/SubjectsPage'));
 const AssignmentsPage = lazy(() => import('../pages/AssignmentsPage'));
 const SubmissionsPage = lazy(() => import('../pages/SubmissionsPage'));
 const ReviewTicketsPage = lazy(() => import('../pages/ReviewTicketsPage'));
+const CommunicationFeedPage = lazy(() => import('../pages/Communication/FeedPage'));
+const CommunicationAnnouncementsPage = lazy(() => import('../pages/Communication/AnnouncementsPage'));
+const CommunicationMessagesPage = lazy(() => import('../pages/Communication/MessagesPage'));
 const NoticesPage = lazy(() => import('../pages/NoticesPage'));
 const ClubsPage = lazy(() => import('../pages/ClubsPage'));
 const ClubEventsPage = lazy(() => import('../pages/ClubEventsPage'));
@@ -32,6 +35,7 @@ const AuditLogsPage = lazy(() => import('../pages/AuditLogsPage'));
 const DeveloperPanelPage = lazy(() => import('../pages/DeveloperPanelPage'));
 const UsersPage = lazy(() => import('../pages/UsersPage'));
 const EventRegistrationsPage = lazy(() => import('../pages/EventRegistrationsPage'));
+const EvaluateSubmissionPage = lazy(() => import('../pages/Teacher/EvaluateSubmission'));
 
 export function AppRoutes() {
   return (
@@ -64,7 +68,14 @@ export function AppRoutes() {
               </ProtectedRoute>
             }
           />
-          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.analytics}>
+                <AnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/academic-structure"
             element={
@@ -106,10 +117,10 @@ export function AppRoutes() {
             }
           />
           <Route
-            path="/classes"
+            path="/sections"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.classes}>
-                <ClassesPage />
+              <ProtectedRoute {...FEATURE_ACCESS.sections}>
+                <SectionsPage />
               </ProtectedRoute>
             }
           />
@@ -137,7 +148,22 @@ export function AppRoutes() {
               </ProtectedRoute>
             }
           />
-          <Route path="/submissions" element={<SubmissionsPage />} />
+          <Route
+            path="/submissions"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.submissions}>
+                <SubmissionsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/submissions/:submissionId/evaluate"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+                <EvaluateSubmissionPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/review-tickets"
             element={
@@ -146,11 +172,78 @@ export function AppRoutes() {
               </ProtectedRoute>
             }
           />
-          <Route path="/notices" element={<NoticesPage />} />
-          <Route path="/clubs" element={<ClubsPage />} />
-          <Route path="/club-events" element={<ClubEventsPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/evaluations" element={<EvaluationsPage />} />
+          <Route
+            path="/communication"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.communicationFeed}>
+                <Navigate to="/communication/feed" replace />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/communication/feed"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.communicationFeed}>
+                <CommunicationFeedPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/communication/announcements"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.communicationAnnouncements}>
+                <CommunicationAnnouncementsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/communication/messages"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.communicationMessages}>
+                <CommunicationMessagesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/notices"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.notices}>
+                <NoticesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clubs"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.clubs}>
+                <ClubsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/club-events"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.clubEvents}>
+                <ClubEventsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.notifications}>
+                <NotificationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/evaluations"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.evaluations}>
+                <EvaluationsPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/event-registrations"
             element={

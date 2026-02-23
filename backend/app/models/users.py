@@ -11,6 +11,7 @@ def user_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "extended_roles": document.get("extended_roles", []),
         "role_scope": document.get("role_scope", {}) or {},
         "is_active": document.get("is_active", True),
+        "must_change_password": document.get("must_change_password", False),
         "profile": document.get("profile", {}) or {},
         "avatar_url": f"/api/v1/auth/profile/avatar/{user_id}" if document.get("avatar_filename") else None,
         "avatar_updated_at": document.get("avatar_updated_at"),

@@ -79,8 +79,7 @@ async def analytics_summary(
     }
 
 
-@router.get('/teacher/classes')
-async def teacher_class_tiles(
+async def _teacher_section_tiles(
     current_user=Depends(require_roles(['teacher'])),
 ) -> dict:
     user_id = str(current_user.get('_id'))
@@ -158,6 +157,21 @@ async def teacher_class_tiles(
         )
 
     return {'items': items}
+
+
+@router.get('/teacher/classes')
+async def teacher_class_tiles(
+    current_user=Depends(require_roles(['teacher'])),
+) -> dict:
+    # Legacy compatibility alias; canonical path is /teacher/sections.
+    return await _teacher_section_tiles(current_user=current_user)
+
+
+@router.get('/teacher/sections')
+async def teacher_section_tiles(
+    current_user=Depends(require_roles(['teacher'])),
+) -> dict:
+    return await _teacher_section_tiles(current_user=current_user)
 
 
 @router.get('/academic-structure')

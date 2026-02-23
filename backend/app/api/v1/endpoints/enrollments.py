@@ -26,6 +26,18 @@ def _can_manage_class(current_user: dict, class_doc: dict) -> bool:
     return False
 
 
+async def _resolve_student_identifier(student_identifier: str) -> dict | None:
+    # Accept either internal student ObjectId or enrollment/roll number.
+    student = None
+    try:
+        student = await db.students.find_one({"_id": parse_object_id(student_identifier)})
+    except HTTPException:
+        student = None
+    if student:
+        return student
+    return await db.students.find_one({"roll_number": student_identifier})
+
+
 @router.get("/", response_model=List[EnrollmentOut])
 async def list_enrollments(
     class_id: str | None = Query(default=None),
@@ -38,15 +50,21 @@ async def list_enrollments(
     if class_id:
         query["class_id"] = class_id
     if student_id:
-        query["student_id"] = student_id
-    items = await db.enrollments.find(query).skip(skip).limit(limit).to_list(length=limit)
+        student = await _resolve_student_identifier(student_id)
+        if not student:
+            return []
+        query["student_id"] = {"$in": [str(student["_id"]), student.get("roll_number")]}
+
     if current_user.get("role") == "teacher":
+        raw_items = await db.enrollments.find(query).to_list(length=5000)
         scoped_items = []
-        for item in items:
+        for item in raw_items:
             class_doc = await db.classes.find_one({"_id": parse_object_id(item["class_id"])})
             if class_doc and _can_manage_class(current_user, class_doc):
                 scoped_items.append(item)
-        items = scoped_items
+        items = scoped_items[skip : skip + limit]
+    else:
+        items = await db.enrollments.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [EnrollmentOut(**enrollment_public(item)) for item in items]
 
 
@@ -61,17 +79,25 @@ async def create_enrollment(
     if not _can_manage_class(current_user, class_doc):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to manage this class")
 
-    student = await db.students.find_one({"_id": parse_object_id(payload.student_id)})
+    student = await _resolve_student_identifier(payload.student_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Student not found for provided student_id")
 
-    duplicate = await db.enrollments.find_one({"class_id": payload.class_id, "student_id": payload.student_id})
+    canonical_student_id = str(student["_id"])
+    candidate_student_ids = [canonical_student_id]
+    if student.get("roll_number"):
+        candidate_student_ids.append(student["roll_number"])
+
+    duplicate = await db.enrollments.find_one(
+        {"class_id": payload.class_id, "student_id": {"$in": candidate_student_ids}}
+    )
     if duplicate:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Student already enrolled in class")
 
     document = {
         "class_id": payload.class_id,
-        "student_id": payload.student_id,
+        "student_id": canonical_student_id,
+        "student_roll_number": student.get("roll_number"),
         "assigned_by_user_id": str(current_user["_id"]),
         "created_at": datetime.now(timezone.utc),
     }
@@ -83,6 +109,6 @@ async def create_enrollment(
         action="enroll_student",
         entity_type="enrollment",
         entity_id=str(result.inserted_id),
-        detail=f"Enrolled student {payload.student_id} into class {payload.class_id}",
+        detail=f"Enrolled student {student.get('roll_number') or canonical_student_id} into class {payload.class_id}",
     )
     return EnrollmentOut(**enrollment_public(created))

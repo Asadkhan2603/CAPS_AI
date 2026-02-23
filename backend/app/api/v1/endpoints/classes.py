@@ -22,7 +22,7 @@ async def list_classes(
     is_active: bool | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    _current_user=Depends(require_roles(['admin', 'teacher'])),
+    current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> List[ClassOut]:
     query = {}
     if course_id:
@@ -37,6 +37,9 @@ async def list_classes(
         query['name'] = {'$regex': q, '$options': 'i'}
     if is_active is not None:
         query['is_active'] = is_active
+    if current_user.get('role') == 'teacher':
+        query['class_coordinator_user_id'] = str(current_user.get('_id'))
+        query.setdefault('is_active', True)
 
     cursor = db.classes.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
@@ -46,11 +49,14 @@ async def list_classes(
 @router.get('/{class_id}', response_model=ClassOut)
 async def get_class(
     class_id: str,
-    _current_user=Depends(require_roles(['admin', 'teacher'])),
+    current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> ClassOut:
     item = await db.classes.find_one({'_id': parse_object_id(class_id)})
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
+    if current_user.get('role') == 'teacher':
+        if item.get('class_coordinator_user_id') != str(current_user.get('_id')):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to view this class')
     return ClassOut(**class_public(item))
 
 

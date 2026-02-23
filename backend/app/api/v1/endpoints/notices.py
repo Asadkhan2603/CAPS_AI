@@ -1,32 +1,170 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from bson import ObjectId
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 
 from app.core.database import db
+from app.core.mongo import parse_object_id
 from app.core.security import require_roles
 from app.models.notices import notice_public
 from app.schemas.notice import NoticeCreate, NoticeOut
 from app.services.audit import log_audit_event
+from app.services.cloudinary_uploads import (
+    ALLOWED_NOTICE_MIME_TYPES,
+    MAX_NOTICE_FILE_BYTES,
+    MAX_NOTICE_FILES,
+    delete_cloudinary_asset,
+    upload_notice_file,
+)
 
 router = APIRouter()
 
 
 def _can_publish_scope(current_user: dict, scope: str) -> bool:
+    normalized_scope = 'class' if scope == 'section' else scope
     if current_user.get('role') == 'admin':
         return True
     if current_user.get('role') != 'teacher':
         return False
     extensions = current_user.get('extended_roles', [])
-    if scope == 'college':
+    if normalized_scope == 'college':
         return False
-    if scope == 'year':
+    if normalized_scope == 'year':
         return 'year_head' in extensions
-    if scope == 'class':
+    if normalized_scope == 'class':
         return 'class_coordinator' in extensions
-    if scope == 'subject':
+    if normalized_scope == 'subject':
         return True
     return False
+
+
+async def _validate_scope_ref_access(current_user: dict, scope: str, scope_ref_id: str | None) -> str | None:
+    normalized_scope = 'class' if scope == 'section' else scope
+    if normalized_scope == 'college':
+        if scope_ref_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='scope_ref_id must be empty for college scope')
+        return None
+
+    if normalized_scope in {'year', 'class', 'subject'} and not scope_ref_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='scope_ref_id is required for this scope')
+
+    if normalized_scope == 'year':
+        year = await db.years.find_one({'_id': parse_object_id(scope_ref_id)})
+        if not year:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Year not found for provided scope_ref_id')
+        return scope_ref_id
+
+    if normalized_scope == 'class':
+        class_doc = await db.classes.find_one({'_id': parse_object_id(scope_ref_id)})
+        if not class_doc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Class not found for provided scope_ref_id')
+        if current_user.get('role') == 'teacher' and class_doc.get('class_coordinator_user_id') != str(current_user['_id']):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to publish for this class')
+        return scope_ref_id
+
+    if normalized_scope == 'subject':
+        subject = await db.subjects.find_one({'_id': parse_object_id(scope_ref_id)})
+        if not subject:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Subject not found for provided scope_ref_id')
+        return scope_ref_id
+
+    return scope_ref_id
+
+
+async def _student_scope_visibility_ids(current_user: dict) -> tuple[set[str], set[str], set[str]]:
+    user_id = str(current_user['_id'])
+    user_email = (current_user.get('email') or '').strip().lower()
+
+    student_profiles = await db.students.find({'$or': [{'email': user_email}, {'user_id': user_id}]}).to_list(length=1000)
+    student_ids = [str(item['_id']) for item in student_profiles]
+
+    class_ids: set[str] = set()
+    for profile in student_profiles:
+        class_id = profile.get('class_id')
+        if class_id:
+            class_ids.add(class_id)
+
+    if student_ids:
+        enrollments = await db.enrollments.find({'student_id': {'$in': student_ids}}).to_list(length=5000)
+        for enrollment in enrollments:
+            class_id = enrollment.get('class_id')
+            if class_id:
+                class_ids.add(class_id)
+
+    year_ids: set[str] = set()
+    if class_ids:
+        class_object_ids = [ObjectId(class_id) for class_id in class_ids if ObjectId.is_valid(class_id)]
+        classes = await db.classes.find({'_id': {'$in': class_object_ids}}).to_list(length=2000) if class_object_ids else []
+        for class_doc in classes:
+            year_id = class_doc.get('year_id')
+            if year_id:
+                year_ids.add(year_id)
+
+    subject_ids: set[str] = set()
+    if class_ids:
+        assignments = await db.assignments.find({'class_id': {'$in': list(class_ids)}}).to_list(length=5000)
+        for assignment in assignments:
+            subject_id = assignment.get('subject_id')
+            if subject_id:
+                subject_ids.add(subject_id)
+
+    return class_ids, year_ids, subject_ids
+
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    normalized = normalized.replace('Z', '+00:00')
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid expires_at datetime format') from exc
+
+
+async def _extract_payload_and_files(request: Request) -> tuple[NoticeCreate, list[tuple[bytes, str, str]]]:
+    content_type = request.headers.get('content-type', '').lower()
+    files: list[tuple[bytes, str, str]] = []
+
+    if content_type.startswith('multipart/form-data'):
+        form = await request.form()
+        images = form.getlist('images') if hasattr(form, 'getlist') else []
+        if len(images) > MAX_NOTICE_FILES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f'At most {MAX_NOTICE_FILES} files are allowed per notice',
+            )
+
+        for item in images:
+            if not isinstance(item, UploadFile):
+                continue
+            mime_type = (item.content_type or '').lower()
+            if mime_type not in ALLOWED_NOTICE_MIME_TYPES:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'Unsupported file type: {mime_type}')
+            content = await item.read()
+            if len(content) > MAX_NOTICE_FILE_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f'File {item.filename or "file"} exceeds 10MB limit',
+                )
+            files.append((content, mime_type, item.filename or 'file'))
+
+        payload = NoticeCreate(
+            title=str(form.get('title') or ''),
+            message=str(form.get('message') or ''),
+            priority=str(form.get('priority') or 'normal'),
+            scope=str(form.get('scope') or 'college'),
+            scope_ref_id=(str(form.get('scope_ref_id')).strip() if form.get('scope_ref_id') else None),
+            expires_at=_parse_datetime(str(form.get('expires_at')) if form.get('expires_at') else None),
+        )
+        return payload, files
+
+    raw = await request.json()
+    payload = NoticeCreate(**raw)
+    return payload, files
 
 
 @router.get('/', response_model=List[NoticeOut])
@@ -40,7 +178,7 @@ async def list_notices(
 ) -> List[NoticeOut]:
     query = {'is_active': True}
     if scope:
-        query['scope'] = scope
+        query['scope'] = 'class' if scope == 'section' else scope
     if priority:
         query['priority'] = priority
 
@@ -50,40 +188,78 @@ async def list_notices(
         items = [item for item in items if not item.get('expires_at') or item.get('expires_at') > now]
 
     if current_user.get('role') == 'student':
-        # Until student-to-class/year/subject targeting is fully mapped,
-        # keep student visibility restricted to college-wide notices.
-        items = [item for item in items if item.get('scope') == 'college']
+        class_ids, year_ids, subject_ids = await _student_scope_visibility_ids(current_user)
+        scoped_items = []
+        for item in items:
+            item_scope = item.get('scope')
+            scope_ref_id = item.get('scope_ref_id')
+            if item_scope == 'college':
+                scoped_items.append(item)
+                continue
+            if item_scope == 'class' and scope_ref_id and scope_ref_id in class_ids:
+                scoped_items.append(item)
+                continue
+            if item_scope == 'year' and scope_ref_id and scope_ref_id in year_ids:
+                scoped_items.append(item)
+                continue
+            if item_scope == 'subject' and scope_ref_id and scope_ref_id in subject_ids:
+                scoped_items.append(item)
+                continue
+        items = scoped_items
 
     return [NoticeOut(**notice_public(item)) for item in items]
 
 
 @router.post('/', response_model=NoticeOut, status_code=status.HTTP_201_CREATED)
 async def create_notice(
-    payload: NoticeCreate,
+    request: Request,
+    images: list[UploadFile] | None = File(default=None),
     current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> NoticeOut:
+    payload, uploaded_files = await _extract_payload_and_files(request)
+
     if not _can_publish_scope(current_user, payload.scope):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to publish this notice scope')
 
-    document = {
-        'title': payload.title.strip(),
-        'message': payload.message.strip(),
-        'priority': payload.priority,
-        'scope': payload.scope,
-        'scope_ref_id': payload.scope_ref_id,
-        'expires_at': payload.expires_at,
-        'created_by': str(current_user['_id']),
-        'is_active': True,
-        'created_at': datetime.now(timezone.utc),
-    }
-    result = await db.notices.insert_one(document)
-    created = await db.notices.find_one({'_id': result.inserted_id})
+    persisted_scope = 'class' if payload.scope == 'section' else payload.scope
+    scope_ref_id = await _validate_scope_ref_access(current_user, payload.scope, payload.scope_ref_id)
 
-    await log_audit_event(
-        actor_user_id=str(current_user['_id']),
-        action='create',
-        entity_type='notice',
-        entity_id=str(result.inserted_id),
-        detail=f"Created {payload.priority} notice with scope {payload.scope}",
-    )
-    return NoticeOut(**notice_public(created))
+    images: list[dict] = []
+    try:
+        for content, mime_type, filename in uploaded_files:
+            item = await upload_notice_file(content=content, mime_type=mime_type, filename=filename)
+            images.append(item)
+
+        document = {
+            'title': payload.title.strip(),
+            'message': payload.message.strip(),
+            'priority': payload.priority,
+            'scope': persisted_scope,
+            'scope_ref_id': scope_ref_id,
+            'expires_at': payload.expires_at,
+            'images': images,
+            'created_by': str(current_user['_id']),
+            'is_active': True,
+            'created_at': datetime.now(timezone.utc),
+        }
+        result = await db.notices.insert_one(document)
+        created = await db.notices.find_one({'_id': result.inserted_id})
+
+        await log_audit_event(
+            actor_user_id=str(current_user['_id']),
+            action='create',
+            entity_type='notice',
+            entity_id=str(result.inserted_id),
+            detail=f"Created {payload.priority} notice with scope {payload.scope} ({len(images)} attachments)",
+        )
+        return NoticeOut(**notice_public(created))
+    except HTTPException:
+        for image in images:
+            resource_type = 'image' if (image.get('mime_type') or '').startswith('image/') else 'raw'
+            delete_cloudinary_asset(image.get('public_id') or '', resource_type=resource_type)
+        raise
+    except Exception as exc:  # pragma: no cover - handled by global error handler
+        for image in images:
+            resource_type = 'image' if (image.get('mime_type') or '').startswith('image/') else 'raw'
+            delete_cloudinary_asset(image.get('public_id') or '', resource_type=resource_type)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Failed to create notice') from exc

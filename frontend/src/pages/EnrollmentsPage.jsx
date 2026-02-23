@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import EntityManager from '../components/ui/EntityManager';
 import { apiClient } from '../services/apiClient';
+import { getSections } from '../services/sectionsApi';
 import { useAuth } from '../hooks/useAuth';
 
 function canManageEnrollments(user) {
@@ -13,66 +14,80 @@ function canManageEnrollments(user) {
 
 export default function EnrollmentsPage() {
   const { user } = useAuth();
-  const [classes, setClasses] = useState([]);
+  const [sections, setSections] = useState([]);
   const [students, setStudents] = useState([]);
 
   useEffect(() => {
     async function loadLookups() {
       try {
-        const [classesRes, studentsRes] = await Promise.all([
-          apiClient.get('/classes/', { params: { skip: 0, limit: 100 } }),
+        const sectionsReq = getSections({ skip: 0, limit: 100 });
+        const [sectionsRes, studentsRes] = await Promise.all([
+          sectionsReq,
           apiClient.get('/students/', { params: { skip: 0, limit: 100 } })
         ]);
-        setClasses(classesRes.data || []);
+        setSections(sectionsRes.data || []);
         setStudents(studentsRes.data || []);
       } catch {
-        setClasses([]);
+        setSections([]);
         setStudents([]);
       }
     }
     loadLookups();
   }, []);
 
-  const classOptions = useMemo(
-    () => classes.map((item) => ({ value: item.id, label: item.name })),
-    [classes]
+  const sectionOptions = useMemo(
+    () => sections.map((item) => ({ value: item.id, label: item.name })),
+    [sections]
   );
   const studentOptions = useMemo(
-    () => students.map((item) => ({ value: item.id, label: `${item.full_name} (${item.roll_number})` })),
+    () => students.map((item) => ({ value: item.roll_number, label: `${item.full_name} (${item.roll_number})` })),
     [students]
   );
-  const classNameById = useMemo(
-    () => Object.fromEntries(classOptions.map((item) => [item.value, item.label])),
-    [classOptions]
+  const sectionNameById = useMemo(
+    () => Object.fromEntries(sectionOptions.map((item) => [item.value, item.label])),
+    [sectionOptions]
   );
-  const studentNameById = useMemo(
-    () => Object.fromEntries(studentOptions.map((item) => [item.value, item.label])),
-    [studentOptions]
-  );
+  const studentNameById = useMemo(() => {
+    const map = {};
+    for (const item of students) {
+      const label = `${item.full_name} (${item.roll_number})`;
+      if (item.id) map[item.id] = label;
+      if (item.roll_number) map[item.roll_number] = label;
+    }
+    return map;
+  }, [students]);
   const filters = useMemo(
     () => [
-      { name: 'class_id', label: 'Class', type: 'select', options: classOptions, placeholder: 'All Classes' },
-      { name: 'student_id', label: 'Student', type: 'select', options: studentOptions, placeholder: 'All Students' }
+      { name: 'class_id', label: 'Section', type: 'select', options: sectionOptions, placeholder: 'All Sections' },
+      { name: 'student_id', label: 'Enrollment Number', type: 'select', options: studentOptions, placeholder: 'All Students' }
     ],
-    [classOptions, studentOptions]
+    [sectionOptions, studentOptions]
   );
 
   const createFields = useMemo(
     () => [
-      { name: 'class_id', label: 'Class', type: 'select', options: classOptions, required: true },
-      { name: 'student_id', label: 'Student', type: 'select', options: studentOptions, required: true }
+      { name: 'class_id', label: 'Section', type: 'select', options: sectionOptions, required: true },
+      { name: 'student_id', label: 'Enrollment Number', type: 'select', options: studentOptions, required: true }
     ],
-    [classOptions, studentOptions]
+    [sectionOptions, studentOptions]
   );
 
   const columns = useMemo(
     () => [
-      { key: 'class_id', label: 'Class', render: (row) => classNameById[row.class_id] || row.class_id },
-      { key: 'student_id', label: 'Student', render: (row) => studentNameById[row.student_id] || row.student_id },
+      { key: 'class_id', label: 'Section', render: (row) => sectionNameById[row.class_id] || row.class_id },
+      {
+        key: 'student_id',
+        label: 'Student',
+        render: (row) =>
+          studentNameById[row.student_id] ||
+          studentNameById[row.student_roll_number] ||
+          row.student_roll_number ||
+          row.student_id
+      },
       { key: 'assigned_by_user_id', label: 'Assigned By' },
       { key: 'created_at', label: 'Created At', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') }
     ],
-    [classNameById, studentNameById]
+    [sectionNameById, studentNameById]
   );
 
   return (

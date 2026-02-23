@@ -19,6 +19,7 @@ class SubmissionOut(BaseModel):
     ai_provider: str | None = None
     ai_error: str | None = None
     similarity_score: float | None = None
+    extracted_text: str | None = None
     created_at: datetime | None = None
 
 

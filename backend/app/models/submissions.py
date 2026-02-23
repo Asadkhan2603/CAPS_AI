@@ -18,5 +18,6 @@ def submission_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'ai_provider': document.get('ai_provider'),
         'ai_error': document.get('ai_error'),
         'similarity_score': document.get('similarity_score'),
+        'extracted_text': document.get('extracted_text'),
         'created_at': document.get('created_at'),
     }

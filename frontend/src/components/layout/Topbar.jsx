@@ -1,4 +1,4 @@
-import { Menu, Moon, Sun, UserCircle2, ChevronDown, LogOut, History, PanelLeftClose, PanelLeftOpen, UserRoundCog } from 'lucide-react';
+import { Menu, Moon, Sun, UserCircle2, ChevronDown, LogOut, History, PanelLeftClose, PanelLeftOpen, UserRoundCog, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Breadcrumb from './Breadcrumb';
@@ -15,22 +15,26 @@ export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse
     : '';
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
+    <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/80">
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <button className="btn-secondary !p-2 lg:hidden" onClick={onOpenMobile}>
             <Menu size={16} />
           </button>
           <button className="btn-secondary !p-2 hidden lg:inline-flex" onClick={onToggleCollapse} title="Toggle Control Center">
             {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
-          <div>
+          <div className="min-w-0">
             <Breadcrumb />
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Academic Operations Dashboard</p>
+            <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">Academic Operations Dashboard</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          <label className="relative hidden md:block">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input className="input !h-9 !w-56 !rounded-xl !pl-8 !pr-3 !py-0 text-xs" placeholder="Quick search..." />
+          </label>
           <Link to="/profile" className="btn-secondary !p-2 sm:hidden" title="Manage Profile">
             <UserRoundCog size={16} />
           </Link>
@@ -42,7 +46,7 @@ export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse
           </button>
 
           <div className="relative hidden sm:block">
-            <button className="btn-secondary" onClick={() => setOpen((prev) => !prev)}>
+            <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100/90 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" onClick={() => setOpen((prev) => !prev)}>
               {avatarSrc ? (
                 <img src={avatarSrc} alt="Profile" className="h-5 w-5 rounded-full object-cover" />
               ) : (

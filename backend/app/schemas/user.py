@@ -62,6 +62,7 @@ class UserOut(BaseModel):
     extended_roles: list[UserExtensionRole] = Field(default_factory=list)
     role_scope: UserRoleScope = Field(default_factory=UserRoleScope)
     is_active: bool = True
+    must_change_password: bool = False
     profile: UserProfile = Field(default_factory=UserProfile)
     avatar_url: str | None = None
     avatar_updated_at: datetime | None = None

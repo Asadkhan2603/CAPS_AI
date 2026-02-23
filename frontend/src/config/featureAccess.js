@@ -14,6 +14,9 @@ export const FEATURE_ACCESS = {
     allowedRoles: ['admin', 'teacher'],
     requiredTeacherExtensions: ['year_head', 'class_coordinator']
   },
+  communicationFeed: { allowedRoles: ['admin', 'teacher', 'student'] },
+  communicationAnnouncements: { allowedRoles: ['admin', 'teacher', 'student'] },
+  communicationMessages: { allowedRoles: ['admin', 'teacher', 'student'] },
   notices: { allowedRoles: ['admin', 'teacher', 'student'] },
   notifications: { allowedRoles: ['admin', 'teacher', 'student'] },
   clubs: { allowedRoles: ['admin', 'teacher', 'student'] },
@@ -26,5 +29,5 @@ export const FEATURE_ACCESS = {
   departments: { allowedRoles: ['admin'] },
   branches: { allowedRoles: ['admin'] },
   years: { allowedRoles: ['admin'] },
-  classes: { allowedRoles: ['admin'] }
+  sections: { allowedRoles: ['admin', 'teacher'] }
 };

@@ -17,8 +17,8 @@ export default function DashboardLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-100 to-brand-50 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900">
-      <div className="flex min-h-screen">
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(1200px_500px_at_15%_-10%,rgba(14,165,233,0.18),transparent),radial-gradient(900px_500px_at_90%_0%,rgba(99,102,241,0.18),transparent)] dark:bg-[radial-gradient(1200px_500px_at_15%_-10%,rgba(14,165,233,0.15),transparent),radial-gradient(900px_500px_at_90%_0%,rgba(99,102,241,0.14),transparent)]">
+      <div className="relative z-10 flex min-h-screen">
         <Sidebar
           user={user}
           collapsed={collapsed}
@@ -27,7 +27,7 @@ export default function DashboardLayout() {
           onLogout={logout}
         />
 
-        <div className="flex min-h-screen flex-1 flex-col">
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col">
           <Topbar
             user={user}
             onOpenMobile={() => setMobileOpen(true)}
@@ -44,7 +44,9 @@ export default function DashboardLayout() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22 }}
           >
-            <Outlet />
+            <div className="mx-auto w-full max-w-[1600px]">
+              <Outlet />
+            </div>
           </motion.main>
         </div>
       </div>

@@ -80,18 +80,20 @@ async def list_submissions(
 
     if current_user.get('role') == 'student':
         query['student_user_id'] = str(current_user['_id'])
-    cursor = db.submissions.find(query).skip(skip).limit(limit)
-    items = await cursor.to_list(length=limit)
     if current_user.get('role') == 'teacher':
+        raw_items = await db.submissions.find(query).to_list(length=5000)
         teacher_user_id = str(current_user['_id'])
         scoped_items = []
-        for item in items:
+        for item in raw_items:
             assignment_id = item.get('assignment_id')
             if not assignment_id:
                 continue
             if await _teacher_can_access_assignment(teacher_user_id, assignment_id):
                 scoped_items.append(item)
-        items = scoped_items
+        items = scoped_items[skip : skip + limit]
+    else:
+        cursor = db.submissions.find(query).skip(skip).limit(limit)
+        items = await cursor.to_list(length=limit)
     return [SubmissionOut(**submission_public(item)) for item in items]
 
 

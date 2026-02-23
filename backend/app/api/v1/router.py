@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
+    ai,
     analytics,
     assignments,
     audit_logs,
@@ -32,11 +33,14 @@ api_router.include_router(courses.router, prefix="/courses", tags=["courses"])
 api_router.include_router(departments.router, prefix="/departments", tags=["departments"])
 api_router.include_router(branches.router, prefix="/branches", tags=["branches"])
 api_router.include_router(years.router, prefix="/years", tags=["years"])
+# Legacy compatibility alias; canonical path is /sections.
 api_router.include_router(classes.router, prefix="/classes", tags=["classes"])
+api_router.include_router(classes.router, prefix="/sections", tags=["sections"])
 api_router.include_router(students.router, prefix="/students", tags=["students"])
 api_router.include_router(subjects.router, prefix="/subjects", tags=["subjects"])
 api_router.include_router(assignments.router, prefix="/assignments", tags=["assignments"])
 api_router.include_router(submissions.router, prefix="/submissions", tags=["submissions"])
+api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
 api_router.include_router(evaluations.router, prefix="/evaluations", tags=["evaluations"])
 api_router.include_router(similarity.router, prefix="/similarity", tags=["similarity"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])

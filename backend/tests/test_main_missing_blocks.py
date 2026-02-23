@@ -791,3 +791,111 @@ def test_event_registration_blocks_duplicate_and_capacity_overflow() -> None:
     )
     assert overflow.status_code == 400
     assert overflow.json()["detail"] == "Event registration capacity reached"
+
+
+def test_teacher_ai_chat_evaluation_and_history_flow() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    # Avoid live provider calls during test run.
+    from app.api.v1.endpoints import ai as ai_endpoint
+
+    original_generate = ai_endpoint.generate_evaluation_chat_reply
+    ai_endpoint.generate_evaluation_chat_reply = (
+        lambda **kwargs: ("Suggested Marks: 4/5\nExplanation: Good coverage.\nConstructive Feedback: Clear answer.\nImprovement Suggestions: Add one example.", None)
+    )
+    try:
+        teacher = client.post(
+            "/api/v1/auth/register",
+            json={
+                "full_name": "Teacher AI Chat",
+                "email": "teacher_ai_chat@example.com",
+                "password": "password123",
+                "role": "teacher",
+            },
+        )
+        assert teacher.status_code == 201
+        teacher_id = teacher.json()["id"]
+        teacher_login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "teacher_ai_chat@example.com", "password": "password123"},
+        )
+        teacher_headers = {"Authorization": f"Bearer {teacher_login.json()['access_token']}"}
+
+        assignment = client.post(
+            "/api/v1/assignments/",
+            json={"title": "AI Console Assignment", "description": "Q1. Explain OOP.", "total_marks": 100},
+            headers=teacher_headers,
+        )
+        assert assignment.status_code == 201
+        exam_id = assignment.json()["id"]
+
+        student_headers = _student_headers(client, "student_ai_chat@example.com")
+        student_me = client.get("/api/v1/auth/me", headers=student_headers)
+        assert student_me.status_code == 200
+        student_id = student_me.json()["id"]
+
+        submission = client.post(
+            "/api/v1/submissions/upload",
+            data={"assignment_id": exam_id, "notes": "oop answer"},
+            files={"file": ("answer.txt", b"OOP uses encapsulation, inheritance and polymorphism.", "text/plain")},
+            headers=student_headers,
+        )
+        assert submission.status_code == 201
+        submission_id = submission.json()["id"]
+
+        evaluate = client.post(
+            "/api/v1/ai/evaluate",
+            json={
+                "teacher_id": teacher_id,
+                "student_id": student_id,
+                "exam_id": exam_id,
+                "question_id": "q1",
+                "teacher_message": "Evaluate this answer for 5 marks",
+                "question_text": "Explain OOP principles.",
+                "student_answer": "OOP uses encapsulation, inheritance and polymorphism.",
+                "rubric": "Concept clarity, examples, completeness",
+                "submission_id": submission_id,
+            },
+            headers=teacher_headers,
+        )
+        assert evaluate.status_code == 200
+        evaluate_body = evaluate.json()
+        assert "ai_response" in evaluate_body
+        assert evaluate_body["thread"]["teacher_id"] == teacher_id
+        assert len(evaluate_body["thread"]["messages"]) == 2
+
+        history = client.get(f"/api/v1/ai/history/{student_id}/{exam_id}", headers=teacher_headers)
+        assert history.status_code == 200
+        history_body = history.json()
+        assert history_body["student_id"] == student_id
+        assert history_body["exam_id"] == exam_id
+        assert len(history_body["messages"]) == 2
+        assert history_body["messages"][0]["role"] == "teacher"
+        assert history_body["messages"][1]["role"] == "ai"
+    finally:
+        ai_endpoint.generate_evaluation_chat_reply = original_generate
+
+
+def test_student_cannot_access_ai_chat_endpoints() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    student_headers = _student_headers(client, "student_ai_forbidden@example.com")
+
+    blocked_eval = client.post(
+        "/api/v1/ai/evaluate",
+        json={
+            "teacher_id": "t1",
+            "student_id": "s1",
+            "exam_id": "e1",
+            "teacher_message": "test",
+            "question_text": "q",
+            "student_answer": "a",
+            "rubric": "r",
+        },
+        headers=student_headers,
+    )
+    assert blocked_eval.status_code == 403
+
+    blocked_history = client.get("/api/v1/ai/history/s1/e1", headers=student_headers)
+    assert blocked_history.status_code == 403

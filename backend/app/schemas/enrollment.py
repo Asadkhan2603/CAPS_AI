@@ -12,5 +12,6 @@ class EnrollmentOut(BaseModel):
     id: str
     class_id: str
     student_id: str
+    student_roll_number: str | None = None
     assigned_by_user_id: str
     created_at: datetime | None = None
