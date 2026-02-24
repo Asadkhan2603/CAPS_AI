@@ -56,7 +56,7 @@ async def list_assignments(
     limit: int = Query(default=20, ge=1, le=100),
     current_user=Depends(require_roles(["admin", "teacher", "student"])),
 ) -> List[AssignmentOut]:
-    query = {}
+    query = {"is_deleted": {"$in": [False, None]}}
     if q:
         query["title"] = {"$regex": q, "$options": "i"}
     if subject_id:
@@ -87,6 +87,8 @@ async def get_assignment(
 ) -> AssignmentOut:
     item = await db.assignments.find_one({"_id": parse_object_id(assignment_id)})
     if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+    if item.get("is_deleted"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
     if current_user.get("role") == "teacher" and item.get("created_by") != str(current_user["_id"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this assignment")
@@ -194,7 +196,10 @@ async def delete_assignment(
     if current_user.get("role") == "teacher" and item.get("created_by") != str(current_user["_id"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to delete this assignment")
 
-    result = await db.assignments.delete_one({"_id": assignment_obj_id})
-    if result.deleted_count == 0:
+    result = await db.assignments.update_one(
+        {"_id": assignment_obj_id, "is_deleted": {"$in": [False, None]}},
+        {"$set": {"is_deleted": True, "is_active": False, "deleted_at": datetime.now(timezone.utc), "deleted_by": str(current_user.get("_id"))}},
+    )
+    if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
-    return {"message": "Assignment deleted"}
+    return {"message": "Assignment archived"}

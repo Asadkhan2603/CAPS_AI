@@ -16,3 +16,11 @@ uploads/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Runtime artifacts
+*.log
+*.out.log
+*.err.log
+frontend_backup_*/
+frontend_before_replace_*/
+frontend_phase*_attempt_*/

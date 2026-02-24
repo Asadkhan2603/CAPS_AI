@@ -111,6 +111,7 @@ async def login_user(payload: UserLogin) -> Token:
         admin_type=user.get("admin_type"),
         extended_roles=user.get("extended_roles", []),
     )
+
     return Token(access_token=token, user=UserOut(**user_public(user)))
 
 

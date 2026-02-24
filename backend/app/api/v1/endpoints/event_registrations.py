@@ -19,6 +19,20 @@ MAX_RECEIPT_SIZE = 10 * 1024 * 1024
 ALLOWED_RECEIPT_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.pdf'}
 
 
+def _normalize_datetime_to_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _require_payment_reference_if_needed(event: dict, payment_reference: str | None) -> None:
+    if event.get('payment_required') and not payment_reference:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Payment reference is required for this event',
+        )
+
+
 async def _teacher_managed_event_ids(teacher_user_id: str) -> list[str]:
     clubs = await db.clubs.find({'coordinator_user_id': teacher_user_id}).to_list(length=1000)
     club_ids = [str(item.get('_id')) for item in clubs if item.get('_id')]
@@ -32,8 +46,6 @@ async def _validate_and_prepare_registration(event_id: str, student_user_id: str
     event = await db.club_events.find_one({'_id': parse_object_id(event_id)})
     if not event:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Event not found for provided event_id')
-    if event.get('status') != 'open':
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Event is closed for registration')
 
     duplicate = await db.event_registrations.find_one(
         {
@@ -50,6 +62,31 @@ async def _validate_and_prepare_registration(event_id: str, student_user_id: str
     )
     if registration_count >= int(event.get('capacity', 0)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Event registration capacity reached')
+
+    if not event.get('registration_enabled', True):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Registration is disabled for this event')
+    if event.get('status') != 'open':
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Event is closed for registration')
+
+    now = datetime.now(timezone.utc)
+    registration_start = _normalize_datetime_to_utc(event.get('registration_start'))
+    registration_end = _normalize_datetime_to_utc(event.get('registration_end'))
+
+    if registration_start:
+        if now < registration_start:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Registration has not started yet',
+            )
+
+    if registration_end:
+        if now > registration_end:
+            if event.get('status') == 'open':
+                await db.club_events.update_one({'_id': event['_id']}, {'$set': {'status': 'closed'}})
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Registration deadline has passed',
+            )
 
     return event
 
@@ -125,6 +162,7 @@ async def create_event_registration(
 ) -> EventRegistrationOut:
     student_user_id = str(current_user['_id'])
     event = await _validate_and_prepare_registration(payload.event_id, student_user_id)
+    _require_payment_reference_if_needed(event, payload.payment_qr_code)
 
     document = {
         'event_id': payload.event_id,
@@ -174,6 +212,7 @@ async def submit_event_registration(
 ) -> EventRegistrationOut:
     student_user_id = str(current_user['_id'])
     event = await _validate_and_prepare_registration(event_id, student_user_id)
+    _require_payment_reference_if_needed(event, payment_qr_code)
 
     document = {
         'event_id': event_id,
