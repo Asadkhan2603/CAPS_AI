@@ -18,7 +18,11 @@ class ClubEventCreate(BaseModel):
     registration_end: datetime | None = None
     event_date: datetime | None = None
     capacity: int = Field(default=100, ge=1, le=5000)
+    registration_enabled: bool = True
     approval_required: bool = False
+    payment_required: bool = False
+    payment_qr_image_url: str | None = Field(default=None, max_length=1200)
+    payment_amount: float | None = Field(default=None, ge=0)
     certificate_enabled: bool = False
 
 
@@ -31,7 +35,11 @@ class ClubEventUpdate(BaseModel):
     registration_end: datetime | None = None
     event_date: datetime | None = None
     capacity: int | None = Field(default=None, ge=1, le=5000)
+    registration_enabled: bool | None = None
     approval_required: bool | None = None
+    payment_required: bool | None = None
+    payment_qr_image_url: str | None = Field(default=None, max_length=1200)
+    payment_amount: float | None = Field(default=None, ge=0)
     certificate_enabled: bool | None = None
     status: EventStatus | None = None
     result_summary: str | None = Field(default=None, max_length=2000)
@@ -48,7 +56,11 @@ class ClubEventOut(BaseModel):
     registration_end: datetime | None = None
     event_date: datetime | None = None
     capacity: int
+    registration_enabled: bool = True
     approval_required: bool = False
+    payment_required: bool = False
+    payment_qr_image_url: str | None = None
+    payment_amount: float | None = None
     certificate_enabled: bool = False
     status: EventStatus = "draft"
     result_summary: str | None = None

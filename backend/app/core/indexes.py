@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pymongo import ASCENDING
-from pymongo.errors import OperationFailure
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.core.database import db
 
@@ -13,7 +13,7 @@ async def _safe_create_index(collection, keys, **kwargs) -> None:
         await collection.create_index(keys, **kwargs)
     except OperationFailure as exc:
         # Accept existing index with different generated name/options to keep startup resilient.
-        if getattr(exc, "code", None) in {85, 86}:
+        if getattr(exc, "code", None) in {85, 86, 11000}:
             return
         raise
 
@@ -32,6 +32,7 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.evaluations, [('teacher_user_id', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.notifications, [('target_user_id', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.audit_logs, [('created_at', ASCENDING)])
+    await _safe_create_index(db.audit_logs, [('resource_type', ASCENDING), ('severity', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.clubs, [('slug', ASCENDING), ('academic_year', ASCENDING)], unique=True)
     await _safe_create_index(db.clubs, [('status', ASCENDING), ('updated_at', ASCENDING)])
     await _safe_create_index(db.clubs, [('coordinator_user_id', ASCENDING)])
@@ -40,5 +41,13 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.club_applications, [('club_id', ASCENDING), ('student_user_id', ASCENDING), ('status', ASCENDING)])
     await _safe_create_index(db.club_events, [('club_id', ASCENDING), ('status', ASCENDING), ('event_date', ASCENDING)])
     await _safe_create_index(db.event_registrations, [('event_id', ASCENDING), ('student_user_id', ASCENDING)])
+    await _safe_create_index(db.assignments, [('is_deleted', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.club_events, [('is_deleted', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.courses, [('is_deleted', ASCENDING)])
+    await _safe_create_index(db.departments, [('is_deleted', ASCENDING)])
+    await _safe_create_index(db.branches, [('is_deleted', ASCENDING)])
+    await _safe_create_index(db.years, [('is_deleted', ASCENDING)])
+    await _safe_create_index(db.classes, [('is_deleted', ASCENDING)])
+    await _safe_create_index(db.notices, [('is_deleted', ASCENDING), ('deleted_at', ASCENDING)])
 
     _indexes_ensured = True

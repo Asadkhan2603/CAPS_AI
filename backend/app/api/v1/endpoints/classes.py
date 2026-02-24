@@ -147,9 +147,12 @@ async def update_class(
 @router.delete('/{class_id}')
 async def delete_class(
     class_id: str,
-    _current_user=Depends(require_roles(['admin'])),
+    current_user=Depends(require_roles(['admin'])),
 ) -> dict:
-    result = await db.classes.delete_one({'_id': parse_object_id(class_id)})
-    if result.deleted_count == 0:
+    result = await db.classes.update_one(
+        {'_id': parse_object_id(class_id), 'is_active': True},
+        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},
+    )
+    if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
-    return {'message': 'Class deleted'}
+    return {'message': 'Class archived'}

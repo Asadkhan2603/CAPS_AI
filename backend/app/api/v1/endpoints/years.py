@@ -115,9 +115,12 @@ async def update_year(
 @router.delete('/{year_id}')
 async def delete_year(
     year_id: str,
-    _current_user=Depends(require_roles(['admin'])),
+    current_user=Depends(require_roles(['admin'])),
 ) -> dict:
-    result = await db.years.delete_one({'_id': parse_object_id(year_id)})
-    if result.deleted_count == 0:
+    result = await db.years.update_one(
+        {'_id': parse_object_id(year_id), 'is_active': True},
+        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},
+    )
+    if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Year not found')
-    return {'message': 'Year deleted'}
+    return {'message': 'Year archived'}

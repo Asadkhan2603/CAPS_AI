@@ -3,7 +3,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ClubStatus = Literal["draft", "active", "closed", "suspended", "archived"]
+ClubStatus = Literal[
+    "draft",
+    "pending_activation",
+    "active",
+    "registration_closed",
+    "closed",
+    "suspended",
+    "archived",
+    "dormant",
+]
 ClubMembershipType = Literal["open", "approval_required"]
 ClubMemberRole = Literal["member", "president", "vice_president", "core_member"]
 ClubMemberStatus = Literal["active", "inactive", "removed"]

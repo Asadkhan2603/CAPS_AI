@@ -22,6 +22,19 @@ from app.services.audit import log_audit_event
 
 router = APIRouter()
 
+ACTIVE_STATES = {"active", "registration_closed"}
+NON_DISCOVERABLE_STATES_FOR_STUDENT = {"draft", "pending_activation", "suspended", "archived", "dormant"}
+STATE_TRANSITIONS = {
+    "draft": {"pending_activation", "active", "suspended"},
+    "pending_activation": {"active", "suspended", "archived"},
+    "active": {"registration_closed", "closed", "suspended", "archived", "dormant"},
+    "registration_closed": {"active", "closed", "suspended", "archived", "dormant"},
+    "closed": {"active", "suspended", "archived", "dormant"},
+    "suspended": {"active", "registration_closed", "closed", "archived"},
+    "dormant": {"active", "registration_closed", "closed", "archived"},
+    "archived": set(),
+}
+
 
 async def _resolve_user(user_id: str | None) -> dict[str, Any] | None:
     if not user_id:
@@ -71,6 +84,61 @@ async def _ensure_club(club_id: str) -> dict[str, Any]:
     return club
 
 
+def _normalize_status(value: str | None) -> str:
+    if not value:
+        return "draft"
+    return value.strip().lower()
+
+
+async def _validate_status_transition(
+    *,
+    club_id: str,
+    current_status: str,
+    next_status: str,
+    coordinator_id: str | None,
+    registration_open: bool,
+    current_user: dict[str, Any],
+) -> None:
+    if current_status == next_status:
+        return
+
+    allowed = STATE_TRANSITIONS.get(current_status, set())
+    if next_status not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status transition: {current_status} -> {next_status}",
+        )
+
+    if next_status == "active" and not coordinator_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Coordinator is required before activation")
+
+    if next_status in {"suspended", "archived"} and not _is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Only admin can set club status to {next_status}",
+        )
+
+    if registration_open and next_status not in ACTIVE_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration can be open only when club is active",
+        )
+
+    if next_status == "archived":
+        has_active_events = await db.club_events.count_documents(
+            {"club_id": club_id, "status": {"$in": ["draft", "open", "closed"]}}
+        )
+        if has_active_events:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archive blocked: club has active events")
+
+    if next_status == "suspended":
+        has_open_events = await db.club_events.count_documents(
+            {"club_id": club_id, "status": {"$in": ["open"]}}
+        )
+        if has_open_events:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Suspend blocked: club has ongoing events")
+
+
 async def _enrich_club_document(document: dict[str, Any]) -> dict[str, Any]:
     row = dict(document)
     coordinator = await _resolve_user(row.get("coordinator_user_id"))
@@ -109,12 +177,12 @@ async def list_clubs(
 
     if is_active is not None:
         if is_active:
-            query["status"] = {"$in": ["draft", "active"]}
+            query["status"] = {"$in": list(ACTIVE_STATES)}
         else:
-            query["status"] = {"$in": ["closed", "suspended", "archived"]}
+            query["status"] = {"$nin": list(ACTIVE_STATES)}
 
     if current_user.get("role") == "student":
-        query.setdefault("status", {"$nin": ["draft"]})
+        query.setdefault("status", {"$nin": list(NON_DISCOVERABLE_STATES_FOR_STUDENT)})
 
     items = await db.clubs.find(query).sort("updated_at", -1).skip(skip).limit(limit).to_list(length=limit)
 
@@ -169,8 +237,14 @@ async def create_club(
         "is_active": payload.status in {"draft", "active"},
     }
 
+    document["status"] = _normalize_status(document["status"])
+
     if document["status"] == "active" and not document.get("coordinator_user_id"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Coordinator is required before activation")
+    if document["status"] == "registration_closed":
+        if not document.get("coordinator_user_id"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Coordinator is required before activation")
+        document["registration_open"] = False
 
     result = await db.clubs.insert_one(document)
     created = await db.clubs.find_one({"_id": result.inserted_id})
@@ -210,30 +284,36 @@ async def update_club(
         if not president or president.get("role") != "student":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="President must be a student")
 
-    next_status = update_data.get("status", club.get("status", "active"))
+    current_status = _normalize_status(club.get("status", "draft"))
+    next_status = _normalize_status(update_data.get("status", current_status))
     coordinator_id = update_data.get("coordinator_user_id", club.get("coordinator_user_id"))
     registration_open = update_data.get("registration_open", club.get("registration_open", False))
 
-    if next_status == "active" and not coordinator_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Coordinator is required before activation")
+    await _validate_status_transition(
+        club_id=club_id,
+        current_status=current_status,
+        next_status=next_status,
+        coordinator_id=coordinator_id,
+        registration_open=bool(registration_open),
+        current_user=current_user,
+    )
 
-    if registration_open and next_status != "active":
+    if bool(registration_open) and next_status not in ACTIVE_STATES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Registration can be opened only when club is active",
         )
 
-    if next_status == "archived":
-        has_active_events = await db.club_events.count_documents(
-            {"club_id": club_id, "status": {"$in": ["draft", "open", "closed"]}}
-        )
-        if has_active_events:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archive blocked: club has active events")
-        update_data["archived_at"] = datetime.now(timezone.utc)
+    if next_status in {"archived", "registration_closed", "closed", "suspended", "dormant"}:
         update_data["registration_open"] = False
+    if next_status == "archived":
+        update_data["archived_at"] = datetime.now(timezone.utc)
+    if next_status == "active" and "registration_open" not in update_data:
+        update_data["registration_open"] = bool(club.get("registration_open", False))
 
     update_data["updated_at"] = datetime.now(timezone.utc)
-    update_data["is_active"] = next_status in {"draft", "active"}
+    update_data["status"] = next_status
+    update_data["is_active"] = next_status in ACTIVE_STATES
 
     await db.clubs.update_one({"_id": parse_object_id(club_id)}, {"$set": update_data})
     updated = await db.clubs.find_one({"_id": parse_object_id(club_id)})
@@ -255,7 +335,7 @@ async def join_club(
     current_user=Depends(require_roles(["student"])),
 ) -> dict[str, Any]:
     club = await _ensure_club(club_id)
-    if club.get("status") != "active":
+    if club.get("status") not in ACTIVE_STATES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Club is not active")
     if not club.get("registration_open", False):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Club registration is closed")

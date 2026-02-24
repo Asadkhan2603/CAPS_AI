@@ -125,6 +125,14 @@ def _parse_datetime(value: str | None) -> datetime | None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid expires_at datetime format') from exc
 
 
+def _to_aware_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 async def _extract_payload_and_files(request: Request) -> tuple[NoticeCreate, list[tuple[bytes, str, str]]]:
     content_type = request.headers.get('content-type', '').lower()
     files: list[tuple[bytes, str, str]] = []
@@ -187,7 +195,7 @@ async def list_notices(
     items = await db.notices.find(query).skip(skip).limit(limit).to_list(length=limit)
     items = sorted(items, key=lambda item: item.get('created_at') or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     if not include_expired:
-        items = [item for item in items if not item.get('expires_at') or item.get('expires_at') > now]
+        items = [item for item in items if not _to_aware_utc(item.get('expires_at')) or _to_aware_utc(item.get('expires_at')) > now]
 
     if current_user.get('role') == 'student':
         class_ids, year_ids, subject_ids = await _student_scope_visibility_ids(current_user)
@@ -291,7 +299,7 @@ async def delete_notice(
 
     await db.notices.update_one(
         {'_id': notice_obj_id},
-        {'$set': {'is_active': False, 'deleted_at': datetime.now(timezone.utc)}},
+        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user['_id'])}},
     )
     await log_audit_event(
         actor_user_id=str(current_user['_id']),

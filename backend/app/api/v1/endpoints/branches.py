@@ -118,9 +118,12 @@ async def update_branch(
 @router.delete('/{branch_id}')
 async def delete_branch(
     branch_id: str,
-    _current_user=Depends(require_roles(['admin'])),
+    current_user=Depends(require_roles(['admin'])),
 ) -> dict:
-    result = await db.branches.delete_one({'_id': parse_object_id(branch_id)})
-    if result.deleted_count == 0:
+    result = await db.branches.update_one(
+        {'_id': parse_object_id(branch_id), 'is_active': True},
+        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},
+    )
+    if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Branch not found')
-    return {'message': 'Branch deleted'}
+    return {'message': 'Branch archived'}

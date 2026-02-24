@@ -8,6 +8,17 @@ import { FEATURE_ACCESS } from '../config/featureAccess';
 const LoginPage = lazy(() => import('../pages/LoginPage'));
 const RegisterPage = lazy(() => import('../pages/RegisterPage'));
 const DashboardPage = lazy(() => import('../pages/DashboardPage'));
+const AdminDashboardPage = lazy(() => import('../pages/Admin/AdminDashboardPage'));
+const AdminGovernancePage = lazy(() => import('../pages/Admin/AdminGovernancePage'));
+const AdminAcademicStructurePage = lazy(() => import('../pages/Admin/AdminAcademicStructurePage'));
+const AdminOperationsPage = lazy(() => import('../pages/Admin/AdminOperationsPage'));
+const AdminClubsPage = lazy(() => import('../pages/Admin/AdminClubsPage'));
+const AdminCommunicationPage = lazy(() => import('../pages/Admin/AdminCommunicationPage'));
+const AdminCompliancePage = lazy(() => import('../pages/Admin/AdminCompliancePage'));
+const AdminAnalyticsPage = lazy(() => import('../pages/Admin/AdminAnalyticsPage'));
+const AdminSystemPage = lazy(() => import('../pages/Admin/AdminSystemPage'));
+const AdminRecoveryPage = lazy(() => import('../pages/Admin/AdminRecoveryPage'));
+const AdminDeveloperPage = lazy(() => import('../pages/Admin/AdminDeveloperPage'));
 const HistoryPage = lazy(() => import('../pages/HistoryPage'));
 const TimetablePage = lazy(() => import('../pages/TimetablePage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
@@ -51,6 +62,102 @@ export function AppRoutes() {
           }
         >
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminDashboard}>
+                <Navigate to="/admin/dashboard" replace />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/dashboard"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminDashboard} requiredAdminTypes={['super_admin', 'admin', 'academic_admin', 'compliance_admin']}>
+                <AdminDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/governance"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminGovernance} requiredAdminTypes={['super_admin', 'admin']}>
+                <AdminGovernancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/academic-structure"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminAcademicStructure} requiredAdminTypes={['super_admin', 'admin', 'academic_admin']}>
+                <AdminAcademicStructurePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/operations"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminOperations} requiredAdminTypes={['super_admin', 'admin']}>
+                <AdminOperationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/clubs"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminClubs} requiredAdminTypes={['super_admin', 'admin']}>
+                <AdminClubsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/communication"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminCommunication} requiredAdminTypes={['super_admin', 'admin']}>
+                <AdminCommunicationPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/compliance"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminCompliance} requiredAdminTypes={['super_admin', 'admin', 'compliance_admin']}>
+                <AdminCompliancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/analytics"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminAnalytics} requiredAdminTypes={['super_admin', 'admin', 'academic_admin', 'compliance_admin']}>
+                <AdminAnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/system"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminSystem} requiredAdminTypes={['super_admin', 'admin', 'compliance_admin']}>
+                <AdminSystemPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/recovery"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminRecovery} requiredAdminTypes={['super_admin', 'admin']}>
+                <AdminRecoveryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/developer"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.adminDeveloper} requiredAdminTypes={['super_admin']}>
+                <AdminDeveloperPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/history"
             element={

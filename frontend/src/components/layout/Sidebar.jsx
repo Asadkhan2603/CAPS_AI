@@ -36,6 +36,23 @@ import { formatApiError } from '../../utils/apiError';
 
 const groupedItems = [
   {
+    key: 'adminPanel',
+    label: 'Admin Panel',
+    items: [
+      { to: '/admin/dashboard', label: 'Admin Dashboard', featureKey: 'adminDashboard', icon: LayoutDashboard, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'] },
+      { to: '/admin/governance', label: 'Governance', featureKey: 'adminGovernance', icon: Shield, requiredAdminTypes: ['super_admin', 'admin'] },
+      { to: '/admin/academic-structure', label: 'Academic Structure', featureKey: 'adminAcademicStructure', icon: Network, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'] },
+      { to: '/admin/operations', label: 'Operations', featureKey: 'adminOperations', icon: Wrench, requiredAdminTypes: ['super_admin', 'admin'] },
+      { to: '/admin/clubs', label: 'Clubs', featureKey: 'adminClubs', icon: Users, requiredAdminTypes: ['super_admin', 'admin'] },
+      { to: '/admin/communication', label: 'Communication', featureKey: 'adminCommunication', icon: Megaphone, requiredAdminTypes: ['super_admin', 'admin'] },
+      { to: '/admin/compliance', label: 'Compliance', featureKey: 'adminCompliance', icon: Shield, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
+      { to: '/admin/analytics', label: 'Admin Analytics', featureKey: 'adminAnalytics', icon: ChartNoAxesCombined, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'] },
+      { to: '/admin/system', label: 'System Health', featureKey: 'adminSystem', icon: School, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
+      { to: '/admin/recovery', label: 'Recovery', featureKey: 'adminRecovery', icon: History, requiredAdminTypes: ['super_admin', 'admin'] },
+      { to: '/admin/developer', label: 'Developer', featureKey: 'adminDeveloper', icon: Wrench, requiredAdminTypes: ['super_admin'] }
+    ]
+  },
+  {
     key: 'overview',
     label: 'Overview',
     items: [
@@ -109,7 +126,7 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
   const logoInputRef = useRef(null);
   const roleGroupOrder = useMemo(() => {
     if (role === 'admin') {
-      return ['overview', 'academics', 'communication', 'clubs', 'operations', 'setup'];
+      return ['adminPanel', 'overview', 'academics', 'communication', 'clubs', 'operations', 'setup'];
     }
     if (role === 'teacher') {
       return ['overview', 'academics', 'communication', 'clubs', 'operations'];
@@ -124,6 +141,12 @@ export default function Sidebar({ user, collapsed, mobileOpen, onCloseMobile, on
           items: group.items.filter((item) => {
             if (role === 'student' && item.to === '/academic-structure') {
               return false;
+            }
+            if (role === 'admin' && item.requiredAdminTypes?.length) {
+              const currentAdminType = user?.admin_type || 'admin';
+              if (!item.requiredAdminTypes.includes(currentAdminType)) {
+                return false;
+              }
             }
             return canAccessFeature(user, FEATURE_ACCESS[item.featureKey]);
           })

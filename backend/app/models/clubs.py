@@ -32,7 +32,7 @@ def club_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": document.get("updated_at"),
         "archived_at": document.get("archived_at"),
         # Legacy field preserved for old UI paths.
-        "is_active": document.get("is_active", status in {"active", "draft"}),
+        "is_active": document.get("is_active", status in {"active", "registration_closed"}),
     }
 
 

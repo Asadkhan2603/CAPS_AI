@@ -35,12 +35,17 @@ export default function AnnouncementsPage() {
   const [noticeReadVersion, setNoticeReadVersion] = useState(0);
 
   const canCreate = user?.role === 'admin' || user?.role === 'teacher';
+  const isStudent = user?.role === 'student';
+  const visibleFilters = useMemo(
+    () => FILTERS.filter((item) => !(isStudent && item.key === 'mine')),
+    [isStudent]
+  );
 
   async function loadLookups() {
     const [yearsRes, sectionsRes, subjectsRes] = await Promise.allSettled([
-      apiClient.get('/years/', { params: { skip: 0, limit: 300 } }),
-      apiClient.get('/sections/', { params: { skip: 0, limit: 300 } }),
-      apiClient.get('/subjects/', { params: { skip: 0, limit: 300 } })
+      apiClient.get('/years/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/sections/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/subjects/', { params: { skip: 0, limit: 100 } })
     ]);
 
     setYears(yearsRes.status === 'fulfilled' ? yearsRes.value.data || [] : []);
@@ -79,6 +84,12 @@ export default function AnnouncementsPage() {
   useEffect(() => {
     loadNotices();
   }, [activeFilter]);
+
+  useEffect(() => {
+    if (isStudent && activeFilter === 'mine') {
+      setActiveFilter('all');
+    }
+  }, [isStudent, activeFilter]);
 
   const audienceNameById = useMemo(() => {
     const map = {};
@@ -218,14 +229,22 @@ export default function AnnouncementsPage() {
       }
       (payload.attachments || []).forEach((file) => formData.append('images', file));
 
-      await apiClient.post('/notices/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const response = await apiClient.post('/notices/', formData, {
         onUploadProgress: (event) => {
           const percent = event.total ? Math.round((event.loaded * 100) / event.total) : 0;
           setUploadProgress(percent);
         }
       });
-      pushToast({ title: 'Published', description: 'Announcement published successfully.', variant: 'success' });
+      const savedImages = Array.isArray(response?.data?.images) ? response.data.images.length : 0;
+      if ((payload.attachments || []).length > 0 && savedImages === 0) {
+        pushToast({
+          title: 'Published without image',
+          description: 'Announcement was created but attachment upload failed. Check Cloudinary config and retry.',
+          variant: 'warning'
+        });
+      } else {
+        pushToast({ title: 'Published', description: 'Announcement published successfully.', variant: 'success' });
+      }
       setShowCreate(false);
       await loadNotices();
     } catch (err) {
@@ -254,7 +273,7 @@ export default function AnnouncementsPage() {
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            {FILTERS.map((item) => (
+            {visibleFilters.map((item) => (
               <button
                 key={item.key}
                 className={`rounded-xl border px-3 py-1.5 text-sm transition ${

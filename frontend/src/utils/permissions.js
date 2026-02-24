@@ -17,6 +17,13 @@ export function hasAnyTeacherExtension(user, requiredExtensions = []) {
 }
 
 export function canAccessFeature(user, options = {}) {
-  const { allowedRoles = [], requiredTeacherExtensions = [] } = options;
-  return hasRole(user, allowedRoles) && hasAnyTeacherExtension(user, requiredTeacherExtensions);
+  const { allowedRoles = [], requiredTeacherExtensions = [], requiredAdminTypes = [] } = options;
+  if (!(hasRole(user, allowedRoles) && hasAnyTeacherExtension(user, requiredTeacherExtensions))) {
+    return false;
+  }
+  if (requiredAdminTypes.length > 0 && user?.role === 'admin') {
+    const adminType = user?.admin_type || 'admin';
+    return requiredAdminTypes.includes(adminType);
+  }
+  return true;
 }

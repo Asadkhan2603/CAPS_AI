@@ -113,7 +113,7 @@ async def update_department(
 @router.delete('/{department_id}')
 async def delete_department(
     department_id: str,
-    _current_user=Depends(require_roles(['admin'])),
+    current_user=Depends(require_roles(['admin'])),
 ) -> dict:
     department_obj_id = parse_object_id(department_id)
     department = await db.departments.find_one({'_id': department_obj_id})
@@ -124,7 +124,10 @@ async def delete_department(
         {'department_code': department.get('code')},
         {'$set': {'is_active': False}},
     )
-    result = await db.departments.delete_one({'_id': department_obj_id})
-    if result.deleted_count == 0:
+    result = await db.departments.update_one(
+        {'_id': department_obj_id, 'is_active': True},
+        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},
+    )
+    if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Department not found')
-    return {'message': 'Department deleted'}
+    return {'message': 'Department archived'}

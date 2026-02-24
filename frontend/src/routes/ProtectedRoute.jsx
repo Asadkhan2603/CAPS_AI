@@ -6,7 +6,8 @@ import { canAccessFeature } from '../utils/permissions';
 export default function ProtectedRoute({
   children,
   allowedRoles = null,
-  requiredTeacherExtensions = null
+  requiredTeacherExtensions = null,
+  requiredAdminTypes = null
 }) {
   const { isAuthenticated, checking, user } = useAuth();
 
@@ -20,7 +21,8 @@ export default function ProtectedRoute({
 
   const hasAccess = canAccessFeature(user, {
     allowedRoles: allowedRoles || [],
-    requiredTeacherExtensions: requiredTeacherExtensions || []
+    requiredTeacherExtensions: requiredTeacherExtensions || [],
+    requiredAdminTypes: requiredAdminTypes || []
   });
 
   if (!hasAccess) {
