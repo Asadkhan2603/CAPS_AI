@@ -8,3 +8,14 @@ Available scripts:
   - Creates year records for active courses based on duration rules.
 - `python scripts/seed_medicaps_departments_branches.py`
   - Upserts Medi-Caps departments/faculties and their branches/specializations.
+- `powershell -ExecutionPolicy Bypass -File scripts/seed_minimum_stack.ps1`
+  - Creates/updates a minimum runnable stack dataset:
+    - admin, class coordinator teacher, student
+    - course/year/section, subject
+    - enrollment and published timetable baseline
+- `powershell -ExecutionPolicy Bypass -File scripts/smoke_check_stack.ps1`
+  - Validates backend smoke flow:
+    - health check
+    - login + `/auth/me`
+    - timetable shifts/lookups
+    - student `/timetables/my`
