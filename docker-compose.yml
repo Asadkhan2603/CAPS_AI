@@ -10,6 +10,13 @@ services:
     volumes:
       - mongo_data:/data/db
 
+  redis:
+    image: redis:7-alpine
+    container_name: caps-ai-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
   backend:
     build:
       context: ./backend
@@ -20,6 +27,7 @@ services:
       - ./backend/.env.production
     depends_on:
       - mongodb
+      - redis
     ports:
       - "8000:8000"
     volumes:

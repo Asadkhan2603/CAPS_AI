@@ -538,3 +538,36 @@ This document is intended to be sufficient for an engineer to clone, run, unders
   - If `two_person_rule_enabled=true`, delete actions for courses/departments/branches/years/classes require approved `review_id`.
 - System health dashboard remains available:
   - `GET /api/v1/admin/system/health`
+
+---
+
+## 19. Phase 4 Reliability and Operability (Kickoff Started)
+
+Phase 4 start in this codebase focuses on **automated operations** and **runtime visibility**.
+
+### 19.1 Automated jobs (in-app scheduler)
+- New scheduler service: `backend/app/services/scheduler.py`
+- Startup/shutdown integration: `backend/app/main.py`
+- Feature-flagged by env:
+  - `SCHEDULER_ENABLED`
+  - `SCHEDULED_NOTICE_POLL_SECONDS`
+  - `ANALYTICS_SNAPSHOT_HOUR_UTC`
+  - `ANALYTICS_SNAPSHOT_MINUTE_UTC`
+
+Jobs now automated:
+- Scheduled notice fanout dispatch polling
+- Daily analytics snapshot precompute
+
+### 19.2 Health visibility
+- `/api/v1/admin/system/health` includes scheduler status for admin observability.
+
+### 19.3 Container readiness
+- `docker-compose.yml` now includes Redis service (`redis:7-alpine`) used by:
+  - rate limiting
+  - token blacklist
+  - analytics cache
+  - scheduler-backed workloads
+
+### 19.4 Operational defaults
+- Local/dev remains safe by default (`SCHEDULER_ENABLED=false` in `.env.example`).
+- Production template enables scheduler + Redis in `backend/.env.production`.

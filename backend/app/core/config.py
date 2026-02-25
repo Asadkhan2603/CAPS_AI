@@ -99,6 +99,18 @@ class Settings:
     analytics_cache_ttl_seconds: int = field(
         default_factory=lambda: _as_int(os.getenv("ANALYTICS_CACHE_TTL_SECONDS", "120"), 120)
     )
+    scheduler_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SCHEDULER_ENABLED"), False)
+    )
+    scheduled_notice_poll_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("SCHEDULED_NOTICE_POLL_SECONDS", "60"), 60)
+    )
+    analytics_snapshot_hour_utc: int = field(
+        default_factory=lambda: _as_int(os.getenv("ANALYTICS_SNAPSHOT_HOUR_UTC", "0"), 0)
+    )
+    analytics_snapshot_minute_utc: int = field(
+        default_factory=lambda: _as_int(os.getenv("ANALYTICS_SNAPSHOT_MINUTE_UTC", "15"), 15)
+    )
     cloudinary_cloud_name: str = field(default_factory=lambda: os.getenv("CLOUDINARY_CLOUD_NAME", "").strip())
     cloudinary_api_key: str = field(default_factory=lambda: os.getenv("CLOUDINARY_API_KEY", "").strip())
     cloudinary_api_secret: str = field(default_factory=lambda: os.getenv("CLOUDINARY_API_SECRET", "").strip())

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.database import db
 from app.core.security import require_permission
+from app.services.scheduler import app_scheduler
 
 router = APIRouter()
 _APP_BOOT_TIME = datetime.now(timezone.utc)
@@ -70,6 +71,7 @@ async def admin_system_health(
     return {
         'timestamp': now,
         'db_status': db_status,
+        'scheduler': app_scheduler.status(),
         'uptime_seconds': int((now - _APP_BOOT_TIME).total_seconds()),
         'error_count_24h': error_count_24h,
         'active_sessions_24h': len(active_sessions_24h),

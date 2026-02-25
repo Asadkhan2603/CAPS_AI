@@ -22,6 +22,7 @@ from app.core.observability import (
 )
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.response import error_envelope, is_enveloped_payload, success_envelope
+from app.services.scheduler import app_scheduler
 
 setup_logging(settings.log_level)
 logger = logging.getLogger("caps_api")
@@ -150,6 +151,12 @@ app.include_router(api_router, prefix=settings.api_prefix)
 @app.on_event("startup")
 async def startup_tasks() -> None:
     await ensure_indexes()
+    await app_scheduler.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_tasks() -> None:
+    await app_scheduler.stop()
 
 
 @app.exception_handler(HTTPException)

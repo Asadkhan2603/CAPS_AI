@@ -92,3 +92,29 @@ async def run_daily_analytics_snapshot_job() -> None:
         await compute_platform_snapshot()
     except Exception:
         return
+
+
+async def dispatch_scheduled_notice_notifications(*, limit: int = 200) -> int:
+    try:
+        now = datetime.now(timezone.utc)
+        rows = await db.notices.find(
+            {
+                "is_active": True,
+                "scheduled_at": {"$lte": now},
+                "$or": [
+                    {"fanout_dispatched_at": {"$exists": False}},
+                    {"fanout_dispatched_at": None},
+                ],
+            },
+            {"_id": 1},
+        ).sort("scheduled_at", 1).limit(limit).to_list(length=limit)
+        dispatched = 0
+        for row in rows:
+            notice_id = row.get("_id")
+            if not notice_id:
+                continue
+            await fanout_notice_notifications(str(notice_id))
+            dispatched += 1
+        return dispatched
+    except Exception:
+        return 0
