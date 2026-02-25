@@ -2,10 +2,22 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { apiClient, REFRESH_TOKEN_KEY, TOKEN_KEY } from '../services/apiClient';
 
 const USER_KEY = 'caps_ai_user';
+const AUTH_STORAGE_VERSION_KEY = 'caps_ai_auth_storage_version';
+const AUTH_STORAGE_VERSION = '2';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  useEffect(() => {
+    const currentVersion = localStorage.getItem(AUTH_STORAGE_VERSION_KEY);
+    if (currentVersion !== AUTH_STORAGE_VERSION) {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      localStorage.setItem(AUTH_STORAGE_VERSION_KEY, AUTH_STORAGE_VERSION);
+    }
+  }, []);
+
   const [token, setToken] = useState(localStorage.getItem(TOKEN_KEY) || '');
   const [user, setUser] = useState(() => {
     try {
