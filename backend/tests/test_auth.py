@@ -23,6 +23,7 @@ from app.api.v1.endpoints import review_tickets as review_tickets_endpoint
 from app.api.v1.endpoints import similarity as similarity_endpoint
 from app.api.v1.endpoints import students as students_endpoint
 from app.api.v1.endpoints import submissions as submissions_endpoint
+from app.api.v1.endpoints import timetables as timetables_endpoint
 from app.api.v1.endpoints import subjects as subjects_endpoint
 from app.api.v1.endpoints import users as users_endpoint
 from app.api.v1.endpoints import years as years_endpoint
@@ -56,13 +57,35 @@ class FakeCursor:
         self._limit = max(0, amount)
         return self
 
+    def sort(self, key_or_list, direction=None) -> "FakeCursor":
+        if isinstance(key_or_list, list):
+            # Apply stable multi-key sort from last to first.
+            for key, dir_value in reversed(key_or_list):
+                reverse = dir_value == -1
+                self.items.sort(key=lambda item: item.get(key), reverse=reverse)
+            return self
+        if isinstance(key_or_list, str):
+            reverse = direction == -1
+            self.items.sort(key=lambda item: item.get(key_or_list), reverse=reverse)
+            return self
+        return self
+
 
 class FakeUsersCollection:
     def __init__(self) -> None:
         self.items: List[Dict[str, Any]] = []
 
-    async def find_one(self, query: Dict[str, Any]) -> Dict[str, Any] | None:
-        for item in self.items:
+    async def find_one(self, query: Dict[str, Any], projection: Dict[str, Any] | None = None, sort=None) -> Dict[str, Any] | None:
+        items = [item for item in self.items if _matches_query(item, query)]
+        if sort:
+            if isinstance(sort, list):
+                for key, dir_value in reversed(sort):
+                    reverse = dir_value == -1
+                    items.sort(key=lambda row: row.get(key), reverse=reverse)
+            elif isinstance(sort, tuple):
+                key, dir_value = sort
+                items.sort(key=lambda row: row.get(key), reverse=(dir_value == -1))
+        for item in items:
             if _matches_query(item, query):
                 return item
         return None
@@ -80,20 +103,32 @@ class FakeUsersCollection:
         self.items.append(saved)
         return InsertOneResult(inserted_id=inserted_id)
 
-    def find(self, query: Dict[str, Any]) -> FakeCursor:
+    def find(self, query: Dict[str, Any], projection: Dict[str, Any] | None = None) -> FakeCursor:
         return FakeCursor([item for item in self.items if _matches_query(item, query)])
 
     async def count_documents(self, query: Dict[str, Any]) -> int:
         return len([item for item in self.items if _matches_query(item, query)])
 
-    async def update_one(self, query: Dict[str, Any], update: Dict[str, Any]):
+    async def update_one(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False):
         matched = 0
         for item in self.items:
             if _matches_query(item, query):
                 matched += 1
                 item.update(update.get("$set", {}))
                 break
-        return type("UpdateResult", (), {"matched_count": matched})()
+        if matched == 0 and upsert:
+            document = {**query, **update.get("$set", {}), "_id": ObjectId()}
+            self.items.append(document)
+            return type("UpdateResult", (), {"matched_count": 0, "upserted_id": document["_id"]})()
+        return type("UpdateResult", (), {"matched_count": matched, "upserted_id": None})()
+
+    async def update_many(self, query: Dict[str, Any], update: Dict[str, Any]):
+        matched = 0
+        for item in self.items:
+            if _matches_query(item, query):
+                matched += 1
+                item.update(update.get("$set", {}))
+        return type("UpdateManyResult", (), {"matched_count": matched, "modified_count": matched})()
 
     async def delete_one(self, query: Dict[str, Any]):
         deleted = 0
@@ -129,6 +164,24 @@ def _matches_query(item: Dict[str, Any], query: Dict[str, Any]) -> bool:
                 if item_val not in allowed_values:
                     return False
             continue
+        if isinstance(value, dict) and "$ne" in value:
+            if item.get(key) == value["$ne"]:
+                return False
+            continue
+        if isinstance(value, dict) and "$exists" in value:
+            exists_expected = bool(value["$exists"])
+            has_key = key in item
+            if has_key != exists_expected:
+                return False
+            continue
+        if isinstance(value, dict) and "$lte" in value:
+            if item.get(key) is None or item.get(key) > value["$lte"]:
+                return False
+            continue
+        if isinstance(value, dict) and "$gte" in value:
+            if item.get(key) is None or item.get(key) < value["$gte"]:
+                return False
+            continue
         if item.get(key) != value:
             return False
     return True
@@ -155,6 +208,8 @@ class FakeDB:
         self.audit_logs = FakeUsersCollection()
         self.enrollments = FakeUsersCollection()
         self.review_tickets = FakeUsersCollection()
+        self.timetables = FakeUsersCollection()
+        self.timetable_subject_teacher_maps = FakeUsersCollection()
 
 
 def _setup_fake_db() -> FakeDB:
@@ -180,6 +235,7 @@ def _setup_fake_db() -> FakeDB:
     review_tickets_endpoint.db = fake_db
     audit_logs_endpoint.db = fake_db
     enrollments_endpoint.db = fake_db
+    timetables_endpoint.db = fake_db
     notifications_service.db = fake_db
     audit_service.db = fake_db
     security_core.db = fake_db

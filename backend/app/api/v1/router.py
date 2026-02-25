@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
     students,
     subjects,
     submissions,
+    timetables,
     users,
     years,
 )
@@ -45,6 +46,7 @@ api_router.include_router(students.router, prefix="/students", tags=["students"]
 api_router.include_router(subjects.router, prefix="/subjects", tags=["subjects"])
 api_router.include_router(assignments.router, prefix="/assignments", tags=["assignments"])
 api_router.include_router(submissions.router, prefix="/submissions", tags=["submissions"])
+api_router.include_router(timetables.router, prefix="/timetables", tags=["timetables"])
 api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
 api_router.include_router(evaluations.router, prefix="/evaluations", tags=["evaluations"])
 api_router.include_router(similarity.router, prefix="/similarity", tags=["similarity"])

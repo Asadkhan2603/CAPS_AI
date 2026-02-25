@@ -1,111 +1,512 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarClock, Clock3 } from 'lucide-react';
+import { Download, Lock, Sparkles } from 'lucide-react';
 import Card from '../components/ui/Card';
-import { apiClient } from '../services/apiClient';
 import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
+import {
+  createTimetable,
+  getMyTimetable,
+  getTimetableShifts,
+  listClassTimetables,
+  publishTimetable,
+  updateTimetable
+} from '../services/timetableApi';
+import { apiClient } from '../services/apiClient';
+import { pushApiErrorToast } from '../utils/errorToast';
 
-const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const slots = ['09:00-10:00', '11:00-12:00', '14:00-15:00'];
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const SESSION_TYPES = [
+  { value: 'theory', label: 'Theory' },
+  { value: 'practical', label: 'Practical' },
+  { value: 'workshop', label: 'Workshop' },
+  { value: 'interaction', label: 'Interaction' }
+];
+
+function entryKey(day, slotKey) {
+  return `${day}::${slotKey}`;
+}
 
 export default function TimetablePage() {
   const { user } = useAuth();
-  const [assignments, setAssignments] = useState([]);
+  const { pushToast } = useToast();
+
+  const isStudent = user?.role === 'student';
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
+  const [shifts, setShifts] = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+  const [teacherBySubject, setTeacherBySubject] = useState({});
+
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [selectedSemester, setSelectedSemester] = useState('SEM-1');
+  const [selectedShiftId, setSelectedShiftId] = useState('shift_1');
+  const [selectedTimetableId, setSelectedTimetableId] = useState('');
+  const [classTimetables, setClassTimetables] = useState([]);
+  const [timetable, setTimetable] = useState(null);
+  const [draftMap, setDraftMap] = useState({});
+
+  async function loadLookups(classId) {
+    const [shiftRes, lookupRes] = await Promise.all([
+      getTimetableShifts(),
+      apiClient
+        .get('/timetables/lookups', {
+          params: classId ? { class_id: classId } : undefined
+        })
+        .then((res) => res.data || {})
+    ]);
+    setShifts(shiftRes || []);
+    setClasses(lookupRes.classes || []);
+    setSubjects(lookupRes.subjects || []);
+    setTeachers(lookupRes.teachers || []);
+    setTeacherBySubject(lookupRes.teacher_by_subject || {});
+    if (!selectedClassId && (lookupRes.classes || []).length > 0) {
+      setSelectedClassId(lookupRes.classes[0].id);
+    }
+    if (!selectedShiftId && (shiftRes || []).length > 0) {
+      setSelectedShiftId(shiftRes[0].id);
+    }
+  }
+
+  async function loadStudentTimetable() {
+    setLoading(true);
+    try {
+      const row = await getMyTimetable();
+      setTimetable(row || null);
+    } catch (err) {
+      setTimetable(null);
+      pushApiErrorToast(pushToast, err, 'Unable to load published timetable');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadClassTimetables(classId) {
+    if (!classId) return;
+    setLoading(true);
+    try {
+      const rows = await listClassTimetables(classId);
+      setClassTimetables(rows);
+      if (rows.length > 0) {
+        const picked = rows[0];
+        setSelectedTimetableId(picked.id);
+        setTimetable(picked);
+      } else {
+        setSelectedTimetableId('');
+        setTimetable(null);
+      }
+    } catch (err) {
+      pushApiErrorToast(pushToast, err, 'Unable to load class timetables');
+      setClassTimetables([]);
+      setTimetable(null);
+      setSelectedTimetableId('');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadAssignments() {
-      try {
-        const response = await apiClient.get('/assignments/', { params: { skip: 0, limit: 300 } });
-        setAssignments(response.data || []);
-      } catch {
-        setAssignments([]);
+    if (isStudent) {
+      loadStudentTimetable();
+      return;
+    }
+    loadLookups();
+  }, [isStudent]);
+
+  useEffect(() => {
+    if (isStudent || !selectedClassId) return;
+    loadLookups(selectedClassId);
+    loadClassTimetables(selectedClassId);
+  }, [selectedClassId, isStudent]);
+
+  useEffect(() => {
+    if (!timetable) {
+      setDraftMap({});
+      return;
+    }
+    const next = {};
+    (timetable.entries || []).forEach((entry) => {
+      next[entryKey(entry.day, entry.slot_key)] = {
+        subject_id: entry.subject_id || '',
+        teacher_user_id: entry.teacher_user_id || '',
+        room_code: entry.room_code || '',
+        session_type: entry.session_type || 'theory'
+      };
+    });
+    setDraftMap(next);
+  }, [timetable?.id]);
+
+  const shift = useMemo(() => {
+    if (timetable?.shift_id) return shifts.find((item) => item.id === timetable.shift_id) || null;
+    return shifts.find((item) => item.id === selectedShiftId) || null;
+  }, [selectedShiftId, shifts, timetable?.shift_id]);
+
+  const slots = useMemo(() => timetable?.slots || shift?.slots || [], [shift?.slots, timetable?.slots]);
+  const days = useMemo(() => timetable?.days || DAYS, [timetable?.days]);
+  const isLocked = Boolean(timetable?.admin_locked) || timetable?.status === 'published';
+
+  const selectedClassName = useMemo(() => {
+    const item = classes.find((it) => it.id === selectedClassId);
+    return item ? `${item.name}${item.branch_name ? ` (${item.branch_name})` : ''}` : '-';
+  }, [classes, selectedClassId]);
+
+  function updateCell(day, slotKey, patch) {
+    const key = entryKey(day, slotKey);
+    setDraftMap((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] || { session_type: 'theory' }), ...patch }
+    }));
+  }
+
+  function buildEntriesFromDraft() {
+    const rows = [];
+    for (const day of days) {
+      for (const slot of slots) {
+        if (slot.is_lunch) continue;
+        const key = entryKey(day, slot.slot_key);
+        const entry = draftMap[key] || {};
+        if (!entry.subject_id && !entry.teacher_user_id && !entry.room_code) continue;
+        if (!entry.subject_id || !entry.teacher_user_id || !entry.room_code) {
+          throw new Error(`Please fill subject, teacher and room for ${day} ${slot.label}`);
+        }
+        rows.push({
+          day,
+          slot_key: slot.slot_key,
+          subject_id: entry.subject_id,
+          teacher_user_id: entry.teacher_user_id,
+          room_code: entry.room_code,
+          session_type: entry.session_type || 'theory'
+        });
       }
     }
-    loadAssignments();
-  }, []);
+    return rows;
+  }
 
-  const timetable = useMemo(() => {
-    const subjectPool = Array.from(new Set(assignments.map((item) => item.subject_id).filter(Boolean)));
-    const labels = subjectPool.length ? subjectPool : ['Core Subject', 'Lab Session', 'Project'];
-    return weekDays.map((day, index) => ({
-      day,
-      sessions: slots.map((slot, slotIndex) => ({
-        time: slot,
-        subject: labels[(index + slotIndex) % labels.length]
-      }))
-    }));
-  }, [assignments]);
+  async function handleCreateDraft() {
+    if (!selectedClassId || !selectedSemester || !selectedShiftId) {
+      pushToast({ title: 'Missing fields', description: 'Select class, semester and shift.', variant: 'warning' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await createTimetable({
+        class_id: selectedClassId,
+        semester: selectedSemester,
+        shift_id: selectedShiftId,
+        days: DAYS,
+        entries: []
+      });
+      pushToast({ title: 'Draft created', description: 'Timetable draft is ready for allocation.', variant: 'success' });
+      await loadClassTimetables(selectedClassId);
+      setSelectedTimetableId(created.id);
+    } catch (err) {
+      pushApiErrorToast(pushToast, err, 'Unable to create timetable draft');
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const todayName = new Date().toLocaleDateString(undefined, { weekday: 'long' });
-  const today = timetable.find((item) => item.day === todayName) || timetable[0] || { day: '-', sessions: [] };
+  async function handleSaveDraft() {
+    if (!timetable?.id || isLocked) return;
+    setSaving(true);
+    try {
+      const entries = buildEntriesFromDraft();
+      const saved = await updateTimetable(timetable.id, { entries, days });
+      setTimetable(saved);
+      pushToast({ title: 'Saved', description: 'Timetable draft saved.', variant: 'success' });
+      await loadClassTimetables(selectedClassId);
+    } catch (err) {
+      pushApiErrorToast(pushToast, err, 'Unable to save timetable');
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const nextClass = useMemo(() => {
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const next = (today.sessions || []).find((session) => {
-      const [start] = session.time.split('-');
-      const [h, m] = start.split(':').map((v) => Number(v || 0));
-      return h * 60 + m >= nowMinutes;
-    });
-    return next || today.sessions?.[0] || null;
-  }, [today]);
+  async function handlePublish() {
+    if (!timetable?.id || isLocked) return;
+    setPublishing(true);
+    try {
+      const entries = buildEntriesFromDraft();
+      await updateTimetable(timetable.id, { entries, days });
+      const published = await publishTimetable(timetable.id);
+      setTimetable(published);
+      pushToast({ title: 'Published', description: 'Timetable published for students.', variant: 'success' });
+      await loadClassTimetables(selectedClassId);
+    } catch (err) {
+      pushApiErrorToast(pushToast, err, 'Unable to publish timetable');
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  if (isStudent) {
+    return (
+      <div className="space-y-5 page-fade">
+        <Card className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold">My Timetable</h1>
+              <p className="text-sm text-slate-500">Published schedule for your class with shift and room details.</p>
+            </div>
+            <button className="btn-secondary" onClick={() => window.print()}>
+              <Download size={15} /> Download / Print
+            </button>
+          </div>
+        </Card>
+        {loading ? <Card>Loading timetable...</Card> : null}
+        {!loading && !timetable ? <Card>No published timetable available yet.</Card> : null}
+        {!loading && timetable ? (
+          <Card className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{timetable.shift_label}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">Semester: {timetable.semester}</span>
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Published</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700">
+                    <th className="p-2 text-left">Slot</th>
+                    {days.map((day) => (
+                      <th key={day} className="p-2 text-left">{day}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {slots.map((slot) => (
+                    <tr key={slot.slot_key} className="border-b border-slate-100 align-top dark:border-slate-800">
+                      <td className="p-2 font-medium">
+                        <div>{slot.label}</div>
+                        <div className="text-xs text-slate-500">{slot.start_time} - {slot.end_time}</div>
+                      </td>
+                      {days.map((day) => {
+                        const found = (timetable.entries || []).find((entry) => entry.day === day && entry.slot_key === slot.slot_key);
+                        if (slot.is_lunch) {
+                          return (
+                            <td key={`${day}-${slot.slot_key}`} className="p-2">
+                              <div className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                                Lunch Break
+                              </div>
+                            </td>
+                          );
+                        }
+                        return (
+                          <td key={`${day}-${slot.slot_key}`} className="p-2">
+                            {found ? (
+                              <div className="space-y-0.5 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/40">
+                                <div className="font-semibold">{found.subject_name || found.subject_code || found.subject_id}</div>
+                                <div className="text-xs text-slate-500">{found.teacher_name || found.teacher_user_id}</div>
+                                <div className="text-xs text-slate-500">{found.room_code} | {found.session_type}</div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400">-</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 page-fade">
-      <Card className="space-y-2">
-        <h1 className="text-2xl font-semibold">Timetable</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Weekly class schedule with today and next-session highlights.
-        </p>
+      <Card className="space-y-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Class Timetable Management</h1>
+          <p className="text-sm text-slate-500">Class coordinators can generate shift-based timetable, allocate periods, and publish for students.</p>
+          {user?.role === 'teacher' ? (
+            <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:border-indigo-700/40 dark:bg-indigo-900/20 dark:text-indigo-300">
+              Assigned Section Only
+            </div>
+          ) : null}
+        </div>
+        <div className="grid gap-3 md:grid-cols-5">
+          <label className="space-y-1 text-sm">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Class</span>
+            <select className="input" value={selectedClassId} onChange={(e) => setSelectedClassId(e.target.value)}>
+              <option value="">Select class</option>
+              {classes.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Semester</span>
+            <input className="input" value={selectedSemester} onChange={(e) => setSelectedSemester(e.target.value)} />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shift</span>
+            <select className="input" value={selectedShiftId} onChange={(e) => setSelectedShiftId(e.target.value)}>
+              {shifts.map((shiftItem) => (
+                <option key={shiftItem.id} value={shiftItem.id}>
+                  {shiftItem.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm md:col-span-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Existing Timetable Version</span>
+            <select
+              className="input"
+              value={selectedTimetableId}
+              onChange={(e) => {
+                setSelectedTimetableId(e.target.value);
+                const picked = classTimetables.find((row) => row.id === e.target.value) || null;
+                setTimetable(picked);
+              }}
+            >
+              <option value="">No timetable selected</option>
+              {classTimetables.map((row) => (
+                <option key={row.id} value={row.id}>
+                  v{row.version} | {row.status} | {row.semester} | {row.shift_label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="btn-primary" onClick={handleCreateDraft} disabled={saving || !selectedClassId}>
+            <Sparkles size={15} /> Generate Draft
+          </button>
+          <button className="btn-secondary" onClick={handleSaveDraft} disabled={saving || !timetable || isLocked}>
+            Save Draft
+          </button>
+          <button className="btn-secondary" onClick={handlePublish} disabled={publishing || !timetable || isLocked}>
+            Publish Timetable
+          </button>
+          <span className="text-sm text-slate-500">
+            {timetable
+              ? `Selected: ${selectedClassName} | ${timetable.shift_label} | Status: ${timetable.status}`
+              : 'Create or select a timetable to start allocation.'}
+          </span>
+          {user?.role === 'teacher' ? (
+            <span className="text-xs text-slate-500">You can create and manage timetable only for your assigned section.</span>
+          ) : null}
+          {isLocked ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+              <Lock size={12} /> Locked / Published
+            </span>
+          ) : null}
+        </div>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <h2 className="mb-3 text-lg font-semibold">Weekly View</h2>
+      <Card>
+        {loading ? <p>Loading timetable...</p> : null}
+        {!loading && !timetable ? <p className="text-sm text-slate-500">No timetable selected.</p> : null}
+        {!loading && timetable ? (
           <div className="space-y-3">
-            {timetable.map((day) => (
-              <div key={day.day} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                <p className="text-sm font-semibold">{day.day}</p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                  {day.sessions.map((session) => (
-                    <div key={`${day.day}-${session.time}`} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs dark:border-slate-700 dark:bg-slate-800/40">
-                      <p className="text-slate-500">{session.time}</p>
-                      <p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{session.subject}</p>
-                    </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{timetable.shift_label}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">Semester: {timetable.semester}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">Version: {timetable.version}</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1100px] text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700">
+                    <th className="p-2 text-left">Slot</th>
+                    {days.map((day) => (
+                      <th key={day} className="p-2 text-left">{day}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {slots.map((slot) => (
+                    <tr key={slot.slot_key} className="border-b border-slate-100 align-top dark:border-slate-800">
+                      <td className="p-2 font-medium">
+                        <div>{slot.label}</div>
+                        <div className="text-xs text-slate-500">{slot.start_time} - {slot.end_time}</div>
+                      </td>
+                      {days.map((day) => {
+                        if (slot.is_lunch) {
+                          return (
+                            <td key={`${day}-${slot.slot_key}`} className="p-2">
+                              <div className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-2 text-xs font-semibold text-amber-700">
+                                Lunch Lock
+                              </div>
+                            </td>
+                          );
+                        }
+                        const key = entryKey(day, slot.slot_key);
+                        const value = draftMap[key] || { session_type: 'theory' };
+                        return (
+                          <td key={key} className="p-2">
+                            <div className="space-y-1">
+                              <select
+                                className="input"
+                                value={value.subject_id || ''}
+                                disabled={isLocked}
+                                onChange={(e) => updateCell(day, slot.slot_key, { subject_id: e.target.value })}
+                              >
+                                <option value="">Subject</option>
+                                {subjects.map((subject) => (
+                                  <option key={subject.id} value={subject.id}>
+                                    {subject.name} ({subject.code})
+                                  </option>
+                                ))}
+                              </select>
+                              <select
+                                className="input"
+                                value={value.teacher_user_id || ''}
+                                disabled={isLocked}
+                                onChange={(e) => updateCell(day, slot.slot_key, { teacher_user_id: e.target.value })}
+                              >
+                                <option value="">Teacher</option>
+                                {(() => {
+                                  const allowedTeacherIds = teacherBySubject[value.subject_id] || [];
+                                  const pool = allowedTeacherIds.length
+                                    ? teachers.filter((teacher) => allowedTeacherIds.includes(teacher.id))
+                                    : teachers;
+                                  return pool.map((teacher) => (
+                                    <option key={teacher.id} value={teacher.id}>
+                                      {teacher.name}
+                                    </option>
+                                  ));
+                                })()}
+                              </select>
+                              <input
+                                className="input"
+                                placeholder="Room/Lab"
+                                value={value.room_code || ''}
+                                disabled={isLocked}
+                                onChange={(e) => updateCell(day, slot.slot_key, { room_code: e.target.value })}
+                              />
+                              <select
+                                className="input"
+                                value={value.session_type || 'theory'}
+                                disabled={isLocked}
+                                onChange={(e) => updateCell(day, slot.slot_key, { session_type: e.target.value })}
+                              >
+                                {SESSION_TYPES.map((item) => (
+                                  <option key={item.value} value={item.value}>
+                                    {item.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
                   ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card className="space-y-3">
-          <h2 className="text-lg font-semibold">Today</h2>
-          <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-            <p className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 dark:text-brand-300">
-              <CalendarClock size={12} /> {today.day}
-            </p>
-            <div className="mt-2 space-y-2">
-              {(today.sessions || []).map((session) => (
-                <div key={`${today.day}-${session.time}-today`} className="rounded-lg border border-slate-200 px-2 py-2 dark:border-slate-700">
-                  <p className="text-xs text-slate-500">{session.time}</p>
-                  <p className="text-sm font-semibold">{session.subject}</p>
-                </div>
-              ))}
+                </tbody>
+              </table>
             </div>
           </div>
-          <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-            <p className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
-              <Clock3 size={12} /> Next Class
-            </p>
-            <p className="mt-1 text-sm">{nextClass ? `${nextClass.subject} (${nextClass.time})` : '-'}</p>
-          </div>
-          <p className="text-xs text-slate-500">
-            {user?.role === 'student'
-              ? 'Student view is personalized from your academic context.'
-              : 'Staff view shows the shared weekly schedule.'}
-          </p>
-        </Card>
-      </div>
+        ) : null}
+      </Card>
     </div>
   );
 }

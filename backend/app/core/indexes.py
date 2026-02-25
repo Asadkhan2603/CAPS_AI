@@ -59,5 +59,9 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.years, [('is_deleted', ASCENDING)])
     await _safe_create_index(db.classes, [('is_deleted', ASCENDING)])
     await _safe_create_index(db.notices, [('is_deleted', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(db.timetables, [('class_id', ASCENDING), ('semester', ASCENDING), ('status', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.timetables, [('entries.teacher_user_id', ASCENDING), ('status', ASCENDING)])
+    await _safe_create_index(db.timetables, [('entries.room_code', ASCENDING), ('status', ASCENDING)])
+    await _safe_create_index(db.timetable_subject_teacher_maps, [('class_id', ASCENDING), ('subject_id', ASCENDING)], unique=True)
 
     _indexes_ensured = True
