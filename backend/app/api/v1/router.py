@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin_analytics,
     admin_communication,
+    admin_governance,
     admin_recovery,
     admin_system,
     ai,
@@ -67,5 +68,10 @@ api_router.include_router(
     admin_communication.router,
     prefix="/admin/communication",
     tags=["admin-communication"],
+)
+api_router.include_router(
+    admin_governance.router,
+    prefix="/admin/governance",
+    tags=["admin-governance"],
 )
 api_router.include_router(admin_recovery.router, prefix="/admin/recovery", tags=["admin-recovery"])

@@ -7,6 +7,7 @@ from typing import Deque
 from fastapi import HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from app.core.redis_store import redis_store
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -30,6 +31,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         now = time.monotonic()
         key = self._key(request)
+        redis_count = await redis_store.increment_with_ttl(
+            f"ratelimit:{key}",
+            self.window_seconds,
+        )
+        if redis_count is not None:
+            if redis_count > self.max_requests:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail='Too many requests. Please retry shortly.',
+                )
+            return await call_next(request)
+
         events = self._events[key]
 
         while events and now - events[0] > self.window_seconds:

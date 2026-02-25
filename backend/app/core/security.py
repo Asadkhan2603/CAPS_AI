@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import os
 from typing import Callable, Dict, List
+from uuid import uuid4
 
 from bson import ObjectId
 from fastapi import Depends, HTTPException, status
@@ -11,33 +12,10 @@ from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.core.database import db
+from app.core.permission_registry import PERMISSION_REGISTRY
+from app.core.redis_store import redis_store
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/login")
-
-ROLE_PERMISSIONS = {
-    "super_admin": {"*"},
-    "admin": {
-        "users.read",
-        "users.update",
-        "clubs.manage",
-        "courses.manage",
-        "announcements.publish",
-        "audit.read",
-        "analytics.read",
-        "system.read",
-    },
-    "academic_admin": {
-        "courses.manage",
-        "departments.manage",
-        "sections.manage",
-        "analytics.read",
-    },
-    "compliance_admin": {
-        "audit.read",
-        "analytics.read",
-        "system.read",
-    },
-}
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -80,6 +58,8 @@ def create_access_token(
     expires_in_minutes = minutes or settings.access_token_expire_minutes
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_in_minutes)
     payload = {
+        "jti": uuid4().hex,
+        "token_type": "access",
         "sub": user_id,
         "email": email,
         "role": role,
@@ -90,7 +70,31 @@ def create_access_token(
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> Dict[str, str]:
+def create_refresh_token(
+    *,
+    user_id: str,
+    email: str,
+    role: str,
+    admin_type: str | None = None,
+    extended_roles: List[str] | None = None,
+    days: int | None = None,
+) -> str:
+    expires_in_days = days or settings.refresh_token_expire_days
+    expire = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+    payload = {
+        "jti": uuid4().hex,
+        "token_type": "refresh",
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "admin_type": admin_type,
+        "extended_roles": extended_roles or [],
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_access_token(token: str, *, expected_type: str = "access") -> Dict[str, str]:
     try:
         payload = jwt.decode(
             token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
@@ -101,11 +105,36 @@ def decode_access_token(token: str) -> Dict[str, str]:
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    token_type = payload.get("token_type") or "access"
+    if token_type != expected_type:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return payload
 
 
+async def is_token_blacklisted(jti: str | None) -> bool:
+    if not jti:
+        return False
+    if await redis_store.is_blacklisted(jti):
+        return True
+    collection = getattr(db, "token_blacklist", None)
+    if collection is None:
+        return False
+    blacklisted = await collection.find_one({"jti": jti})
+    return bool(blacklisted)
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, str]:
-    payload = decode_access_token(token)
+    payload = decode_access_token(token, expected_type="access")
+    if await is_token_blacklisted(payload.get("jti")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(
@@ -199,11 +228,39 @@ def _resolved_admin_type(current_user: Dict[str, str]) -> str:
 
 
 def has_permission(current_user: Dict[str, str], permission: str) -> bool:
-    if current_user.get("role") != "admin":
+    role = current_user.get("role")
+    if not role:
         return False
-    admin_type = _resolved_admin_type(current_user)
-    allowed = ROLE_PERMISSIONS.get(admin_type, set())
-    return "*" in allowed or permission in allowed
+
+    rule = PERMISSION_REGISTRY.get(permission)
+    if not rule:
+        return False
+
+    allowed_roles = rule.get("roles", set())
+    if role not in allowed_roles:
+        return False
+
+    if role == "admin":
+        allowed_admin_types = rule.get("admin_types")
+        if allowed_admin_types:
+            return _resolved_admin_type(current_user) in allowed_admin_types
+        return True
+
+    if role == "teacher":
+        required_extensions = rule.get("teacher_extensions")
+        if required_extensions:
+            current_extensions = set(current_user.get("extended_roles") or [])
+            return bool(current_extensions.intersection(required_extensions))
+        return True
+
+    if role == "student":
+        required_extensions = rule.get("student_extensions")
+        if required_extensions:
+            current_extensions = set(current_user.get("extended_roles") or [])
+            return bool(current_extensions.intersection(required_extensions))
+        return True
+
+    return False
 
 
 def require_permission(permission: str) -> Callable:

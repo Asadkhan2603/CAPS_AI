@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: caps-ai-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: caps-ai-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.production
+    depends_on:
+      - mongodb
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: caps-ai-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  mongo_data:

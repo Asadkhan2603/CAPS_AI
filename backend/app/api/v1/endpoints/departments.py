@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_roles
+from app.core.security import require_permission, require_roles
 from app.models.departments import department_public
 from app.schemas.department import DepartmentCreate, DepartmentOut, DepartmentUpdate
+from app.services.governance import enforce_review_approval
 
 router = APIRouter()
 
@@ -48,7 +49,7 @@ async def get_department(
 @router.post('/', response_model=DepartmentOut, status_code=status.HTTP_201_CREATED)
 async def create_department(
     payload: DepartmentCreate,
-    _current_user=Depends(require_roles(['admin'])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> DepartmentOut:
     normalized_code = payload.code.strip().upper()
     existing = await db.departments.find_one({'code': normalized_code})
@@ -72,7 +73,7 @@ async def create_department(
 async def update_department(
     department_id: str,
     payload: DepartmentUpdate,
-    _current_user=Depends(require_roles(['admin'])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> DepartmentOut:
     department_obj_id = parse_object_id(department_id)
     current = await db.departments.find_one({'_id': department_obj_id})
@@ -113,8 +114,16 @@ async def update_department(
 @router.delete('/{department_id}')
 async def delete_department(
     department_id: str,
-    current_user=Depends(require_roles(['admin'])),
+    review_id: str | None = Query(default=None),
+    current_user=Depends(require_permission("academic:manage")),
 ) -> dict:
+    await enforce_review_approval(
+        current_user=current_user,
+        review_id=review_id,
+        action="departments.delete",
+        entity_type="department",
+        entity_id=department_id,
+    )
     department_obj_id = parse_object_id(department_id)
     department = await db.departments.find_one({'_id': department_obj_id})
     if not department:

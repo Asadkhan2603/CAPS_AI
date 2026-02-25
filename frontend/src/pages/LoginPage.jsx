@@ -4,6 +4,7 @@ import { ArrowRight, GraduationCap, Lock, Mail } from 'lucide-react';
 import Card from '../components/ui/Card';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
+import { pushApiErrorToast } from '../utils/errorToast';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -29,7 +30,7 @@ export default function LoginPage() {
     } catch (err) {
       const detail = err?.response?.data?.detail || 'Login failed';
       setError(String(detail));
-      pushToast({ title: 'Login failed', description: String(detail), variant: 'error' });
+      pushApiErrorToast(pushToast, err, 'Login failed');
     } finally {
       setLoading(false);
     }

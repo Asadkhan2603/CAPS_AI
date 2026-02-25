@@ -21,6 +21,7 @@ from app.core.observability import (
     trace_id_ctx,
 )
 from app.core.rate_limit import RateLimitMiddleware
+from app.core.response import error_envelope, is_enveloped_payload, success_envelope
 
 setup_logging(settings.log_level)
 logger = logging.getLogger("caps_api")
@@ -104,6 +105,45 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+
+class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        headers = {k: v for k, v in dict(response.headers).items() if k.lower() != "content-length"}
+        if (
+            not settings.response_envelope_enabled
+            or request.url.path in {"/health", "/"}
+            or not request.url.path.startswith(settings.api_prefix)
+            or response.status_code >= 400
+            or "application/json" not in (response.headers.get("content-type") or "")
+        ):
+            return response
+
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk
+
+        if not body:
+            payload = success_envelope(data=None, trace_id=trace_id_ctx.get() or None)
+        else:
+            try:
+                import json
+
+                decoded = json.loads(body.decode("utf-8"))
+                if is_enveloped_payload(decoded):
+                    return JSONResponse(status_code=response.status_code, content=decoded, headers=headers)
+                payload = success_envelope(data=decoded, trace_id=trace_id_ctx.get() or None)
+            except Exception:
+                return JSONResponse(
+                    status_code=response.status_code,
+                    content=success_envelope(data={"raw": body.decode("utf-8", errors="replace")}, trace_id=trace_id_ctx.get() or None),
+                    headers=headers,
+                )
+        return JSONResponse(status_code=response.status_code, content=payload, headers=headers)
+
+
+app.add_middleware(ResponseEnvelopeMiddleware)
+
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
@@ -129,7 +169,12 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content={"success": False, "detail": exc.detail, "error_id": error_id},
+        content=error_envelope(
+            message=str(exc.detail) if isinstance(exc.detail, str) else "HTTP error",
+            trace_id=trace_id_ctx.get() or None,
+            error_id=error_id,
+            detail=exc.detail,
+        ),
         headers={"X-Error-Id": error_id},
     )
 
@@ -151,7 +196,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
     return JSONResponse(
         status_code=422,
-        content={"success": False, "detail": exc.errors(), "error_id": error_id},
+        content=error_envelope(
+            message="Validation failed",
+            trace_id=trace_id_ctx.get() or None,
+            error_id=error_id,
+            detail=exc.errors(),
+        ),
         headers={"X-Error-Id": error_id},
     )
 
@@ -172,7 +222,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
     return JSONResponse(
         status_code=500,
-        content={"success": False, "detail": "Internal server error", "error_id": error_id},
+        content=error_envelope(
+            message="Internal server error",
+            trace_id=trace_id_ctx.get() or None,
+            error_id=error_id,
+            detail="Internal server error",
+        ),
         headers={"X-Error-Id": error_id},
     )
 

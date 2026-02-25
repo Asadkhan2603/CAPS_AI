@@ -1,19 +1,21 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import (
-    create_access_token,
     get_current_user,
+    oauth2_scheme,
     get_password_hash,
     verify_password,
 )
+from app.domains.auth.repository import AuthRepository
+from app.domains.auth.service import AuthService
 from app.models.users import user_public
-from app.schemas.auth import ChangePasswordRequest, Token
+from app.schemas.auth import ChangePasswordRequest, RefreshTokenRequest, Token
 from app.schemas.user import UserCreate, UserLogin, UserOut, UserProfileUpdate
 
 router = APIRouter()
@@ -21,98 +23,46 @@ PROFILE_UPLOAD_DIR = Path("uploads/profiles")
 MAX_AVATAR_SIZE = 3 * 1024 * 1024
 ALLOWED_AVATAR_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
+auth_service = AuthService(AuthRepository(lambda: db))
+
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register_user(payload: UserCreate) -> UserOut:
-    email = payload.email.lower().strip()
-    extended_roles = payload.extended_roles or []
-    if payload.role != "teacher" and extended_roles:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Extended roles are only allowed for teacher accounts",
-        )
-
-    if payload.role == "admin":
-        existing_admin = await db.users.find_one({"role": "admin"})
-        if existing_admin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin account registration is closed",
-            )
-        admin_type = payload.admin_type or "super_admin"
-    else:
-        if payload.admin_type is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="admin_type is allowed only for admin accounts",
-            )
-        admin_type = None
-
-    existing_user = await db.users.find_one({"email": email})
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email is already registered",
-        )
-
-    await db.users.create_index("email", unique=True)
-    document = {
-        "full_name": payload.full_name.strip(),
-        "email": email,
-        "hashed_password": get_password_hash(payload.password),
-        "role": payload.role,
-        "admin_type": admin_type,
-        "extended_roles": extended_roles,
-        "is_active": True,
-        "must_change_password": False,
-        "created_at": datetime.now(timezone.utc),
-    }
-
-    try:
-        result = await db.users.insert_one(document)
-    except Exception as exc:
-        if "duplicate key" in str(exc).lower():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email is already registered",
-            ) from exc
-        raise
-
-    created_user = await db.users.find_one({"_id": result.inserted_id})
-    return UserOut(**user_public(created_user))
+    return await auth_service.register(payload)
 
 
 @router.post("/login", response_model=Token)
-async def login_user(payload: UserLogin) -> Token:
-    email = payload.email.lower().strip()
-    user = await db.users.find_one({"email": email})
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
-
-    if not verify_password(payload.password, user["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
-
-    if not user.get("is_active", True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is inactive",
-        )
-
-    token = create_access_token(
-        user_id=str(user["_id"]),
-        email=user["email"],
-        role=user["role"],
-        admin_type=user.get("admin_type"),
-        extended_roles=user.get("extended_roles", []),
+async def login_user(payload: UserLogin, request: Request) -> Token:
+    return await auth_service.login(
+        payload,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+        device_fingerprint=request.headers.get("x-device-fingerprint"),
     )
 
-    return Token(access_token=token, user=UserOut(**user_public(user)))
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(payload: RefreshTokenRequest, request: Request) -> Token:
+    return await auth_service.refresh(
+        payload.refresh_token,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+        device_fingerprint=request.headers.get("x-device-fingerprint"),
+    )
+
+
+@router.post("/logout")
+async def logout_user(
+    refresh: RefreshTokenRequest | None = None,
+    access_token: str = Depends(oauth2_scheme),
+    current_user=Depends(get_current_user),
+) -> dict:
+    refresh_token_value = refresh.refresh_token if refresh else None
+    return await auth_service.logout(
+        current_user=current_user,
+        access_token=access_token,
+        refresh_token_value=refresh_token_value,
+    )
 
 
 @router.get("/me", response_model=UserOut)

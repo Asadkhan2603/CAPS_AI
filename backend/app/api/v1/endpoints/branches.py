@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_roles
+from app.core.security import require_permission, require_roles
 from app.models.branches import branch_public
 from app.schemas.branch import BranchCreate, BranchOut, BranchUpdate
+from app.services.governance import enforce_review_approval
 
 router = APIRouter()
 
@@ -52,7 +53,7 @@ async def get_branch(
 @router.post('/', response_model=BranchOut, status_code=status.HTTP_201_CREATED)
 async def create_branch(
     payload: BranchCreate,
-    _current_user=Depends(require_roles(['admin'])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> BranchOut:
     normalized_code = payload.code.strip().upper()
     normalized_department_code = payload.department_code.strip().upper()
@@ -84,7 +85,7 @@ async def create_branch(
 async def update_branch(
     branch_id: str,
     payload: BranchUpdate,
-    _current_user=Depends(require_roles(['admin'])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> BranchOut:
     branch_obj_id = parse_object_id(branch_id)
     update_data = payload.model_dump(exclude_none=True)
@@ -118,8 +119,16 @@ async def update_branch(
 @router.delete('/{branch_id}')
 async def delete_branch(
     branch_id: str,
-    current_user=Depends(require_roles(['admin'])),
+    review_id: str | None = Query(default=None),
+    current_user=Depends(require_permission("academic:manage")),
 ) -> dict:
+    await enforce_review_approval(
+        current_user=current_user,
+        review_id=review_id,
+        action="branches.delete",
+        entity_type="branch",
+        entity_id=branch_id,
+    )
     result = await db.branches.update_one(
         {'_id': parse_object_id(branch_id), 'is_active': True},
         {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},

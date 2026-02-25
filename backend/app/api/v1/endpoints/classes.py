@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_roles
+from app.core.security import require_permission, require_roles
 from app.models.classes import class_public
 from app.schemas.class_item import ClassCreate, ClassOut, ClassUpdate
+from app.services.governance import enforce_review_approval
 
 router = APIRouter()
 
@@ -63,7 +64,7 @@ async def get_class(
 @router.post('/', response_model=ClassOut, status_code=status.HTTP_201_CREATED)
 async def create_class(
     payload: ClassCreate,
-    _current_user=Depends(require_roles(['admin'])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> ClassOut:
     course = await db.courses.find_one({'_id': parse_object_id(payload.course_id)})
     if not course:
@@ -98,7 +99,7 @@ async def create_class(
 async def update_class(
     class_id: str,
     payload: ClassUpdate,
-    _current_user=Depends(require_roles(['admin'])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> ClassOut:
     class_obj_id = parse_object_id(class_id)
     current = await db.classes.find_one({'_id': class_obj_id})
@@ -147,8 +148,16 @@ async def update_class(
 @router.delete('/{class_id}')
 async def delete_class(
     class_id: str,
-    current_user=Depends(require_roles(['admin'])),
+    review_id: str | None = Query(default=None),
+    current_user=Depends(require_permission("academic:manage")),
 ) -> dict:
+    await enforce_review_approval(
+        current_user=current_user,
+        review_id=review_id,
+        action="classes.delete",
+        entity_type="class",
+        entity_id=class_id,
+    )
     result = await db.classes.update_one(
         {'_id': parse_object_id(class_id), 'is_active': True},
         {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},

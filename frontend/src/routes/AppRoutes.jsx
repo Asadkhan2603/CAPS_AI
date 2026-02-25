@@ -2,7 +2,7 @@ import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import ProtectedRoute from './ProtectedRoute';
-import PageLoader from '../components/ui/PageLoader';
+import PageSkeleton from '../components/ui/PageSkeleton';
 import { FEATURE_ACCESS } from '../config/featureAccess';
 
 const LoginPage = lazy(() => import('../pages/LoginPage'));
@@ -49,7 +49,7 @@ const EvaluateSubmissionPage = lazy(() => import('../pages/Teacher/EvaluateSubmi
 
 export function AppRoutes() {
   return (
-    <Suspense fallback={<PageLoader />}>
+    <Suspense fallback={<PageSkeleton />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_roles
+from app.core.security import require_permission, require_roles
 from app.models.clubs import club_application_public, club_member_public, club_public
 from app.schemas.club import (
     ClubAnalyticsOut,
@@ -193,7 +193,7 @@ async def list_clubs(
 @router.post("/", response_model=ClubOut, status_code=status.HTTP_201_CREATED)
 async def create_club(
     payload: ClubCreate,
-    current_user=Depends(require_roles(["admin"])),
+    current_user=Depends(require_permission("club:create")),
 ) -> ClubOut:
     if payload.coordinator_user_id:
         teacher = await _resolve_user(payload.coordinator_user_id)
@@ -264,7 +264,7 @@ async def create_club(
 async def update_club(
     club_id: str,
     payload: ClubUpdate,
-    current_user=Depends(require_roles(["admin", "teacher"])),
+    current_user=Depends(require_permission("club:update")),
 ) -> ClubOut:
     club = await _ensure_club(club_id)
     if not await _can_manage_club(current_user, club):
@@ -324,7 +324,15 @@ async def update_club(
         action="update",
         entity_type="club",
         entity_id=club_id,
-        detail="Updated club settings",
+        action_type="admin_action" if current_user.get("role") == "admin" else "update",
+        detail=(
+            f"Club status changed {current_status} -> {next_status}"
+            if current_status != next_status
+            else "Updated club settings"
+        ),
+        old_value={"status": current_status, "registration_open": club.get("registration_open")},
+        new_value={"status": next_status, "registration_open": update_data.get("registration_open", club.get("registration_open"))},
+        severity="medium" if current_status != next_status else "low",
     )
     return ClubOut(**club_public(enriched))
 
@@ -421,7 +429,7 @@ async def update_member(
     club_id: str,
     member_id: str,
     payload: ClubMembershipUpdate,
-    current_user=Depends(require_roles(["admin", "teacher"])),
+    current_user=Depends(require_permission("club:update")),
 ) -> ClubMembershipOut:
     club = await _ensure_club(club_id)
     if not await _can_manage_club(current_user, club):
@@ -487,7 +495,7 @@ async def review_application(
     club_id: str,
     application_id: str,
     payload: ClubApplicationReview,
-    current_user=Depends(require_roles(["admin", "teacher"])),
+    current_user=Depends(require_permission("club:update")),
 ) -> ClubApplicationOut:
     club = await _ensure_club(club_id)
     if not await _can_manage_club(current_user, club):

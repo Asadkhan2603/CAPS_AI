@@ -5,9 +5,22 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.core.config import settings
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.redis_store import redis_store
 from app.core.security import require_roles
 
 router = APIRouter()
+
+
+async def _get_cached_json(key: str):
+    return await redis_store.get_json(key)
+
+
+async def _set_cached_json(key: str, payload: dict):
+    await redis_store.set_json(
+        key,
+        payload,
+        ttl_seconds=max(30, settings.analytics_cache_ttl_seconds),
+    )
 
 
 async def _student_ids_for_class(class_id: str) -> set[str]:
@@ -24,12 +37,16 @@ async def analytics_summary(
 ) -> dict:
     role = current_user.get('role')
     user_id = str(current_user.get('_id'))
+    cache_key = f'analytics:summary:{role}:{user_id}'
+    cached = await _get_cached_json(cache_key)
+    if cached:
+        return cached
 
     if role == 'student':
         total_submissions = await db.submissions.count_documents({'student_user_id': user_id})
         total_evaluations = await db.evaluations.count_documents({'student_user_id': user_id})
         pending = await db.submissions.count_documents({'student_user_id': user_id, 'status': 'submitted'})
-        return {
+        payload = {
             'role': role,
             'summary': {
                 'total_submissions': total_submissions,
@@ -37,6 +54,8 @@ async def analytics_summary(
                 'pending_reviews': pending,
             },
         }
+        await _set_cached_json(cache_key, payload)
+        return payload
 
     if role == 'teacher':
         my_assignments = await db.assignments.count_documents({'created_by': user_id})
@@ -48,7 +67,7 @@ async def analytics_summary(
             {'is_flagged': True, 'source_assignment_id': {'$in': my_assignment_ids}}
         )
         my_notices = await db.notices.count_documents({'is_active': True})
-        return {
+        payload = {
             'role': role,
             'summary': {
                 'my_assignments': my_assignments,
@@ -58,8 +77,10 @@ async def analytics_summary(
                 'my_notices': my_notices,
             },
         }
+        await _set_cached_json(cache_key, payload)
+        return payload
 
-    return {
+    payload = {
         'role': role,
         'summary': {
             'users': await db.users.count_documents({}),
@@ -77,6 +98,8 @@ async def analytics_summary(
             'club_events': await db.club_events.count_documents({}),
         },
     }
+    await _set_cached_json(cache_key, payload)
+    return payload
 
 
 async def _teacher_section_tiles(
@@ -180,6 +203,10 @@ async def academic_structure(
 ) -> dict:
     role = current_user.get('role')
     user_id = str(current_user.get('_id'))
+    cache_key = f'analytics:academic-structure:{role}:{user_id}'
+    cached = await _get_cached_json(cache_key)
+    if cached:
+        return cached
     user_email = str(current_user.get('email') or '').lower()
 
     courses = await db.courses.find({'is_active': True}).to_list(length=2000)
@@ -353,7 +380,7 @@ async def academic_structure(
             }
         )
 
-    return {
+    payload = {
         'university': {
             'id': 'UNI001',
             'name': settings.app_name,
@@ -361,3 +388,5 @@ async def academic_structure(
         },
         'courses': course_items,
     }
+    await _set_cached_json(cache_key, payload)
+    return payload

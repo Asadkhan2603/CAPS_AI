@@ -105,5 +105,16 @@ async def restore_item(
         detail=f"Restored soft-deleted {collection} item",
         severity='medium',
     )
+    recovery_logs = getattr(db, "recovery_logs", None)
+    if recovery_logs is not None:
+        await recovery_logs.insert_one(
+            {
+                "collection": collection,
+                "entity_id": item_id,
+                "action": "restore",
+                "performed_by": str(current_user.get("_id")),
+                "created_at": datetime.now(timezone.utc),
+            }
+        )
 
     return {'success': True, 'collection': collection, 'id': item_id, 'message': 'Item restored'}

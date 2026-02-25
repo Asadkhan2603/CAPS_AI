@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
@@ -8,6 +8,7 @@ from app.core.security import require_permission
 from app.models.users import user_public
 from app.schemas.user import UserExtensionRolesUpdate, UserOut
 from app.services.audit import log_audit_event
+from app.services.governance import enforce_review_approval
 
 router = APIRouter()
 
@@ -29,6 +30,7 @@ async def list_users(
 async def update_user_extension_roles(
     user_id: str,
     payload: UserExtensionRolesUpdate,
+    review_id: str | None = Query(default=None),
     current_user=Depends(require_permission("users.update")),
 ) -> UserOut:
     user_obj_id = parse_object_id(user_id)
@@ -36,6 +38,14 @@ async def update_user_extension_roles(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     role = user.get("role")
+    await enforce_review_approval(
+        current_user=current_user,
+        review_id=review_id,
+        action="users.update.extensions",
+        entity_type="user",
+        entity_id=user_id,
+        review_type="role_change",
+    )
     allowed = ROLE_ALLOWED_EXTENSIONS.get(role, set())
     if not allowed:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This role does not support extension roles")
@@ -46,6 +56,8 @@ async def update_user_extension_roles(
             detail=f"Invalid extension roles for {role}: {', '.join(invalid)}",
         )
 
+    previous_extensions = list(user.get("extended_roles") or [])
+    previous_scope = dict(user.get("role_scope") or {})
     role_scope = payload.role_scope.model_dump(exclude_none=True) if payload.role_scope else {}
 
     if role == "teacher":
@@ -112,6 +124,10 @@ async def update_user_extension_roles(
         action="update_extensions",
         entity_type="user",
         entity_id=user_id,
+        action_type="role_change",
         detail=f"Updated {role} extension roles",
+        old_value={"extended_roles": previous_extensions, "role_scope": previous_scope},
+        new_value={"extended_roles": payload.extended_roles, "role_scope": role_scope},
+        severity="medium",
     )
     return UserOut(**user_public(updated))

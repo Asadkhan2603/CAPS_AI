@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_roles
+from app.core.security import require_permission, require_roles
 from app.models.years import year_public
 from app.schemas.year import YearCreate, YearOut, YearUpdate
+from app.services.governance import enforce_review_approval
 
 router = APIRouter()
 
@@ -51,7 +52,7 @@ async def get_year(
 @router.post('/', response_model=YearOut, status_code=status.HTTP_201_CREATED)
 async def create_year(
     payload: YearCreate,
-    _current_user=Depends(require_roles(['admin'])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> YearOut:
     course = await db.courses.find_one({'_id': parse_object_id(payload.course_id)})
     if not course:
@@ -80,7 +81,7 @@ async def create_year(
 async def update_year(
     year_id: str,
     payload: YearUpdate,
-    _current_user=Depends(require_roles(['admin'])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> YearOut:
     year_obj_id = parse_object_id(year_id)
     current = await db.years.find_one({'_id': year_obj_id})
@@ -115,8 +116,16 @@ async def update_year(
 @router.delete('/{year_id}')
 async def delete_year(
     year_id: str,
-    current_user=Depends(require_roles(['admin'])),
+    review_id: str | None = Query(default=None),
+    current_user=Depends(require_permission("academic:manage")),
 ) -> dict:
+    await enforce_review_approval(
+        current_user=current_user,
+        review_id=review_id,
+        action="years.delete",
+        entity_type="year",
+        entity_id=year_id,
+    )
     result = await db.years.update_one(
         {'_id': parse_object_id(year_id), 'is_active': True},
         {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},

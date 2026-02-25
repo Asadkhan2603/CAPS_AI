@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
@@ -17,6 +17,7 @@ from app.services.cloudinary_uploads import (
     delete_cloudinary_asset,
     upload_notice_file,
 )
+from app.services.background_jobs import fanout_notice_notifications
 
 router = APIRouter()
 
@@ -133,7 +134,7 @@ def _to_aware_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
-async def _extract_payload_and_files(request: Request) -> tuple[NoticeCreate, list[tuple[bytes, str, str]]]:
+async def _extract_payload_and_files(request: Request) -> tuple[NoticeCreate, list[tuple[bytes, str, str]], datetime | None]:
     content_type = request.headers.get('content-type', '').lower()
     files: list[tuple[bytes, str, str]] = []
 
@@ -168,11 +169,13 @@ async def _extract_payload_and_files(request: Request) -> tuple[NoticeCreate, li
             scope_ref_id=(str(form.get('scope_ref_id')).strip() if form.get('scope_ref_id') else None),
             expires_at=_parse_datetime(str(form.get('expires_at')) if form.get('expires_at') else None),
         )
-        return payload, files
+        scheduled_at = _parse_datetime(str(form.get('scheduled_at')) if form.get('scheduled_at') else None)
+        return payload, files, scheduled_at
 
     raw = await request.json()
+    scheduled_at = _parse_datetime(raw.get('scheduled_at')) if isinstance(raw, dict) else None
     payload = NoticeCreate(**raw)
-    return payload, files
+    return payload, files, scheduled_at
 
 
 @router.get('/', response_model=List[NoticeOut])
@@ -223,10 +226,11 @@ async def list_notices(
 @router.post('/', response_model=NoticeOut, status_code=status.HTTP_201_CREATED)
 async def create_notice(
     request: Request,
+    background_tasks: BackgroundTasks,
     images: list[UploadFile] | None = File(default=None),
     current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> NoticeOut:
-    payload, uploaded_files = await _extract_payload_and_files(request)
+    payload, uploaded_files, scheduled_at = await _extract_payload_and_files(request)
 
     if not _can_publish_scope(current_user, payload.scope):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to publish this notice scope')
@@ -249,7 +253,7 @@ async def create_notice(
             'expires_at': payload.expires_at,
             'images': images,
             'is_pinned': False,
-            'scheduled_at': None,
+            'scheduled_at': scheduled_at,
             'read_count': 0,
             'seen_by': [],
             'created_by': str(current_user['_id']),
@@ -266,6 +270,8 @@ async def create_notice(
             entity_id=str(result.inserted_id),
             detail=f"Created {payload.priority} notice with scope {payload.scope} ({len(images)} attachments)",
         )
+        if not scheduled_at or _to_aware_utc(scheduled_at) <= datetime.now(timezone.utc):
+            background_tasks.add_task(fanout_notice_notifications, str(result.inserted_id))
         return NoticeOut(**notice_public(created))
     except HTTPException:
         for image in images:
@@ -309,3 +315,28 @@ async def delete_notice(
         detail='Notice deleted and cloud attachments cleaned up',
     )
     return {'success': True, 'message': 'Notice deleted'}
+
+
+@router.post('/process-scheduled')
+async def process_scheduled_notices(
+    background_tasks: BackgroundTasks,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> dict:
+    now = datetime.now(timezone.utc)
+    notices = await db.notices.find(
+        {
+            'is_active': True,
+            'scheduled_at': {'$ne': None, '$lte': now},
+            '$or': [{'fanout_dispatched_at': None}, {'fanout_dispatched_at': {'$exists': False}}],
+        },
+        {'_id': 1},
+    ).limit(200).to_list(length=200)
+    for notice in notices:
+        background_tasks.add_task(fanout_notice_notifications, str(notice.get('_id')))
+    await log_audit_event(
+        actor_user_id=str(current_user['_id']),
+        action='process_scheduled_notices',
+        entity_type='notice',
+        detail=f'Queued {len(notices)} scheduled notices for dispatch',
+    )
+    return {'success': True, 'queued': len(notices)}

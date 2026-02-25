@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 export const TOKEN_KEY = 'caps_ai_token';
+export const REFRESH_TOKEN_KEY = 'caps_ai_refresh_token';
 const MAX_TRACE_ENTRIES = 100;
 const traceEntries = [];
 
@@ -16,6 +17,16 @@ function pushTraceEntry(entry) {
   if (traceEntries.length > MAX_TRACE_ENTRIES) {
     traceEntries.pop();
   }
+}
+
+function isEnvelope(payload) {
+  return (
+    payload &&
+    typeof payload === 'object' &&
+    Object.prototype.hasOwnProperty.call(payload, 'success') &&
+    Object.prototype.hasOwnProperty.call(payload, 'data') &&
+    Object.prototype.hasOwnProperty.call(payload, 'error')
+  );
 }
 
 export function getRecentApiTraceEntries() {
@@ -57,9 +68,12 @@ apiClient.interceptors.response.use(
       requestId,
       errorId
     });
+    if (isEnvelope(response.data)) {
+      response.data = response.data.data;
+    }
     return response;
   },
-  (error) => {
+  async (error) => {
     const response = error?.response;
     const config = error?.config || {};
     const method = String(config.method || 'GET').toUpperCase();
@@ -78,6 +92,51 @@ apiClient.interceptors.response.use(
       requestId,
       errorId
     });
+    if (response && isEnvelope(response?.data)) {
+      const envelope = response.data;
+      error.response.data = {
+        ...error.response.data,
+        detail: envelope?.error?.detail ?? envelope?.error?.message ?? 'Request failed',
+        error_id: envelope?.error?.error_id || errorId
+      };
+    }
+
+    const originalRequest = error?.config;
+    const statusCode = response?.status;
+    const isAuthPath =
+      typeof originalRequest?.url === 'string' &&
+      (originalRequest.url.includes('/auth/login') ||
+        originalRequest.url.includes('/auth/refresh') ||
+        originalRequest.url.includes('/auth/logout'));
+
+    if (statusCode === 401 && originalRequest && !originalRequest._retry && !isAuthPath) {
+      originalRequest._retry = true;
+      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (refreshToken) {
+        try {
+          const refreshResponse = await axios.post(
+            `${apiClient.defaults.baseURL}/auth/refresh`,
+            { refresh_token: refreshToken }
+          );
+          const refreshPayload = isEnvelope(refreshResponse?.data) ? refreshResponse.data.data : refreshResponse?.data;
+          const nextAccessToken = refreshPayload?.access_token;
+          const nextRefreshToken = refreshPayload?.refresh_token;
+          if (nextAccessToken) {
+            localStorage.setItem(TOKEN_KEY, nextAccessToken);
+            originalRequest.headers = originalRequest.headers || {};
+            originalRequest.headers.Authorization = `Bearer ${nextAccessToken}`;
+          }
+          if (nextRefreshToken) {
+            localStorage.setItem(REFRESH_TOKEN_KEY, nextRefreshToken);
+          }
+          return apiClient(originalRequest);
+        } catch {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(REFRESH_TOKEN_KEY);
+          localStorage.removeItem('caps_ai_user');
+        }
+      }
+    }
     return Promise.reject(error);
   }
 );

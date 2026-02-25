@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.database import db
 from app.core.security import require_permission
+from app.services.analytics_snapshot import compute_platform_snapshot, get_daily_snapshot, get_snapshot_history
 
 router = APIRouter()
 
@@ -46,78 +47,30 @@ async def admin_analytics_overview(
 async def admin_analytics_platform(
     _current_user=Depends(require_permission('analytics.read')),
 ) -> dict:
-    now = datetime.now(timezone.utc)
-    today = now.date().isoformat()
-    day_ago = now - timedelta(hours=24)
-
-    users_total = await db.users.count_documents({})
-    active_students = await db.students.count_documents({'is_active': True})
-
-    assignments_total = await db.assignments.count_documents({})
-    submissions_total = await db.submissions.count_documents({})
-    assignment_completion_pct = round((submissions_total / assignments_total) * 100, 2) if assignments_total else 0.0
-
-    clubs_total = await db.clubs.count_documents({'status': {'$in': ['active', 'registration_closed']}})
-    active_club_members = await db.club_members.count_documents({'status': 'active'})
-    club_participation_pct = round((active_club_members / active_students) * 100, 2) if active_students else 0.0
-
-    events_total = await db.club_events.count_documents({})
-    event_registrations = await db.event_registrations.count_documents({'status': {'$in': ['registered', 'approved']}})
-    event_attendance_pct = round((event_registrations / events_total) * 100, 2) if events_total else 0.0
-
-    pending_tickets = await db.review_tickets.count_documents({'status': {'$in': ['pending', 'open']}})
-
-    login_count_24h = await db.audit_logs.count_documents(
-        {
-            'action_type': 'login',
-            'created_at': {'$gte': day_ago},
-            'actor_user_id': {'$ne': None},
-        }
-    )
-    daily_active_user_ids = await db.audit_logs.distinct(
-        'actor_user_id',
-        {
-            'action_type': 'login',
-            'created_at': {'$gte': day_ago},
-            'actor_user_id': {'$ne': None},
-        },
-    )
-    daily_active_users = len(daily_active_user_ids)
-
-    sla_pipeline = [
-        {'$match': {'status': {'$in': ['approved', 'rejected']}, 'resolved_at': {'$ne': None}}},
-        {
-            '$project': {
-                'duration_hours': {
-                    '$divide': [{'$subtract': ['$resolved_at', '$created_at']}, 3600000]
-                }
-            }
-        },
-        {'$group': {'_id': None, 'avg_hours': {'$avg': '$duration_hours'}}},
-    ]
-    sla_rows = await db.review_tickets.aggregate(sla_pipeline).to_list(length=1)
-    review_ticket_sla_hours = round(float(sla_rows[0].get('avg_hours', 0.0)), 2) if sla_rows else 0.0
-
-    snapshot = {
-        'date': today,
-        'users_total': users_total,
-        'active_students': active_students,
-        'daily_active_users': daily_active_users,
-        'login_count_24h': login_count_24h,
-        'assignment_completion_pct': assignment_completion_pct,
-        'club_participation_pct': club_participation_pct,
-        'event_attendance_pct': event_attendance_pct,
-        'review_ticket_sla_hours': review_ticket_sla_hours,
-        'pending_review_tickets': pending_tickets,
-        'updated_at': now,
-    }
-
-    await db.platform_metrics.update_one({'date': today}, {'$set': snapshot}, upsert=True)
-
+    snapshot = await get_daily_snapshot()
+    if not snapshot:
+        snapshot = await compute_platform_snapshot()
     return {
         'timestamp': datetime.now(timezone.utc),
         'metrics': snapshot,
     }
+
+
+@router.post('/snapshots/run-daily')
+async def run_daily_snapshot(
+    _current_user=Depends(require_permission('analytics.read')),
+) -> dict:
+    snapshot = await compute_platform_snapshot()
+    return {'timestamp': datetime.now(timezone.utc), 'snapshot': snapshot}
+
+
+@router.get('/snapshots/history')
+async def snapshots_history(
+    limit: int = 30,
+    _current_user=Depends(require_permission('analytics.read')),
+) -> dict:
+    rows = await get_snapshot_history(limit=max(1, min(120, int(limit))))
+    return {'timestamp': datetime.now(timezone.utc), 'items': rows}
 
 
 @router.get('/audit-summary')

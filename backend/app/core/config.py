@@ -21,6 +21,17 @@ def _as_int(value: str, fallback: int) -> int:
         return fallback
 
 
+def _as_bool(value: str | None, fallback: bool) -> bool:
+    if value is None:
+        return fallback
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return fallback
+
+
 def _merge_cors_origins(raw_origins: str) -> List[str]:
     configured = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
     # Always keep common local frontend origins enabled to avoid dev CORS lockouts.
@@ -48,6 +59,18 @@ class Settings:
     access_token_expire_minutes: int = field(
         default_factory=lambda: _as_int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"), 60)
     )
+    refresh_token_expire_days: int = field(
+        default_factory=lambda: _as_int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"), 7)
+    )
+    account_lockout_max_attempts: int = field(
+        default_factory=lambda: _as_int(os.getenv("ACCOUNT_LOCKOUT_MAX_ATTEMPTS", "5"), 5)
+    )
+    account_lockout_window_minutes: int = field(
+        default_factory=lambda: _as_int(os.getenv("ACCOUNT_LOCKOUT_WINDOW_MINUTES", "15"), 15)
+    )
+    account_lockout_duration_minutes: int = field(
+        default_factory=lambda: _as_int(os.getenv("ACCOUNT_LOCKOUT_DURATION_MINUTES", "30"), 30)
+    )
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
     openai_timeout_seconds: int = field(
@@ -65,6 +88,16 @@ class Settings:
     )
     rate_limit_window_seconds: int = field(
         default_factory=lambda: _as_int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"), 60)
+    )
+    response_envelope_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("RESPONSE_ENVELOPE_ENABLED"), False)
+    )
+    redis_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("REDIS_ENABLED"), False)
+    )
+    redis_url: str = field(default_factory=lambda: os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+    analytics_cache_ttl_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("ANALYTICS_CACHE_TTL_SECONDS", "120"), 120)
     )
     cloudinary_cloud_name: str = field(default_factory=lambda: os.getenv("CLOUDINARY_CLOUD_NAME", "").strip())
     cloudinary_api_key: str = field(default_factory=lambda: os.getenv("CLOUDINARY_API_KEY", "").strip())

@@ -3,10 +3,11 @@ import { Plus, Search } from 'lucide-react';
 import CommunicationTabs from '../../components/communication/CommunicationTabs';
 import AnnouncementCard from '../../components/communication/AnnouncementCard';
 import CreateAnnouncementModal from '../../components/communication/CreateAnnouncementModal';
+import EmptyState from '../../components/ui/EmptyState';
 import { apiClient } from '../../services/apiClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
-import { formatApiError } from '../../utils/apiError';
+import { pushApiErrorToast } from '../../utils/errorToast';
 import { isNoticeRead, markNoticeRead, markNoticesRead, unreadNoticeCount } from '../../utils/noticeReadTracker';
 
 const FILTERS = [
@@ -70,7 +71,7 @@ export default function AnnouncementsPage() {
       setNotices(rows);
       setPage(1);
     } catch (err) {
-      pushToast({ title: 'Load failed', description: formatApiError(err, 'Unable to load announcements'), variant: 'error' });
+      pushApiErrorToast(pushToast, err, 'Unable to load announcements');
       setNotices([]);
     } finally {
       setLoading(false);
@@ -248,7 +249,7 @@ export default function AnnouncementsPage() {
       setShowCreate(false);
       await loadNotices();
     } catch (err) {
-      pushToast({ title: 'Publish failed', description: formatApiError(err, 'Unable to publish announcement'), variant: 'error' });
+      pushApiErrorToast(pushToast, err, 'Unable to publish announcement');
     } finally {
       setPublishing(false);
       setUploadProgress(0);
@@ -314,7 +315,9 @@ export default function AnnouncementsPage() {
 
         <div className="space-y-3">
           {loading ? <p className="text-sm text-slate-500">Loading announcements...</p> : null}
-          {!loading && paged.length === 0 ? <p className="text-sm text-slate-500">No announcements found.</p> : null}
+          {!loading && paged.length === 0 ? (
+            <EmptyState title="No announcements found" description="Try another filter or create a new announcement." />
+          ) : null}
 
           {paged.map((notice) => {
             const audienceText = notice.scope === 'college' ? 'Entire college' : audienceNameById[notice.scope_ref_id] || 'Targeted audience';
