@@ -15,6 +15,7 @@ router = APIRouter()
 
 @router.get('/', response_model=List[DepartmentOut])
 async def list_departments(
+    faculty_id: str | None = Query(default=None),
     q: str | None = Query(default=None, min_length=1, max_length=100),
     is_active: bool | None = Query(default=True),
     skip: int = Query(default=0, ge=0),
@@ -22,6 +23,8 @@ async def list_departments(
     _current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> List[DepartmentOut]:
     query = {}
+    if faculty_id:
+        query['faculty_id'] = faculty_id
     if q:
         query['$or'] = [
             {'name': {'$regex': q, '$options': 'i'}},
@@ -51,6 +54,10 @@ async def create_department(
     payload: DepartmentCreate,
     _current_user=Depends(require_permission("academic:manage")),
 ) -> DepartmentOut:
+    if payload.faculty_id:
+        faculty = await db.faculties.find_one({'_id': parse_object_id(payload.faculty_id)})
+        if not faculty:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Faculty not found for provided faculty_id')
     normalized_code = payload.code.strip().upper()
     existing = await db.departments.find_one({'code': normalized_code})
     if existing:
@@ -59,6 +66,7 @@ async def create_department(
     document = {
         'name': payload.name.strip(),
         'code': normalized_code,
+        'faculty_id': payload.faculty_id,
         'university_name': payload.university_name.strip() if payload.university_name else None,
         'university_code': payload.university_code.strip().upper() if payload.university_code else None,
         'is_active': True,
@@ -140,3 +148,7 @@ async def delete_department(
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Department not found')
     return {'message': 'Department archived'}
+    if 'faculty_id' in update_data and update_data['faculty_id']:
+        faculty = await db.faculties.find_one({'_id': parse_object_id(update_data['faculty_id'])})
+        if not faculty:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Faculty not found for provided faculty_id')

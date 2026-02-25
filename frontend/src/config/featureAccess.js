@@ -37,9 +37,14 @@ export const FEATURE_ACCESS = {
   auditLogs: { allowedRoles: ['admin', 'teacher'] },
   developerPanel: { allowedRoles: ['admin'] },
   users: { allowedRoles: ['admin'] },
+  faculties: { allowedRoles: ['admin'] },
   courses: { allowedRoles: ['admin'] },
+  programs: { allowedRoles: ['admin'] },
   departments: { allowedRoles: ['admin'] },
+  specializations: { allowedRoles: ['admin'] },
   branches: { allowedRoles: ['admin'] },
+  batches: { allowedRoles: ['admin'] },
   years: { allowedRoles: ['admin'] },
+  semesters: { allowedRoles: ['admin'] },
   sections: { allowedRoles: ['admin', 'teacher'] }
 };

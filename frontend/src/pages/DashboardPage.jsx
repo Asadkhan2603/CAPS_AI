@@ -40,10 +40,11 @@ export default function DashboardPage() {
     if (user?.role === 'admin') {
       return [
         { to: '/analytics', label: 'Analytics' },
-        { to: '/courses', label: 'Manage Courses' },
+        { to: '/faculties', label: 'Manage Faculties' },
         { to: '/departments', label: 'Manage Departments' },
-        { to: '/branches', label: 'Manage Branches' },
-        { to: '/years', label: 'Manage Years' },
+        { to: '/programs', label: 'Manage Programs' },
+        { to: '/batches', label: 'Manage Batches' },
+        { to: '/semesters', label: 'Manage Semesters' },
         { to: '/sections', label: 'Manage Sections' },
         { to: '/users', label: 'Manage Users' }
       ];

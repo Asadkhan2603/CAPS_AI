@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_permission
+from app.core.security import get_password_hash, require_permission
 from app.models.users import user_public
-from app.schemas.user import UserExtensionRolesUpdate, UserOut
+from app.schemas.user import UserCreate, UserExtensionRolesUpdate, UserOut
 from app.services.audit import log_audit_event
 from app.services.governance import enforce_review_approval
 
@@ -24,6 +24,49 @@ async def list_users(
 ) -> List[UserOut]:
     users = await db.users.find({}).to_list(length=1000)
     return [UserOut(**user_public(user)) for user in users]
+
+
+@router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    payload: UserCreate,
+    _current_user=Depends(require_permission("users.update")),
+) -> UserOut:
+    email = payload.email.lower().strip()
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is already registered")
+
+    extended_roles = payload.extended_roles or []
+    if payload.role != "teacher" and extended_roles:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Extended roles are only allowed for teacher accounts",
+        )
+
+    if payload.role == "admin":
+        admin_type = payload.admin_type or "admin"
+    else:
+        if payload.admin_type is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="admin_type is allowed only for admin accounts",
+            )
+        admin_type = None
+
+    document = {
+        "full_name": payload.full_name.strip(),
+        "email": email,
+        "hashed_password": get_password_hash(payload.password),
+        "role": payload.role,
+        "admin_type": admin_type,
+        "extended_roles": extended_roles,
+        "role_scope": {},
+        "is_active": True,
+        "must_change_password": False,
+    }
+    result = await db.users.insert_one(document)
+    created = await db.users.find_one({"_id": result.inserted_id})
+    return UserOut(**user_public(created))
 
 
 @router.patch("/{user_id}/extensions", response_model=UserOut)
@@ -76,8 +119,14 @@ async def update_user_extension_roles(
                     {"_id": parse_object_id(class_id)},
                     {"$set": {"class_coordinator_user_id": user_id}},
                 )
+                class_scope["faculty_id"] = class_doc.get("faculty_id")
+                class_scope["department_id"] = class_doc.get("department_id")
+                class_scope["program_id"] = class_doc.get("program_id")
+                class_scope["specialization_id"] = class_doc.get("specialization_id")
                 class_scope["course_id"] = class_doc.get("course_id")
                 class_scope["year_id"] = class_doc.get("year_id")
+                class_scope["batch_id"] = class_doc.get("batch_id")
+                class_scope["semester_id"] = class_doc.get("semester_id")
                 role_scope["class_coordinator"] = class_scope
         else:
             role_scope.pop("class_coordinator", None)
@@ -131,3 +180,41 @@ async def update_user_extension_roles(
         severity="medium",
     )
     return UserOut(**user_public(updated))
+
+
+@router.delete("/{user_id}")
+async def deactivate_user(
+    user_id: str,
+    current_user=Depends(require_permission("users.update")),
+) -> dict:
+    user_obj_id = parse_object_id(user_id)
+    if str(current_user.get("_id")) == user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot deactivate yourself")
+
+    user = await db.users.find_one({"_id": user_obj_id})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    await db.users.update_one({"_id": user_obj_id}, {"$set": {"is_active": False}})
+    await db.classes.update_many(
+        {"class_coordinator_user_id": user_id},
+        {"$set": {"class_coordinator_user_id": None}},
+    )
+    await db.clubs.update_many(
+        {"coordinator_user_id": user_id},
+        {"$set": {"coordinator_user_id": None}},
+    )
+    await db.clubs.update_many(
+        {"president_user_id": user_id},
+        {"$set": {"president_user_id": None}},
+    )
+    await log_audit_event(
+        actor_user_id=str(current_user.get("_id")),
+        action="deactivate_user",
+        entity_type="user",
+        entity_id=user_id,
+        action_type="role_change",
+        detail="User deactivated by super admin",
+        severity="high",
+    )
+    return {"message": "User deactivated"}

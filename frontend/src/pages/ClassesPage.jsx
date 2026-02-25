@@ -11,117 +11,143 @@ export default function ClassesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const { pushToast } = useToast();
+
   const [rows, setRows] = useState([]);
-  const [courses, setCourses] = useState([]);
-  const [years, setYears] = useState([]);
-  const [teachers, setTeachers] = useState([]);
+  const [faculties, setFaculties] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [branches, setBranches] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [specializations, setSpecializations] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [semesters, setSemesters] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(10);
-  const [filters, setFilters] = useState({ course_id: '', year_id: '', department_code: '', branch_code: '' });
+
+  const [filters, setFilters] = useState({
+    faculty_id: '',
+    department_id: '',
+    program_id: '',
+    specialization_id: '',
+    batch_id: '',
+    semester_id: ''
+  });
+
   const [form, setForm] = useState({
-    course_id: '',
-    year_id: '',
+    faculty_id: '',
+    department_id: '',
+    program_id: '',
+    specialization_id: '',
+    batch_id: '',
+    semester_id: '',
     name: '',
-    department_code: '',
-    branch_code: '',
     class_coordinator_user_id: ''
   });
 
-  const courseNameById = useMemo(
-    () => Object.fromEntries(courses.map((item) => [item.id, item.name])),
-    [courses]
+  const facultyNameById = useMemo(() => Object.fromEntries(faculties.map((item) => [item.id, item.name])), [faculties]);
+  const departmentNameById = useMemo(() => Object.fromEntries(departments.map((item) => [item.id, item.name])), [departments]);
+  const programNameById = useMemo(() => Object.fromEntries(programs.map((item) => [item.id, item.name])), [programs]);
+  const specializationNameById = useMemo(
+    () => Object.fromEntries(specializations.map((item) => [item.id, item.name])),
+    [specializations]
   );
-  const yearLabelById = useMemo(
-    () => Object.fromEntries(years.map((item) => [item.id, item.label || `Year ${item.year_number}`])),
-    [years]
+  const batchNameById = useMemo(() => Object.fromEntries(batches.map((item) => [item.id, item.name])), [batches]);
+  const semesterLabelById = useMemo(() => Object.fromEntries(semesters.map((item) => [item.id, item.label])), [semesters]);
+  const teacherNameById = useMemo(() => Object.fromEntries(teachers.map((item) => [item.id, item.full_name])), [teachers]);
+
+  const availableDepartmentsForForm = useMemo(
+    () => departments.filter((item) => !form.faculty_id || item.faculty_id === form.faculty_id),
+    [departments, form.faculty_id]
   );
-  const teacherNameById = useMemo(
-    () => Object.fromEntries(teachers.map((item) => [item.id, item.full_name])),
-    [teachers]
+  const availableProgramsForForm = useMemo(
+    () => programs.filter((item) => !form.department_id || item.department_id === form.department_id),
+    [programs, form.department_id]
   );
-  const departmentNameByCode = useMemo(
-    () => Object.fromEntries(departments.map((item) => [item.code, item.name])),
-    [departments]
+  const availableSpecializationsForForm = useMemo(
+    () => specializations.filter((item) => !form.program_id || item.program_id === form.program_id),
+    [specializations, form.program_id]
   );
-  const branchNameByCode = useMemo(
-    () => Object.fromEntries(branches.map((item) => [item.code, item.name])),
-    [branches]
+  const availableBatchesForForm = useMemo(
+    () =>
+      batches.filter(
+        (item) =>
+          (!form.program_id || item.program_id === form.program_id) &&
+          (!form.specialization_id || item.specialization_id === form.specialization_id)
+      ),
+    [batches, form.program_id, form.specialization_id]
+  );
+  const availableSemestersForForm = useMemo(
+    () => semesters.filter((item) => !form.batch_id || item.batch_id === form.batch_id),
+    [semesters, form.batch_id]
   );
 
-  const availableYearsForForm = useMemo(
-    () => years.filter((item) => !form.course_id || item.course_id === form.course_id),
-    [years, form.course_id]
+  const availableDepartmentsForFilters = useMemo(
+    () => departments.filter((item) => !filters.faculty_id || item.faculty_id === filters.faculty_id),
+    [departments, filters.faculty_id]
   );
-  const availableBranchesForForm = useMemo(
-    () => branches.filter((item) => !form.department_code || item.department_code === form.department_code),
-    [branches, form.department_code]
+  const availableProgramsForFilters = useMemo(
+    () => programs.filter((item) => !filters.department_id || item.department_id === filters.department_id),
+    [programs, filters.department_id]
   );
-  const availableBranchesForFilters = useMemo(
-    () => branches.filter((item) => !filters.department_code || item.department_code === filters.department_code),
-    [branches, filters.department_code]
+  const availableSpecializationsForFilters = useMemo(
+    () => specializations.filter((item) => !filters.program_id || item.program_id === filters.program_id),
+    [specializations, filters.program_id]
+  );
+  const availableBatchesForFilters = useMemo(
+    () =>
+      batches.filter(
+        (item) =>
+          (!filters.program_id || item.program_id === filters.program_id) &&
+          (!filters.specialization_id || item.specialization_id === filters.specialization_id)
+      ),
+    [batches, filters.program_id, filters.specialization_id]
+  );
+  const availableSemestersForFilters = useMemo(
+    () => semesters.filter((item) => !filters.batch_id || item.batch_id === filters.batch_id),
+    [semesters, filters.batch_id]
   );
 
   async function loadLookups() {
     const requests = [
-      apiClient.get('/courses/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/years/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/departments/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/branches/', { params: { skip: 0, limit: 200 } })
+      apiClient.get('/faculties/', { params: { skip: 0, limit: 200 } }),
+      apiClient.get('/departments/', { params: { skip: 0, limit: 300 } }),
+      apiClient.get('/programs/', { params: { skip: 0, limit: 300 } }),
+      apiClient.get('/specializations/', { params: { skip: 0, limit: 300 } }),
+      apiClient.get('/batches/', { params: { skip: 0, limit: 300 } }),
+      apiClient.get('/semesters/', { params: { skip: 0, limit: 300 } })
     ];
-    if (isAdmin) {
-      requests.splice(2, 0, apiClient.get('/users/'));
-    }
+    if (isAdmin) requests.push(apiClient.get('/users/'));
     const results = await Promise.allSettled(requests);
-    const coursesRes = results[0];
-    const yearsRes = results[1];
-    const usersRes = isAdmin ? results[2] : null;
-    const departmentsRes = results[isAdmin ? 3 : 2];
-    const branchesRes = results[isAdmin ? 4 : 3];
 
-    setCourses(coursesRes.status === 'fulfilled' ? (coursesRes.value.data || []) : []);
-    setYears(yearsRes.status === 'fulfilled' ? (yearsRes.value.data || []) : []);
+    setFaculties(results[0].status === 'fulfilled' ? results[0].value.data || [] : []);
+    setDepartments(results[1].status === 'fulfilled' ? results[1].value.data || [] : []);
+    setPrograms(results[2].status === 'fulfilled' ? results[2].value.data || [] : []);
+    setSpecializations(results[3].status === 'fulfilled' ? results[3].value.data || [] : []);
+    setBatches(results[4].status === 'fulfilled' ? results[4].value.data || [] : []);
+    setSemesters(results[5].status === 'fulfilled' ? results[5].value.data || [] : []);
     setTeachers(
-      usersRes?.status === 'fulfilled'
-        ? ((usersRes.value.data || []).filter((user) => user.role === 'teacher'))
+      isAdmin && results[6]?.status === 'fulfilled'
+        ? (results[6].value.data || []).filter((item) => item.role === 'teacher')
         : []
     );
-    setDepartments(departmentsRes.status === 'fulfilled' ? (departmentsRes.value.data || []) : []);
-    setBranches(branchesRes.status === 'fulfilled' ? (branchesRes.value.data || []) : []);
-
-    if (
-      coursesRes.status === 'rejected' ||
-      yearsRes.status === 'rejected' ||
-      (isAdmin && usersRes?.status === 'rejected') ||
-      departmentsRes.status === 'rejected' ||
-      branchesRes.status === 'rejected'
-    ) {
-      pushToast({
-        title: 'Partial load warning',
-        description: 'Some reference data failed to load. Try Refresh.',
-        variant: 'error'
-      });
-    }
   }
 
   async function loadSections() {
     setLoading(true);
     setError('');
     try {
-      const selectedDepartmentName = departmentNameByCode[filters.department_code];
-      const selectedBranchName = branchNameByCode[filters.branch_code];
-      const params = {
-        course_id: filters.course_id || undefined,
-        year_id: filters.year_id || undefined,
-        faculty_name: selectedDepartmentName || undefined,
-        branch_name: selectedBranchName || undefined,
+      const response = await getSections({
+        faculty_id: filters.faculty_id || undefined,
+        department_id: filters.department_id || undefined,
+        program_id: filters.program_id || undefined,
+        specialization_id: filters.specialization_id || undefined,
+        batch_id: filters.batch_id || undefined,
+        semester_id: filters.semester_id || undefined,
         skip,
         limit
-      };
-      const response = await getSections(params);
+      });
       setRows(response.data || []);
     } catch (err) {
       const message = formatApiError(err, 'Failed to load sections');
@@ -138,28 +164,32 @@ export default function ClassesPage() {
 
   useEffect(() => {
     loadSections();
-  }, [skip, limit, filters.department_code, filters.branch_code, departmentNameByCode, branchNameByCode]);
+  }, [skip, limit, filters]);
 
   async function onCreate(event) {
     event.preventDefault();
-    setError('');
     try {
-      const payload = {
-        course_id: form.course_id,
-        year_id: form.year_id,
+      await createSection({
+        faculty_id: form.faculty_id || null,
+        department_id: form.department_id || null,
+        program_id: form.program_id || null,
+        specialization_id: form.specialization_id || null,
+        batch_id: form.batch_id || null,
+        semester_id: form.semester_id || null,
         name: form.name,
-        faculty_name: form.department_code ? (departmentNameByCode[form.department_code] || null) : null,
-        branch_name: form.branch_code ? (branchNameByCode[form.branch_code] || null) : null,
-        class_coordinator_user_id: form.class_coordinator_user_id || null
-      };
-      await createSection(payload);
+        class_coordinator_user_id: form.class_coordinator_user_id || null,
+        faculty_name: facultyNameById[form.faculty_id] || null,
+        branch_name: programNameById[form.program_id] || null
+      });
       pushToast({ title: 'Created', description: 'Section created successfully.', variant: 'success' });
       setForm({
-        course_id: '',
-        year_id: '',
+        faculty_id: '',
+        department_id: '',
+        program_id: '',
+        specialization_id: '',
+        batch_id: '',
+        semester_id: '',
         name: '',
-        department_code: '',
-        branch_code: '',
         class_coordinator_user_id: ''
       });
       setSkip(0);
@@ -173,11 +203,17 @@ export default function ClassesPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'name', label: 'Name' },
-      { key: 'faculty_name', label: 'Department', render: (row) => row.faculty_name || '-' },
-      { key: 'branch_name', label: 'Branch', render: (row) => row.branch_name || '-' },
-      { key: 'course_id', label: 'Course', render: (row) => courseNameById[row.course_id] || row.course_id },
-      { key: 'year_id', label: 'Year', render: (row) => yearLabelById[row.year_id] || row.year_id },
+      { key: 'name', label: 'Section' },
+      { key: 'faculty_id', label: 'Faculty', render: (row) => facultyNameById[row.faculty_id] || '-' },
+      { key: 'department_id', label: 'Department', render: (row) => departmentNameById[row.department_id] || '-' },
+      { key: 'program_id', label: 'Program', render: (row) => programNameById[row.program_id] || '-' },
+      {
+        key: 'specialization_id',
+        label: 'Specialization',
+        render: (row) => specializationNameById[row.specialization_id] || '-'
+      },
+      { key: 'batch_id', label: 'Batch', render: (row) => batchNameById[row.batch_id] || '-' },
+      { key: 'semester_id', label: 'Semester', render: (row) => semesterLabelById[row.semester_id] || '-' },
       {
         key: 'class_coordinator_user_id',
         label: 'Coordinator',
@@ -187,7 +223,15 @@ export default function ClassesPage() {
             : '-'
       }
     ],
-    [courseNameById, yearLabelById, teacherNameById]
+    [
+      batchNameById,
+      departmentNameById,
+      facultyNameById,
+      programNameById,
+      semesterLabelById,
+      specializationNameById,
+      teacherNameById
+    ]
   );
 
   return (
@@ -198,74 +242,49 @@ export default function ClassesPage() {
           <button className="btn-secondary" onClick={() => { setSkip(0); loadSections(); }}>Refresh</button>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Course</span>
-            <select
-              className="input"
-              value={filters.course_id}
-              onChange={(e) => setFilters((prev) => ({ ...prev, course_id: e.target.value }))}
-            >
-              <option value="">All Courses</option>
-              {courses.map((course) => (
-                <option key={course.id} value={course.id}>{course.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Year</span>
-            <select
-              className="input"
-              value={filters.year_id}
-              onChange={(e) => setFilters((prev) => ({ ...prev, year_id: e.target.value }))}
-            >
-              <option value="">All Years</option>
-              {years.map((year) => (
-                <option key={year.id} value={year.id}>{year.label || `Year ${year.year_number}`}</option>
-              ))}
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Faculty</span>
+            <select className="input" value={filters.faculty_id} onChange={(e) => setFilters((prev) => ({ ...prev, faculty_id: e.target.value, department_id: '', program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}>
+              <option value="">All Faculties</option>
+              {faculties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
           <label className="block space-y-1">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Department</span>
-            <select
-              className="input"
-              value={filters.department_code}
-              onChange={(e) =>
-                setFilters((prev) => ({ ...prev, department_code: e.target.value, branch_code: '' }))
-              }
-            >
+            <select className="input" value={filters.department_id} onChange={(e) => setFilters((prev) => ({ ...prev, department_id: e.target.value, program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}>
               <option value="">All Departments</option>
-              {departments.map((department) => (
-                <option key={department.id} value={department.code}>{department.name}</option>
-              ))}
+              {availableDepartmentsForFilters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Branch</span>
-            <select
-              className="input"
-              value={filters.branch_code}
-              onChange={(e) => setFilters((prev) => ({ ...prev, branch_code: e.target.value }))}
-            >
-              <option value="">All Branches</option>
-              {availableBranchesForFilters.map((branch) => (
-                <option key={branch.id} value={branch.code}>{branch.name}</option>
-              ))}
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Program</span>
+            <select className="input" value={filters.program_id} onChange={(e) => setFilters((prev) => ({ ...prev, program_id: e.target.value, specialization_id: '', batch_id: '', semester_id: '' }))}>
+              <option value="">All Programs</option>
+              {availableProgramsForFilters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
-
-          <div className="flex items-end">
-            <button
-              className="btn-secondary"
-              onClick={() => {
-                setSkip(0);
-                loadSections();
-              }}
-            >
-              Apply Filters
-            </button>
-          </div>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Specialization</span>
+            <select className="input" value={filters.specialization_id} onChange={(e) => setFilters((prev) => ({ ...prev, specialization_id: e.target.value, batch_id: '', semester_id: '' }))}>
+              <option value="">All Specializations</option>
+              {availableSpecializationsForFilters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Batch</span>
+            <select className="input" value={filters.batch_id} onChange={(e) => setFilters((prev) => ({ ...prev, batch_id: e.target.value, semester_id: '' }))}>
+              <option value="">All Batches</option>
+              {availableBatchesForFilters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Semester</span>
+            <select className="input" value={filters.semester_id} onChange={(e) => setFilters((prev) => ({ ...prev, semester_id: e.target.value }))}>
+              <option value="">All Semesters</option>
+              {availableSemestersForFilters.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
         </div>
       </Card>
 
@@ -273,98 +292,62 @@ export default function ClassesPage() {
         <Card>
           <h2 className="mb-3 text-lg font-semibold">Create Section</h2>
           <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Course</span>
-            <select
-              className="input"
-              value={form.course_id}
-              required
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  course_id: e.target.value,
-                  year_id: ''
-                }))
-              }
-            >
-              <option value="">Select Course</option>
-              {courses.map((course) => (
-                <option key={course.id} value={course.id}>{course.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Year</span>
-            <select
-              className="input"
-              value={form.year_id}
-              required
-              onChange={(e) => setForm((prev) => ({ ...prev, year_id: e.target.value }))}
-            >
-              <option value="">Select Year</option>
-              {availableYearsForForm.map((year) => (
-                <option key={year.id} value={year.id}>{year.label || `Year ${year.year_number}`}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Section Name</span>
-            <input
-              className="input"
-              required
-              value={form.name}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="e.g. B.Tech CSE 2nd Year A"
-            />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Department</span>
-            <select
-              className="input"
-              value={form.department_code}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, department_code: e.target.value, branch_code: '' }))
-              }
-            >
-              <option value="">Select Department</option>
-              {departments.map((department) => (
-                <option key={department.id} value={department.code}>{department.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Branch</span>
-            <select
-              className="input"
-              value={form.branch_code}
-              onChange={(e) => setForm((prev) => ({ ...prev, branch_code: e.target.value }))}
-            >
-              <option value="">Select Branch</option>
-              {availableBranchesForForm.map((branch) => (
-                <option key={branch.id} value={branch.code}>{branch.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Coordinator (Teacher)</span>
-            <select
-              className="input"
-              value={form.class_coordinator_user_id}
-              onChange={(e) => setForm((prev) => ({ ...prev, class_coordinator_user_id: e.target.value }))}
-            >
-              <option value="">No Coordinator</option>
-              {teachers.map((teacher) => (
-                <option key={teacher.id} value={teacher.id}>{teacher.full_name} ({teacher.email})</option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex items-end">
-            <button type="submit" className="btn-primary w-full">Create</button>
-          </div>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Faculty</span>
+              <select className="input" value={form.faculty_id} onChange={(e) => setForm((prev) => ({ ...prev, faculty_id: e.target.value, department_id: '', program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}>
+                <option value="">Select Faculty</option>
+                {faculties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Department</span>
+              <select className="input" value={form.department_id} onChange={(e) => setForm((prev) => ({ ...prev, department_id: e.target.value, program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}>
+                <option value="">Select Department</option>
+                {availableDepartmentsForForm.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Program</span>
+              <select className="input" value={form.program_id} onChange={(e) => setForm((prev) => ({ ...prev, program_id: e.target.value, specialization_id: '', batch_id: '', semester_id: '' }))}>
+                <option value="">Select Program</option>
+                {availableProgramsForForm.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Specialization</span>
+              <select className="input" value={form.specialization_id} onChange={(e) => setForm((prev) => ({ ...prev, specialization_id: e.target.value, batch_id: '', semester_id: '' }))}>
+                <option value="">Select Specialization</option>
+                {availableSpecializationsForForm.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Batch</span>
+              <select className="input" value={form.batch_id} onChange={(e) => setForm((prev) => ({ ...prev, batch_id: e.target.value, semester_id: '' }))}>
+                <option value="">Select Batch</option>
+                {availableBatchesForForm.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Semester</span>
+              <select className="input" value={form.semester_id} onChange={(e) => setForm((prev) => ({ ...prev, semester_id: e.target.value }))}>
+                <option value="">Select Semester</option>
+                {availableSemestersForForm.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Section Name</span>
+              <input className="input" required value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="e.g. CSE 4A" />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Coordinator</span>
+              <select className="input" value={form.class_coordinator_user_id} onChange={(e) => setForm((prev) => ({ ...prev, class_coordinator_user_id: e.target.value }))}>
+                <option value="">No Coordinator</option>
+                {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.full_name} ({teacher.email})</option>)}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button type="submit" className="btn-primary w-full">Create</button>
+            </div>
           </form>
         </Card>
       ) : null}
@@ -383,7 +366,6 @@ export default function ClassesPage() {
             </select>
           </div>
         </div>
-
         {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
         <Table columns={columns} data={rows} />

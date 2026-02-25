@@ -4,8 +4,14 @@ from pydantic import BaseModel, Field
 
 
 class ClassCreate(BaseModel):
-    course_id: str = Field(min_length=1)
-    year_id: str = Field(min_length=1)
+    faculty_id: str | None = None
+    department_id: str | None = None
+    program_id: str | None = None
+    specialization_id: str | None = None
+    course_id: str | None = None
+    year_id: str | None = None
+    batch_id: str | None = None
+    semester_id: str | None = None
     name: str = Field(min_length=1, max_length=100)
     faculty_name: str | None = Field(default=None, max_length=120)
     branch_name: str | None = Field(default=None, max_length=120)
@@ -13,6 +19,14 @@ class ClassCreate(BaseModel):
 
 
 class ClassUpdate(BaseModel):
+    faculty_id: str | None = None
+    department_id: str | None = None
+    program_id: str | None = None
+    specialization_id: str | None = None
+    course_id: str | None = None
+    year_id: str | None = None
+    batch_id: str | None = None
+    semester_id: str | None = None
     name: str | None = Field(default=None, min_length=1, max_length=100)
     faculty_name: str | None = Field(default=None, max_length=120)
     branch_name: str | None = Field(default=None, max_length=120)
@@ -22,8 +36,14 @@ class ClassUpdate(BaseModel):
 
 class ClassOut(BaseModel):
     id: str
-    course_id: str
-    year_id: str
+    faculty_id: str | None = None
+    department_id: str | None = None
+    program_id: str | None = None
+    specialization_id: str | None = None
+    course_id: str | None = None
+    year_id: str | None = None
+    batch_id: str | None = None
+    semester_id: str | None = None
     name: str
     faculty_name: str | None = None
     branch_name: str | None = None

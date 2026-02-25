@@ -9,11 +9,13 @@ from app.api.v1.endpoints import (
     analytics,
     assignments,
     audit_logs,
+    batches,
     branches,
     branding,
     club_events,
     clubs,
     departments,
+    faculties,
     enrollments,
     event_registrations,
     auth,
@@ -23,22 +25,30 @@ from app.api.v1.endpoints import (
     notices,
     notifications,
     review_tickets,
+    semesters,
     similarity,
+    specializations,
     students,
     subjects,
     submissions,
     timetables,
     users,
     years,
+    programs,
 )
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(courses.router, prefix="/courses", tags=["courses"])
+api_router.include_router(programs.router, prefix="/programs", tags=["programs"])
 api_router.include_router(departments.router, prefix="/departments", tags=["departments"])
+api_router.include_router(faculties.router, prefix="/faculties", tags=["faculties"])
 api_router.include_router(branches.router, prefix="/branches", tags=["branches"])
+api_router.include_router(specializations.router, prefix="/specializations", tags=["specializations"])
 api_router.include_router(years.router, prefix="/years", tags=["years"])
+api_router.include_router(batches.router, prefix="/batches", tags=["batches"])
+api_router.include_router(semesters.router, prefix="/semesters", tags=["semesters"])
 # Legacy compatibility alias; canonical path is /sections.
 api_router.include_router(classes.router, prefix="/classes", tags=["classes"])
 api_router.include_router(classes.router, prefix="/sections", tags=["sections"])

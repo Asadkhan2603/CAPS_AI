@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Building2, GraduationCap, Layers3, Plus, Search } from 'lucide-react';
+import { BookOpen, Building2, CalendarDays, GraduationCap, Layers3, Plus, Search, School } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Table from '../components/ui/Table';
@@ -11,29 +11,36 @@ import { formatApiError } from '../utils/apiError';
 import { canAccessFeature } from '../utils/permissions';
 
 const TABS = [
-  { key: 'courses', label: 'Courses', icon: BookOpen, addRoute: '/courses', addLabel: 'Add New Course', feature: 'courses' },
+  { key: 'faculties', label: 'Faculties', icon: Building2, addRoute: '/faculties', addLabel: 'Add New Faculty', feature: 'faculties' },
+  { key: 'departments', label: 'Departments', icon: Building2, addRoute: '/departments', addLabel: 'Add New Department', feature: 'departments' },
+  { key: 'programs', label: 'Programs', icon: BookOpen, addRoute: '/programs', addLabel: 'Add New Program', feature: 'programs' },
+  { key: 'specializations', label: 'Specializations', icon: Layers3, addRoute: '/specializations', addLabel: 'Add New Specialization', feature: 'specializations' },
+  { key: 'batches', label: 'Batches', icon: GraduationCap, addRoute: '/batches', addLabel: 'Add New Batch', feature: 'batches' },
+  { key: 'semesters', label: 'Semesters', icon: CalendarDays, addRoute: '/semesters', addLabel: 'Add New Semester', feature: 'semesters' },
   {
-    key: 'departments',
-    label: 'Departments',
-    icon: Building2,
-    addRoute: '/departments',
-    addLabel: 'Add New Department',
-    feature: 'departments'
-  },
-  { key: 'branches', label: 'Branches', icon: Layers3, addRoute: '/branches', addLabel: 'Add New Branch', feature: 'branches' },
-  { key: 'years', label: 'Academic Years', icon: GraduationCap, addRoute: '/years', addLabel: 'Add New Year', feature: 'years' }
+    key: 'sections',
+    label: 'Sections',
+    icon: School,
+    addRoute: '/sections',
+    addLabel: 'Add New Section',
+    feature: 'sections'
+  }
 ];
 
 export default function AcademicStructurePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { pushToast } = useToast();
-  const [payload, setPayload] = useState({ university: null, courses: [] });
+  const [faculties, setFaculties] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [branches, setBranches] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [specializations, setSpecializations] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [semesters, setSemesters] = useState([]);
+  const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('years');
+  const [activeTab, setActiveTab] = useState('sections');
   const [query, setQuery] = useState('');
 
   async function safeList(path) {
@@ -49,21 +56,33 @@ export default function AcademicStructurePage() {
     setLoading(true);
     setError('');
     try {
-      const [structureRes, departmentsRes, branchesRes] = await Promise.all([
-        apiClient.get('/analytics/academic-structure'),
+      const [facultiesRes, departmentsRes, programsRes, specializationsRes, batchesRes, semestersRes, sectionsRes] = await Promise.all([
+        safeList('/faculties/'),
         safeList('/departments/'),
-        safeList('/branches/')
+        safeList('/programs/'),
+        safeList('/specializations/'),
+        safeList('/batches/'),
+        safeList('/semesters/'),
+        safeList('/sections/')
       ]);
-      setPayload(structureRes.data || { university: null, courses: [] });
+      setFaculties(facultiesRes);
       setDepartments(departmentsRes);
-      setBranches(branchesRes);
+      setPrograms(programsRes);
+      setSpecializations(specializationsRes);
+      setBatches(batchesRes);
+      setSemesters(semestersRes);
+      setSections(sectionsRes);
     } catch (err) {
       const message = formatApiError(err, 'Failed to load academic hierarchy');
       setError(message);
       pushToast({ title: 'Load failed', description: message, variant: 'error' });
-      setPayload({ university: null, courses: [] });
+      setFaculties([]);
       setDepartments([]);
-      setBranches([]);
+      setPrograms([]);
+      setSpecializations([]);
+      setBatches([]);
+      setSemesters([]);
+      setSections([]);
     } finally {
       setLoading(false);
     }
@@ -73,19 +92,13 @@ export default function AcademicStructurePage() {
     loadStructure();
   }, []);
 
-  const courses = payload.courses || [];
-  const years = useMemo(
-    () => courses.flatMap((course) => (course.years || []).map((year) => ({ ...year, course_name: course.name }))),
-    [courses]
-  );
-
   const tabRows = useMemo(() => {
-    if (activeTab === 'courses') {
-      return courses.map((item, idx) => ({
+    if (activeTab === 'faculties') {
+      return faculties.map((item) => ({
         id: item.id,
         name: item.name,
-        code: item.code || `C${idx + 1}`,
-        status: 'ACTIVE'
+        code: item.code || '-',
+        status: item.is_active === false ? 'INACTIVE' : 'ACTIVE'
       }));
     }
     if (activeTab === 'departments') {
@@ -96,21 +109,45 @@ export default function AcademicStructurePage() {
         status: item.is_active === false ? 'INACTIVE' : 'ACTIVE'
       }));
     }
-    if (activeTab === 'branches') {
-      return branches.map((item) => ({
+    if (activeTab === 'programs') {
+      return programs.map((item) => ({
         id: item.id,
         name: item.name,
         code: item.code || '-',
         status: item.is_active === false ? 'INACTIVE' : 'ACTIVE'
       }));
     }
-    return years.map((item, idx) => ({
+    if (activeTab === 'specializations') {
+      return specializations.map((item) => ({
+        id: item.id,
+        name: item.name,
+        code: item.code || '-',
+        status: item.is_active === false ? 'INACTIVE' : 'ACTIVE'
+      }));
+    }
+    if (activeTab === 'batches') {
+      return batches.map((item) => ({
+        id: item.id,
+        name: item.name,
+        code: item.code || '-',
+        status: item.is_active === false ? 'INACTIVE' : 'ACTIVE'
+      }));
+    }
+    if (activeTab === 'semesters') {
+      return semesters.map((item) => ({
+        id: item.id,
+        name: item.label,
+        code: `S${item.semester_number}`,
+        status: item.is_active === false ? 'INACTIVE' : 'ACTIVE'
+      }));
+    }
+    return sections.map((item) => ({
       id: item.id,
       name: item.name,
-      code: item.code || `Y${idx + 1}`,
-      status: 'ACTIVE'
+      code: item.branch_name || '-',
+      status: item.is_active === false ? 'INACTIVE' : 'ACTIVE'
     }));
-  }, [activeTab, branches, courses, departments, years]);
+  }, [activeTab, faculties, departments, programs, specializations, batches, semesters, sections]);
 
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -153,7 +190,7 @@ export default function AcademicStructurePage() {
 
   const activeTabMeta = TABS.find((tab) => tab.key === activeTab) || TABS[0];
   const canManageActiveTab = canAccessFeature(user, FEATURE_ACCESS[activeTabMeta.feature] || {});
-  const searchPlaceholder = activeTab === 'years' ? 'Search years...' : `Search ${activeTab}...`;
+  const searchPlaceholder = `Search ${activeTab}...`;
 
   function handleBlockedRoute() {
     pushToast({

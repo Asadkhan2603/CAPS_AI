@@ -24,10 +24,12 @@ const TimetablePage = lazy(() => import('../pages/TimetablePage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
 const AcademicStructurePage = lazy(() => import('../pages/AcademicStructurePage'));
 const AnalyticsPage = lazy(() => import('../pages/AnalyticsPage'));
-const CoursesPage = lazy(() => import('../pages/CoursesPage'));
+const ProgramsPage = lazy(() => import('../pages/ProgramsPage'));
+const FacultiesPage = lazy(() => import('../pages/FacultiesPage'));
 const DepartmentsPage = lazy(() => import('../pages/DepartmentsPage'));
-const BranchesPage = lazy(() => import('../pages/BranchesPage'));
-const YearsPage = lazy(() => import('../pages/YearsPage'));
+const SpecializationsPage = lazy(() => import('../pages/SpecializationsPage'));
+const BatchesPage = lazy(() => import('../pages/BatchesPage'));
+const SemestersPage = lazy(() => import('../pages/SemestersPage'));
 const SectionsPage = lazy(() => import('../pages/ClassesPage'));
 const StudentsPage = lazy(() => import('../pages/StudentsPage'));
 const SubjectsPage = lazy(() => import('../pages/SubjectsPage'));
@@ -199,10 +201,26 @@ export function AppRoutes() {
             }
           />
           <Route
+            path="/faculties"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.faculties}>
+                <FacultiesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/courses"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.courses}>
-                <CoursesPage />
+              <ProtectedRoute {...FEATURE_ACCESS.programs}>
+                <Navigate to="/programs" replace />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/programs"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.programs}>
+                <ProgramsPage />
               </ProtectedRoute>
             }
           />
@@ -215,18 +233,42 @@ export function AppRoutes() {
             }
           />
           <Route
+            path="/specializations"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.specializations}>
+                <SpecializationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/branches"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.branches}>
-                <BranchesPage />
+              <ProtectedRoute {...FEATURE_ACCESS.specializations}>
+                <Navigate to="/specializations" replace />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/batches"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.batches}>
+                <BatchesPage />
               </ProtectedRoute>
             }
           />
           <Route
             path="/years"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.years}>
-                <YearsPage />
+              <ProtectedRoute {...FEATURE_ACCESS.batches}>
+                <Navigate to="/batches" replace />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/semesters"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.semesters}>
+                <SemestersPage />
               </ProtectedRoute>
             }
           />

@@ -105,10 +105,12 @@ const groupedItems = [
     key: 'setup',
     label: 'Academic Setup',
     items: [
-      { to: '/courses', label: 'Courses', featureKey: 'courses', icon: Library },
+      { to: '/faculties', label: 'Faculties', featureKey: 'faculties', icon: Building2 },
       { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
-      { to: '/branches', label: 'Branches', featureKey: 'branches', icon: GitBranch },
-      { to: '/years', label: 'Years', featureKey: 'years', icon: CalendarRange },
+      { to: '/programs', label: 'Programs', featureKey: 'programs', icon: Library },
+      { to: '/specializations', label: 'Specializations', featureKey: 'specializations', icon: GitBranch },
+      { to: '/batches', label: 'Batches', featureKey: 'batches', icon: GraduationCap },
+      { to: '/semesters', label: 'Semesters', featureKey: 'semesters', icon: CalendarRange },
       { to: '/sections', label: 'Sections', featureKey: 'sections', icon: School }
     ]
   }

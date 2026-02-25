@@ -89,20 +89,19 @@ class AuthService:
                 detail="Extended roles are only allowed for teacher accounts",
             )
 
-        if payload.role == "admin":
-            if await self.repository.is_any_admin_registered():
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Admin account registration is closed",
-                )
-            admin_type = payload.admin_type or "super_admin"
-        else:
-            if payload.admin_type is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="admin_type is allowed only for admin accounts",
-                )
-            admin_type = None
+        has_admin = await self.repository.is_any_admin_registered()
+        if has_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Self-registration is closed. Contact super admin.",
+            )
+
+        if payload.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="First account must be admin.",
+            )
+        admin_type = payload.admin_type or "super_admin"
 
         existing_user = await self.repository.find_user_by_email(email)
         if existing_user:

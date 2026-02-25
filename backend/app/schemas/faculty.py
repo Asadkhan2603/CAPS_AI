@@ -3,28 +3,25 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class DepartmentCreate(BaseModel):
+class FacultyCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     code: str = Field(min_length=2, max_length=60)
-    faculty_id: str | None = None
     university_name: str | None = Field(default=None, max_length=150)
     university_code: str | None = Field(default=None, max_length=60)
 
 
-class DepartmentUpdate(BaseModel):
+class FacultyUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
     code: str | None = Field(default=None, min_length=2, max_length=60)
-    faculty_id: str | None = None
     university_name: str | None = Field(default=None, max_length=150)
     university_code: str | None = Field(default=None, max_length=60)
     is_active: bool | None = None
 
 
-class DepartmentOut(BaseModel):
+class FacultyOut(BaseModel):
     id: str
     name: str
     code: str
-    faculty_id: str | None = None
     university_name: str | None = None
     university_code: str | None = None
     is_active: bool = True

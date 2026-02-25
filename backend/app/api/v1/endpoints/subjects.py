@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_roles
+from app.core.security import require_permission, require_roles
 from app.models.subjects import subject_public
 from app.schemas.subject import SubjectCreate, SubjectOut, SubjectUpdate
 
@@ -48,7 +48,7 @@ async def get_subject(
 @router.post("/", response_model=SubjectOut, status_code=status.HTTP_201_CREATED)
 async def create_subject(
     payload: SubjectCreate,
-    _current_user=Depends(require_roles(["admin", "teacher"])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> SubjectOut:
     normalized_code = payload.code.strip().upper()
     existing = await db.subjects.find_one({"code": normalized_code})
@@ -71,7 +71,7 @@ async def create_subject(
 async def update_subject(
     subject_id: str,
     payload: SubjectUpdate,
-    _current_user=Depends(require_roles(["admin", "teacher"])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> SubjectOut:
     subject_obj_id = parse_object_id(subject_id)
     update_data = payload.model_dump(exclude_none=True)
@@ -99,7 +99,7 @@ async def update_subject(
 @router.delete("/{subject_id}")
 async def delete_subject(
     subject_id: str,
-    _current_user=Depends(require_roles(["admin", "teacher"])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> dict:
     result = await db.subjects.delete_one({"_id": parse_object_id(subject_id)})
     if result.deleted_count == 0:

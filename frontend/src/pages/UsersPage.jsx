@@ -60,9 +60,12 @@ export default function UsersPage() {
   const [draftScopes, setDraftScopes] = useState({});
   const [savingIds, setSavingIds] = useState([]);
 
+  const [faculties, setFaculties] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [courses, setCourses] = useState([]);
-  const [years, setYears] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [specializations, setSpecializations] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [semesters, setSemesters] = useState([]);
   const [sections, setSections] = useState([]);
   const [clubs, setClubs] = useState([]);
 
@@ -82,16 +85,22 @@ export default function UsersPage() {
   }
 
   async function loadLookups() {
-    const [departmentsRes, coursesRes, yearsRes, sectionsRes, clubsRes] = await Promise.allSettled([
+    const [facultiesRes, departmentsRes, programsRes, specializationsRes, batchesRes, semestersRes, sectionsRes, clubsRes] = await Promise.allSettled([
+      apiClient.get('/faculties/', { params: { skip: 0, limit: 200 } }),
       apiClient.get('/departments/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/courses/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/years/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/programs/', { params: { skip: 0, limit: 200 } }),
+      apiClient.get('/specializations/', { params: { skip: 0, limit: 200 } }),
+      apiClient.get('/batches/', { params: { skip: 0, limit: 200 } }),
+      apiClient.get('/semesters/', { params: { skip: 0, limit: 200 } }),
       getAllSections(100),
       apiClient.get('/clubs/', { params: { skip: 0, limit: 100 } })
     ]);
+    setFaculties(facultiesRes.status === 'fulfilled' ? (facultiesRes.value.data || []) : []);
     setDepartments(departmentsRes.status === 'fulfilled' ? (departmentsRes.value.data || []) : []);
-    setCourses(coursesRes.status === 'fulfilled' ? (coursesRes.value.data || []) : []);
-    setYears(yearsRes.status === 'fulfilled' ? (yearsRes.value.data || []) : []);
+    setPrograms(programsRes.status === 'fulfilled' ? (programsRes.value.data || []) : []);
+    setSpecializations(specializationsRes.status === 'fulfilled' ? (specializationsRes.value.data || []) : []);
+    setBatches(batchesRes.status === 'fulfilled' ? (batchesRes.value.data || []) : []);
+    setSemesters(semestersRes.status === 'fulfilled' ? (semestersRes.value.data || []) : []);
     setSections(sectionsRes.status === 'fulfilled' ? (sectionsRes.value || []) : []);
     setClubs(clubsRes.status === 'fulfilled' ? (clubsRes.value.data || []) : []);
   }
@@ -236,34 +245,37 @@ export default function UsersPage() {
     [columns]
   );
 
-  const courseMap = useMemo(
-    () => Object.fromEntries(courses.map((item) => [item.id, `${item.name} (${item.code})`])),
-    [courses]
+  const facultyMap = useMemo(() => Object.fromEntries(faculties.map((item) => [item.id, item.name])), [faculties]);
+  const departmentMap = useMemo(() => Object.fromEntries(departments.map((item) => [item.id, item.name])), [departments]);
+  const programMap = useMemo(() => Object.fromEntries(programs.map((item) => [item.id, item.name])), [programs]);
+  const specializationMap = useMemo(
+    () => Object.fromEntries(specializations.map((item) => [item.id, item.name])),
+    [specializations]
   );
-  const yearMap = useMemo(
-    () => Object.fromEntries(years.map((item) => [item.id, item.label || `Year ${item.year_number}`])),
-    [years]
-  );
+  const batchMap = useMemo(() => Object.fromEntries(batches.map((item) => [item.id, item.name])), [batches]);
+  const semesterMap = useMemo(() => Object.fromEntries(semesters.map((item) => [item.id, item.label])), [semesters]);
 
   const selectedPermissions = selectedUser ? getEffectiveExtensions(selectedUser) : [];
   const selectedScope = selectedUser ? getEffectiveScope(selectedUser) : {};
   const allowedPermissions = selectedUser ? (PERMISSION_OPTIONS[selectedUser.role] || []) : [];
   const classScope = selectedScope.class_coordinator || {};
   const clubScope = selectedScope.club_president || {};
-  const availableYears = years.filter((item) => !classScope.course_id || item.course_id === classScope.course_id);
+  const availableDepartments = departments.filter((item) => !classScope.faculty_id || item.faculty_id === classScope.faculty_id);
+  const availablePrograms = programs.filter((item) => !classScope.department_id || item.department_id === classScope.department_id);
+  const availableSpecializations = specializations.filter((item) => !classScope.program_id || item.program_id === classScope.program_id);
+  const availableBatches = batches.filter(
+    (item) =>
+      (!classScope.program_id || item.program_id === classScope.program_id) &&
+      (!classScope.specialization_id || item.specialization_id === classScope.specialization_id)
+  );
+  const availableSemesters = semesters.filter((item) => !classScope.batch_id || item.batch_id === classScope.batch_id);
   const availableSections = sections.filter((item) => {
-    if (classScope.department_code) {
-      const dep = departments.find((d) => d.code === classScope.department_code);
-      if (dep && item.faculty_name) {
-        const left = String(item.faculty_name).trim().toLowerCase();
-        const right = String(dep.name || '').trim().toLowerCase();
-        if (left && right && left !== right && !left.includes(right) && !right.includes(left)) {
-          return false;
-        }
-      }
-    }
-    if (classScope.course_id && item.course_id !== classScope.course_id) return false;
-    if (classScope.year_id && item.year_id !== classScope.year_id) return false;
+    if (classScope.faculty_id && item.faculty_id !== classScope.faculty_id) return false;
+    if (classScope.department_id && item.department_id !== classScope.department_id) return false;
+    if (classScope.program_id && item.program_id !== classScope.program_id) return false;
+    if (classScope.specialization_id && item.specialization_id !== classScope.specialization_id) return false;
+    if (classScope.batch_id && item.batch_id !== classScope.batch_id) return false;
+    if (classScope.semester_id && item.semester_id !== classScope.semester_id) return false;
     return true;
   });
 
@@ -394,51 +406,113 @@ export default function UsersPage() {
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <FormInput
                           as="select"
-                          label="Department"
-                          value={classScope.department_code || ''}
+                          label="Faculty"
+                          value={classScope.faculty_id || ''}
                           onChange={(e) =>
                             updateClassCoordinatorScope(selectedUser, {
-                              department_code: e.target.value || null,
+                              faculty_id: e.target.value || null,
+                              department_id: null,
+                              program_id: null,
+                              specialization_id: null,
+                              batch_id: null,
+                              semester_id: null,
                               class_id: null
                             })
                           }
                         >
-                          <option value="">Select Department</option>
-                          {departments.map((item) => (
-                            <option key={item.id} value={item.code}>{item.name}</option>
-                          ))}
-                        </FormInput>
-                        <FormInput
-                          as="select"
-                          label="Course"
-                          value={classScope.course_id || ''}
-                          onChange={(e) =>
-                            updateClassCoordinatorScope(selectedUser, {
-                              course_id: e.target.value || null,
-                              year_id: null,
-                              class_id: null
-                            })
-                          }
-                        >
-                          <option value="">Select Course</option>
-                          {courses.map((item) => (
+                          <option value="">Select Faculty</option>
+                          {faculties.map((item) => (
                             <option key={item.id} value={item.id}>{item.name}</option>
                           ))}
                         </FormInput>
                         <FormInput
                           as="select"
-                          label="Year"
-                          value={classScope.year_id || ''}
+                          label="Department"
+                          value={classScope.department_id || ''}
                           onChange={(e) =>
                             updateClassCoordinatorScope(selectedUser, {
-                              year_id: e.target.value || null,
+                              department_id: e.target.value || null,
+                              program_id: null,
+                              specialization_id: null,
+                              batch_id: null,
+                              semester_id: null,
                               class_id: null
                             })
                           }
                         >
-                          <option value="">Select Year</option>
-                          {availableYears.map((item) => (
-                            <option key={item.id} value={item.id}>{item.label || `Year ${item.year_number}`}</option>
+                          <option value="">Select Department</option>
+                          {availableDepartments.map((item) => (
+                            <option key={item.id} value={item.id}>{item.name}</option>
+                          ))}
+                        </FormInput>
+                        <FormInput
+                          as="select"
+                          label="Program"
+                          value={classScope.program_id || ''}
+                          onChange={(e) =>
+                            updateClassCoordinatorScope(selectedUser, {
+                              program_id: e.target.value || null,
+                              specialization_id: null,
+                              batch_id: null,
+                              semester_id: null,
+                              class_id: null
+                            })
+                          }
+                        >
+                          <option value="">Select Program</option>
+                          {availablePrograms.map((item) => (
+                            <option key={item.id} value={item.id}>{item.name}</option>
+                          ))}
+                        </FormInput>
+                        <FormInput
+                          as="select"
+                          label="Specialization"
+                          value={classScope.specialization_id || ''}
+                          onChange={(e) =>
+                            updateClassCoordinatorScope(selectedUser, {
+                              specialization_id: e.target.value || null,
+                              batch_id: null,
+                              semester_id: null,
+                              class_id: null
+                            })
+                          }
+                        >
+                          <option value="">Select Specialization</option>
+                          {availableSpecializations.map((item) => (
+                            <option key={item.id} value={item.id}>{item.name}</option>
+                          ))}
+                        </FormInput>
+                        <FormInput
+                          as="select"
+                          label="Batch"
+                          value={classScope.batch_id || ''}
+                          onChange={(e) =>
+                            updateClassCoordinatorScope(selectedUser, {
+                              batch_id: e.target.value || null,
+                              semester_id: null,
+                              class_id: null
+                            })
+                          }
+                        >
+                          <option value="">Select Batch</option>
+                          {availableBatches.map((item) => (
+                            <option key={item.id} value={item.id}>{item.name}</option>
+                          ))}
+                        </FormInput>
+                        <FormInput
+                          as="select"
+                          label="Semester"
+                          value={classScope.semester_id || ''}
+                          onChange={(e) =>
+                            updateClassCoordinatorScope(selectedUser, {
+                              semester_id: e.target.value || null,
+                              class_id: null
+                            })
+                          }
+                        >
+                          <option value="">Select Semester</option>
+                          {availableSemesters.map((item) => (
+                            <option key={item.id} value={item.id}>{item.label}</option>
                           ))}
                         </FormInput>
                         <FormInput
@@ -450,15 +524,23 @@ export default function UsersPage() {
                             const classDoc = sections.find((item) => item.id === classId);
                             updateClassCoordinatorScope(selectedUser, {
                               class_id: classId,
-                              course_id: classDoc?.course_id || classScope.course_id || null,
-                              year_id: classDoc?.year_id || classScope.year_id || null
+                              faculty_id: classDoc?.faculty_id || classScope.faculty_id || null,
+                              department_id: classDoc?.department_id || classScope.department_id || null,
+                              program_id: classDoc?.program_id || classScope.program_id || null,
+                              specialization_id: classDoc?.specialization_id || classScope.specialization_id || null,
+                              batch_id: classDoc?.batch_id || classScope.batch_id || null,
+                              semester_id: classDoc?.semester_id || classScope.semester_id || null
                             });
                           }}
                         >
                           <option value="">Select Section</option>
                           {availableSections.map((item) => (
                             <option key={item.id} value={item.id}>
-                              {item.name} | {courseMap[item.course_id] || item.course_id} | {yearMap[item.year_id] || item.year_id}
+                              {item.name}
+                              {' | '}
+                              {programMap[item.program_id] || '-'}
+                              {' | '}
+                              {semesterMap[item.semester_id] || '-'}
                             </option>
                           ))}
                         </FormInput>

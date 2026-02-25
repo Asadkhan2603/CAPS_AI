@@ -14,7 +14,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, set[str]]] = {
     },
     "users.update": {
         "roles": {"admin"},
-        "admin_types": {"super_admin", "admin"},
+        "admin_types": {"super_admin"},
     },
     "analytics.read": {
         "roles": {"admin"},
@@ -61,7 +61,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, set[str]]] = {
     },
     "academic:manage": {
         "roles": {"admin"},
-        "admin_types": {"super_admin", "admin", "academic_admin"},
+        "admin_types": {"super_admin"},
     },
     "admin:analytics": {
         "roles": {"admin"},

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import require_roles
+from app.core.security import require_permission, require_roles
 from app.models.students import student_public
 from app.schemas.student import StudentCreate, StudentOut, StudentUpdate
 
@@ -52,7 +52,7 @@ async def get_student(
 @router.post("/", response_model=StudentOut, status_code=status.HTTP_201_CREATED)
 async def create_student(
     payload: StudentCreate,
-    _current_user=Depends(require_roles(["admin", "teacher"])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> StudentOut:
     duplicate_roll = await db.students.find_one({"roll_number": payload.roll_number.strip()})
     if duplicate_roll:
@@ -83,7 +83,7 @@ async def create_student(
 async def update_student(
     student_id: str,
     payload: StudentUpdate,
-    _current_user=Depends(require_roles(["admin", "teacher"])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> StudentOut:
     student_obj_id = parse_object_id(student_id)
     current = await db.students.find_one({"_id": student_obj_id})
@@ -125,7 +125,7 @@ async def update_student(
 @router.delete("/{student_id}")
 async def delete_student(
     student_id: str,
-    _current_user=Depends(require_roles(["admin", "teacher"])),
+    _current_user=Depends(require_permission("academic:manage")),
 ) -> dict:
     result = await db.students.delete_one({"_id": parse_object_id(student_id)})
     if result.deleted_count == 0:

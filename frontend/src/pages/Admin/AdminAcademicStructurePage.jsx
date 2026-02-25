@@ -3,10 +3,12 @@ import Card from '../../components/ui/Card';
 import AdminDomainNav from '../../components/admin/AdminDomainNav';
 
 const links = [
-  { to: '/courses', label: 'Courses' },
+  { to: '/faculties', label: 'Faculties' },
   { to: '/departments', label: 'Departments' },
-  { to: '/branches', label: 'Branches' },
-  { to: '/years', label: 'Years' },
+  { to: '/programs', label: 'Programs' },
+  { to: '/specializations', label: 'Specializations' },
+  { to: '/batches', label: 'Batches' },
+  { to: '/semesters', label: 'Semesters' },
   { to: '/sections', label: 'Sections' }
 ];
 
@@ -15,7 +17,7 @@ export default function AdminAcademicStructurePage() {
     <div className="space-y-4 page-fade">
       <Card>
         <h1 className="text-2xl font-semibold">Academic Structure</h1>
-        <p className="text-sm text-slate-500">Build and manage course-department-branch-year-section hierarchy.</p>
+        <p className="text-sm text-slate-500">Build and manage faculty-department-program-specialization-batch-semester-section hierarchy.</p>
       </Card>
       <AdminDomainNav />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
