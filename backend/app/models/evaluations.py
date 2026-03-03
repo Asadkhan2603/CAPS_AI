@@ -1,4 +1,4 @@
-﻿from typing import Any, Dict
+from typing import Any, Dict
 
 
 def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
@@ -18,7 +18,17 @@ def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "grade": document.get("grade", "Needs Improvement"),
         "ai_score": document.get("ai_score"),
         "ai_feedback": document.get("ai_feedback"),
+        "ai_status": document.get("ai_status"),
+        "ai_provider": document.get("ai_provider"),
+        "ai_confidence": document.get("ai_confidence"),
+        "ai_risk_flags": list(document.get("ai_risk_flags") or []),
+        "ai_strengths": list(document.get("ai_strengths") or []),
+        "ai_gaps": list(document.get("ai_gaps") or []),
+        "ai_suggestions": list(document.get("ai_suggestions") or []),
         "remarks": document.get("remarks"),
         "is_finalized": document.get("is_finalized", False),
+        "finalized_at": document.get("finalized_at"),
+        "finalized_by_user_id": document.get("finalized_by_user_id"),
         "created_at": document.get("created_at"),
+        "updated_at": document.get("updated_at"),
     }

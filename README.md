@@ -3,7 +3,8 @@
 Enterprise academic governance and AI-assisted evaluation platform.
 
 Master plan reference:
-- `DOC'S/CAPS_AI_ULTRA_PRO_MASTER_ROADMAP.md`
+- `PROJECT_RECREATE_GUIDE.md` (authoritative master)
+- `DOC'S/PROJECT_RECREATE_GUIDE.md` (pointer)
 
 ## Current Implementation Status
 
@@ -65,10 +66,20 @@ cd backend
 .venv\Scripts\python.exe -m pytest -q
 ```
 
+Frontend quality checks:
+
+```bash
+cd frontend
+npm run lint
+npm run test:ci
+npm run build
+```
+
 ## Core API Domains
 
 - Auth and users: `/api/v1/auth`, `/api/v1/users`
-- Academic structure: `/courses`, `/years`, `/classes`, `/students`, `/subjects`
+- Academic structure: `/courses`, `/years`, `/sections`, `/students`, `/subjects`
+  - Legacy alias: `/classes` is supported for backward compatibility, but `/sections` is the canonical path for new integrations.
 - Academic operations: `/assignments`, `/submissions`, `/evaluations`
 - Intelligence: `/similarity`, AI submission evaluation via `/submissions/{id}/ai-evaluate`
 - Institutional modules: `/analytics`, `/notices`, `/notifications`, `/clubs`, `/club-events`, `/event-registrations`
@@ -81,3 +92,8 @@ cd backend
 - File type and upload size validation
 - CORS-configured local origins
 - Security response headers (`X-Content-Type-Options`, `X-Frame-Options`, etc.)
+
+## Azure AKS Deployment
+
+- Migration guide: `docs/AZURE_AKS_MIGRATION.md`
+- One-command AKS migration script: `scripts/migrate_to_azure_aks.ps1`

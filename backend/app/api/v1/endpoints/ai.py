@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
@@ -74,7 +75,8 @@ async def evaluate_with_ai(
     if not student_answer and submission:
         student_answer = submission.get("extracted_text") or submission.get("notes") or ""
 
-    ai_response, ai_error = generate_evaluation_chat_reply(
+    ai_response, ai_error = await run_in_threadpool(
+        generate_evaluation_chat_reply,
         teacher_message=payload.teacher_message,
         question_text=payload.question_text,
         student_answer=student_answer,

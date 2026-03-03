@@ -10,6 +10,9 @@ import { formatApiError } from '../../utils/apiError';
 export default function EntityManager({
   title,
   endpoint,
+  listEndpoint,
+  createEndpoint,
+  deleteEndpoint,
   filters = [],
   createFields = [],
   columns = [],
@@ -19,7 +22,9 @@ export default function EntityManager({
   hideCreate = false,
   rowActions = []
 }) {
-  const normalizedEndpoint = endpoint.replace(/\/+$/, '');
+  const listPath = (listEndpoint || endpoint).replace(/\/+$/, '');
+  const createPath = (createEndpoint || endpoint).replace(/\/+$/, '');
+  const deletePath = (deleteEndpoint || listEndpoint || endpoint).replace(/\/+$/, '');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [skip, setSkip] = useState(0);
@@ -73,7 +78,7 @@ export default function EntityManager({
       params.skip = skip;
       params.limit = limit;
 
-      const response = await apiClient.get(endpoint, { params });
+      const response = await apiClient.get(listPath, { params });
       setRows(response.data);
     } catch (err) {
       const message = formatApiError(err, `Failed to load ${title.toLowerCase()}`);
@@ -118,7 +123,7 @@ export default function EntityManager({
         payload = createTransform(payload);
       }
 
-      await apiClient.post(endpoint, payload);
+      await apiClient.post(createPath, payload);
       setCreateValues(initialCreateState);
       pushToast({ title: 'Saved', description: `${title.slice(0, -1)} created successfully.`, variant: 'success' });
       await loadData();
@@ -131,7 +136,7 @@ export default function EntityManager({
 
   async function onDelete(row) {
     try {
-      await apiClient.delete(`${normalizedEndpoint}/${row.id}`);
+      await apiClient.delete(`${deletePath}/${row.id}`);
       pushToast({ title: 'Deleted', description: `${title.slice(0, -1)} removed.`, variant: 'success' });
       await loadData();
     } catch (err) {

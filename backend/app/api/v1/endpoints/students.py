@@ -65,12 +65,25 @@ async def create_student(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Class not found for provided class_id",
             )
+    if payload.group_id:
+        group_doc = await db.groups.find_one({"_id": parse_object_id(payload.group_id), "is_active": True})
+        if not group_doc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group not found for provided group_id",
+            )
+        if payload.class_id and group_doc.get("section_id") != payload.class_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="group_id does not belong to provided class_id",
+            )
 
     document = {
         "full_name": payload.full_name.strip(),
         "roll_number": payload.roll_number.strip(),
         "email": payload.email.lower().strip() if payload.email else None,
         "class_id": payload.class_id,
+        "group_id": payload.group_id,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
     }
@@ -106,6 +119,20 @@ async def update_student(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Class not found for provided class_id",
+            )
+    target_class_id = update_data.get("class_id", current.get("class_id"))
+    target_group_id = update_data.get("group_id", current.get("group_id"))
+    if target_group_id:
+        group_doc = await db.groups.find_one({"_id": parse_object_id(target_group_id), "is_active": True})
+        if not group_doc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group not found for provided group_id",
+            )
+        if target_class_id and group_doc.get("section_id") != target_class_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="group_id does not belong to provided class_id",
             )
 
     if not update_data:

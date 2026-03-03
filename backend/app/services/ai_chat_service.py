@@ -10,6 +10,15 @@ from app.core.config import settings
 
 def _fallback_response(question_text: str | None, rubric: str | None, student_answer: str | None) -> str:
     answer = (student_answer or "").strip()
+    answer_tokens = re.findall(r"[a-zA-Z0-9]+", answer.lower())
+    question_tokens = re.findall(r"[a-zA-Z0-9]+", (question_text or "").lower())
+    rubric_tokens = re.findall(r"[a-zA-Z0-9]+", (rubric or "").lower())
+    reference_terms = set(question_tokens + rubric_tokens)
+    overlap = len([token for token in answer_tokens if token in reference_terms])
+    coverage_ratio = (overlap / max(len(reference_terms), 1)) if reference_terms else 0.0
+    length_component = min(len(answer_tokens) / 180.0, 1.0)
+    fallback_marks = round((0.55 * coverage_ratio + 0.45 * length_component) * 10, 1)
+
     if not answer:
         return (
             "Suggested Marks: 0/10\n"
@@ -18,10 +27,11 @@ def _fallback_response(question_text: str | None, rubric: str | None, student_an
             "Improvement Suggestions: Include definitions, examples, and a clear structure."
         )
     return (
-        "Suggested Marks: 5/10\n"
-        "Explanation: Preliminary fallback assessment generated because AI provider was unavailable.\n"
-        "Constructive Feedback: Answer covers some points but needs depth and stronger alignment to rubric.\n"
-        "Improvement Suggestions: Add precise terminology, examples, and clearer stepwise explanation."
+        f"Suggested Marks: {fallback_marks}/10\n"
+        "Explanation: Deterministic fallback assessment generated because AI provider was unavailable. "
+        f"Coverage ratio against question/rubric terms is {round(coverage_ratio, 2)} with {len(answer_tokens)} words.\n"
+        "Constructive Feedback: Improve direct alignment to rubric checkpoints and ensure each key term is explained.\n"
+        "Improvement Suggestions: Use structured points, add evidence/examples, and close with a concise summary statement."
     )
 
 

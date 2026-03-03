@@ -239,14 +239,30 @@ async def _validate_entries(*, timetable_id: str | None, shift_id: ShiftId, clas
             )
 
     # Validate conflict against active timetables (draft + published).
+    teacher_ids = sorted({entry.get("teacher_user_id") for entry in entries if entry.get("teacher_user_id")})
+    raw_room_codes = sorted({(entry.get("room_code") or "").strip() for entry in entries if (entry.get("room_code") or "").strip()})
+    room_codes = sorted({value.lower() for value in raw_room_codes})
+    room_codes_query = sorted({variant for value in raw_room_codes for variant in {value, value.lower(), value.upper()}})
+    conflict_or_conditions: list[dict[str, Any]] = []
+    if teacher_ids:
+        conflict_or_conditions.append({"entries.teacher_user_id": {"$in": teacher_ids}})
+    if room_codes_query:
+        conflict_or_conditions.append({"entries.room_code": {"$in": room_codes_query}})
+
+    timetable_query: dict[str, Any] = {
+        "status": {"$in": ["draft", "published"]},
+        "is_active": True,
+        "semester": semester,
+        "class_id": {"$ne": class_id},
+    }
+    if timetable_id:
+        timetable_query["_id"] = {"$ne": parse_object_id(timetable_id)}
+    if conflict_or_conditions:
+        timetable_query["$or"] = conflict_or_conditions
+
     published_rows = await db.timetables.find(
-        {
-            "status": {"$in": ["draft", "published"]},
-            "is_active": True,
-            "semester": semester,
-            "_id": {"$ne": parse_object_id(timetable_id)} if timetable_id else {"$exists": True},
-        },
-        {"entries": 1, "days": 1, "slots": 1, "class_id": 1},
+        timetable_query,
+        {"entries": 1, "slots": 1, "class_id": 1},
     ).to_list(length=2000)
     for entry in entries:
         day = entry["day"]

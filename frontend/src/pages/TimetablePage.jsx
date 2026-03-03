@@ -5,7 +5,6 @@ import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import {
   createTimetable,
-  getMyTimetable,
   getTimetableShifts,
   listClassTimetables,
   publishTimetable,
@@ -15,6 +14,7 @@ import { apiClient } from '../services/apiClient';
 import { pushApiErrorToast } from '../utils/errorToast';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const SESSION_TYPES = [
   { value: 'theory', label: 'Theory' },
   { value: 'practical', label: 'Practical' },
@@ -48,6 +48,8 @@ export default function TimetablePage() {
   const [classTimetables, setClassTimetables] = useState([]);
   const [timetable, setTimetable] = useState(null);
   const [draftMap, setDraftMap] = useState({});
+  const [studentClassSlots, setStudentClassSlots] = useState([]);
+  const [studentOfferings, setStudentOfferings] = useState([]);
 
   async function loadLookups(classId) {
     const [shiftRes, lookupRes] = await Promise.all([
@@ -74,11 +76,16 @@ export default function TimetablePage() {
   async function loadStudentTimetable() {
     setLoading(true);
     try {
-      const row = await getMyTimetable();
-      setTimetable(row || null);
+      const [slotsResp, offeringsResp] = await Promise.all([
+        apiClient.get('/class-slots/my'),
+        apiClient.get('/course-offerings/', { params: { skip: 0, limit: 100 } })
+      ]);
+      setStudentClassSlots(slotsResp.data || []);
+      setStudentOfferings(offeringsResp.data || []);
     } catch (err) {
-      setTimetable(null);
-      pushApiErrorToast(pushToast, err, 'Unable to load published timetable');
+      setStudentClassSlots([]);
+      setStudentOfferings([]);
+      pushApiErrorToast(pushToast, err, 'Unable to load timetable slots');
     } finally {
       setLoading(false);
     }
@@ -152,6 +159,34 @@ export default function TimetablePage() {
     const item = classes.find((it) => it.id === selectedClassId);
     return item ? `${item.name}${item.branch_name ? ` (${item.branch_name})` : ''}` : '-';
   }, [classes, selectedClassId]);
+
+  const studentOfferingMap = useMemo(
+    () => Object.fromEntries(studentOfferings.map((item) => [item.id, item])),
+    [studentOfferings]
+  );
+
+  const studentTimetableByDay = useMemo(() => {
+    if (!studentClassSlots.length) return [];
+    const grouped = {};
+    for (const slot of studentClassSlots) {
+      const offering = studentOfferingMap[slot.course_offering_id] || {};
+      const day = slot.day || 'Unknown';
+      if (!grouped[day]) grouped[day] = [];
+      grouped[day].push({
+        ...slot,
+        subject: offering.subject_name || offering.subject_code || offering.subject_id || 'Subject',
+        teacher: offering.teacher_name || offering.teacher_user_id || 'Teacher',
+        group: offering.group_name || '',
+        type: offering.offering_type || '-'
+      });
+    }
+    return Object.entries(grouped)
+      .map(([day, rows]) => ({
+        day,
+        rows: [...rows].sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)))
+      }))
+      .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
+  }, [studentClassSlots, studentOfferingMap]);
 
   function updateCell(day, slotKey, patch) {
     const key = entryKey(day, slotKey);
@@ -249,70 +284,36 @@ export default function TimetablePage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold">My Timetable</h1>
-              <p className="text-sm text-slate-500">Published schedule for your class with shift and room details.</p>
+              <p className="text-sm text-slate-500">Section and group filtered timetable from class slots.</p>
             </div>
-            <button className="btn-secondary" onClick={() => window.print()}>
-              <Download size={15} /> Download / Print
-            </button>
+            <div className="flex items-center gap-2">
+              <button className="btn-secondary" onClick={loadStudentTimetable}>Refresh</button>
+              <button className="btn-secondary" onClick={() => window.print()}>
+                <Download size={15} /> Download / Print
+              </button>
+            </div>
           </div>
         </Card>
         {loading ? <Card>Loading timetable...</Card> : null}
-        {!loading && !timetable ? <Card>No published timetable available yet.</Card> : null}
-        {!loading && timetable ? (
-          <Card className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{timetable.shift_label}</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">Semester: {timetable.semester}</span>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Published</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="p-2 text-left">Slot</th>
-                    {days.map((day) => (
-                      <th key={day} className="p-2 text-left">{day}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {slots.map((slot) => (
-                    <tr key={slot.slot_key} className="border-b border-slate-100 align-top dark:border-slate-800">
-                      <td className="p-2 font-medium">
-                        <div>{slot.label}</div>
-                        <div className="text-xs text-slate-500">{slot.start_time} - {slot.end_time}</div>
-                      </td>
-                      {days.map((day) => {
-                        const found = (timetable.entries || []).find((entry) => entry.day === day && entry.slot_key === slot.slot_key);
-                        if (slot.is_lunch) {
-                          return (
-                            <td key={`${day}-${slot.slot_key}`} className="p-2">
-                              <div className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
-                                Lunch Break
-                              </div>
-                            </td>
-                          );
-                        }
-                        return (
-                          <td key={`${day}-${slot.slot_key}`} className="p-2">
-                            {found ? (
-                              <div className="space-y-0.5 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/40">
-                                <div className="font-semibold">{found.subject_name || found.subject_code || found.subject_id}</div>
-                                <div className="text-xs text-slate-500">{found.teacher_name || found.teacher_user_id}</div>
-                                <div className="text-xs text-slate-500">{found.room_code} | {found.session_type}</div>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-slate-400">-</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
+        {!loading && studentTimetableByDay.length === 0 ? <Card>No class slots available yet.</Card> : null}
+        {!loading && studentTimetableByDay.length > 0 ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {studentTimetableByDay.map((dayBlock) => (
+              <Card key={dayBlock.day} className="space-y-3">
+                <h2 className="text-lg font-semibold">{dayBlock.day}</h2>
+                <div className="space-y-2">
+                  {dayBlock.rows.map((row) => (
+                    <div key={row.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/30">
+                      <p className="text-xs text-slate-500">{row.start_time} - {row.end_time}</p>
+                      <p className="mt-1 text-sm font-semibold">{row.subject}</p>
+                      <p className="text-xs text-slate-500">{row.teacher}</p>
+                      <p className="text-xs text-slate-500">{row.room_code} | {row.type}{row.group ? ` | ${row.group}` : ''}</p>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                </div>
+              </Card>
+            ))}
+          </div>
         ) : null}
       </div>
     );

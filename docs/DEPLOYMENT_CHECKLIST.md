@@ -36,7 +36,12 @@
 
 ## 5. Operational Smoke Tests
 
-- Auth flow: register -> login -> me
+- Auth bootstrap flow:
+  - Register first admin (bootstrap only) -> login -> me
+- Auth provisioning flow (required after bootstrap):
+  - Login as admin -> create teacher/student via `/api/v1/users` -> login as created user -> me
+- Auth closure validation:
+  - Attempt `/api/v1/auth/register` for any role after first admin exists -> expect `403`
 - Assignment lifecycle: create/open/close
 - Submission upload and AI evaluate
 - Similarity run and flagged notification path
@@ -49,3 +54,12 @@
 - Record commit hash for deployed version.
 - Record DB backup/snapshot reference.
 - Record known warnings and mitigations.
+
+## 7. Azure AKS Checklist
+
+- Confirm `az`, `kubectl`, `docker` are installed.
+- Run AKS migration script:
+  - `powershell -ExecutionPolicy Bypass -File scripts/migrate_to_azure_aks.ps1 ...`
+- Verify rendered manifests in `out/azure-manifests`.
+- Verify ACR image tags match deployed backend/frontend image refs.
+- Verify ingress DNS points to AKS load balancer endpoint.

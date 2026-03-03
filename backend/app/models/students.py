@@ -8,6 +8,7 @@ def student_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "roll_number": document.get("roll_number", ""),
         "email": document.get("email"),
         "class_id": document.get("class_id"),
+        "group_id": document.get("group_id"),
         "is_active": document.get("is_active", True),
         "created_at": document.get("created_at"),
     }

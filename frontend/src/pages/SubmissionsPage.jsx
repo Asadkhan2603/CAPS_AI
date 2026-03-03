@@ -9,6 +9,7 @@ import Badge from '../components/ui/Badge';
 import { apiClient } from '../services/apiClient';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../hooks/useAuth';
+import { formatApiError } from '../utils/apiError';
 
 export default function SubmissionsPage() {
   const navigate = useNavigate();
@@ -119,6 +120,7 @@ export default function SubmissionsPage() {
 
   useEffect(() => {
     async function loadAssignments() {
+      if (!user?.id) return;
       try {
         const response = await apiClient.get('/assignments/', { params: { skip: 0, limit: 100 } });
         setAssignments(response.data || []);
@@ -127,7 +129,7 @@ export default function SubmissionsPage() {
       }
     }
     loadAssignments();
-  }, []);
+  }, [user?.id, user?.role]);
 
   async function loadData() {
     setLoading(true);
@@ -209,12 +211,14 @@ export default function SubmissionsPage() {
       pushToast({ title: 'Upload complete', description: 'Submission uploaded successfully.', variant: 'success' });
       await loadData();
     } catch (err) {
-      const detail = err?.response?.data?.detail || 'Failed to upload submission';
+      const detail = formatApiError(err, 'Failed to upload submission');
       setError(String(detail));
       setUploadStatus('error');
       pushToast({ title: 'Upload failed', description: String(detail), variant: 'error' });
     }
   }
+
+  const isUploadReady = Boolean(form.assignment_id && form.file) && uploadStatus !== 'uploading';
 
   async function onAiEvaluate(row) {
     try {
@@ -325,7 +329,15 @@ export default function SubmissionsPage() {
                 ))}
               </FormInput>
               <FormInput label="Notes (Optional)" name="notes" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
-              <button className="btn-primary" type="submit">Upload Submission</button>
+              <button className="btn-primary" type="submit" disabled={!isUploadReady}>
+                {uploadStatus === 'uploading' ? 'Uploading...' : 'Upload Submission'}
+              </button>
+              <p className="text-xs text-slate-500">
+                Selected file: {form.file?.name || 'No file selected'}
+              </p>
+              {!assignments.length ? (
+                <p className="text-xs text-amber-600">No assignments found for your class. Refresh after login or contact admin.</p>
+              ) : null}
               <p className="text-xs text-slate-500">Allowed file types: PDF, DOCX, TXT, MD. Max size 10MB.</p>
             </div>
             <FileUpload
@@ -431,7 +443,12 @@ export default function SubmissionsPage() {
                 ))}
               </FormInput>
               <FormInput label="Notes" name="notes" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
-              <button className="btn-primary" type="submit">Upload Submission</button>
+              <button className="btn-primary" type="submit" disabled={!isUploadReady}>
+                {uploadStatus === 'uploading' ? 'Uploading...' : 'Upload Submission'}
+              </button>
+              <p className="text-xs text-slate-500">
+                Selected file: {form.file?.name || 'No file selected'}
+              </p>
             </div>
             <FileUpload
               onFileSelect={(file) => setForm((prev) => ({ ...prev, file }))}

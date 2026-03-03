@@ -12,6 +12,7 @@ import { useToast } from '../hooks/useToast';
 import { apiClient } from '../services/apiClient';
 import { getTeacherSectionsAnalytics } from '../services/sectionsApi';
 import { canAccessFeature } from '../utils/permissions';
+import { formatApiError } from '../utils/apiError';
 import { FEATURE_ACCESS } from '../config/featureAccess';
 
 const performanceData = [
@@ -22,6 +23,7 @@ const performanceData = [
   { month: 'May', avg: 79, submissions: 62 },
   { month: 'Jun', avg: 81, submissions: 65 }
 ];
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -33,6 +35,10 @@ export default function DashboardPage() {
   const [studentEvaluations, setStudentEvaluations] = useState([]);
   const [studentAssignments, setStudentAssignments] = useState([]);
   const [studentSubmissions, setStudentSubmissions] = useState([]);
+  const [studentClassSlots, setStudentClassSlots] = useState([]);
+  const [studentOfferings, setStudentOfferings] = useState([]);
+  const [internshipStatus, setInternshipStatus] = useState(null);
+  const [internshipBusy, setInternshipBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
@@ -95,14 +101,36 @@ export default function DashboardPage() {
       const studentSubmissionsRequest = user?.role === 'student'
         ? apiClient.get('/submissions/', { params: { skip: 0, limit: 300 } })
         : Promise.resolve({ data: [] });
-      const [summaryResp, tilesResp, noticesResp, studentEvaluationsResp, studentAssignmentsResp, studentSubmissionsResp] =
+      const studentClassSlotsRequest = user?.role === 'student'
+        ? apiClient.get('/class-slots/my')
+        : Promise.resolve({ data: [] });
+      const studentOfferingsRequest = user?.role === 'student'
+        ? apiClient.get('/course-offerings/', { params: { skip: 0, limit: 100 } })
+        : Promise.resolve({ data: [] });
+      const internshipStatusRequest = user?.role === 'student'
+        ? apiClient.get('/attendance-records/internship/status')
+        : Promise.resolve({ data: null });
+      const [
+        summaryResp,
+        tilesResp,
+        noticesResp,
+        studentEvaluationsResp,
+        studentAssignmentsResp,
+        studentSubmissionsResp,
+        studentClassSlotsResp,
+        studentOfferingsResp,
+        internshipStatusResp
+      ] =
         await Promise.allSettled([
           apiClient.get('/analytics/summary'),
           teacherTilesRequest,
           apiClient.get('/notices/', { params: { priority: 'urgent', limit: 3 } }),
           studentEvaluationsRequest,
           studentAssignmentsRequest,
-          studentSubmissionsRequest
+          studentSubmissionsRequest,
+          studentClassSlotsRequest,
+          studentOfferingsRequest,
+          internshipStatusRequest
         ]);
 
       setSummary(summaryResp.status === 'fulfilled' ? summaryResp.value.data?.summary || {} : {});
@@ -111,6 +139,9 @@ export default function DashboardPage() {
       setStudentEvaluations(studentEvaluationsResp.status === 'fulfilled' ? studentEvaluationsResp.value.data || [] : []);
       setStudentAssignments(studentAssignmentsResp.status === 'fulfilled' ? studentAssignmentsResp.value.data || [] : []);
       setStudentSubmissions(studentSubmissionsResp.status === 'fulfilled' ? studentSubmissionsResp.value.data || [] : []);
+      setStudentClassSlots(studentClassSlotsResp.status === 'fulfilled' ? studentClassSlotsResp.value.data || [] : []);
+      setStudentOfferings(studentOfferingsResp.status === 'fulfilled' ? studentOfferingsResp.value.data || [] : []);
+      setInternshipStatus(internshipStatusResp.status === 'fulfilled' ? internshipStatusResp.value.data || null : null);
       setLastUpdated(new Date());
     } catch {
       setSummary({});
@@ -119,10 +150,39 @@ export default function DashboardPage() {
       setStudentEvaluations([]);
       setStudentAssignments([]);
       setStudentSubmissions([]);
+      setStudentClassSlots([]);
+      setStudentOfferings([]);
+      setInternshipStatus(null);
     } finally {
       if (!silent) {
         setLoading(false);
       }
+    }
+  }
+
+  async function handleInternshipAction(action) {
+    setInternshipBusy(true);
+    try {
+      if (action === 'clock_in') {
+        await apiClient.post('/attendance-records/internship/clock-in', { note: 'Student internship clock-in' });
+      } else {
+        await apiClient.post('/attendance-records/internship/clock-out', { note: 'Student internship clock-out' });
+      }
+      const response = await apiClient.get('/attendance-records/internship/status');
+      setInternshipStatus(response.data || null);
+      pushToast({
+        title: action === 'clock_in' ? 'Internship started' : 'Internship ended',
+        description: action === 'clock_in' ? 'Clock-in recorded.' : 'Clock-out recorded.',
+        variant: 'success'
+      });
+    } catch (err) {
+      pushToast({
+        title: 'Internship update failed',
+        description: formatApiError(err, 'Could not update internship session'),
+        variant: 'error'
+      });
+    } finally {
+      setInternshipBusy(false);
     }
   }
 
@@ -231,25 +291,28 @@ export default function DashboardPage() {
 
   const studentTimetable = useMemo(() => {
     if (user?.role !== 'student') return [];
-    const subjects = Array.from(
-      new Set(
-        studentAssignments
-          .map((item) => item?.subject_id)
-          .filter(Boolean)
-      )
-    );
-    const labels = subjects.length ? subjects : ['Study Lab', 'Core Subject', 'Project Work'];
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const slots = ['09:00-10:00', '11:00-12:00', '14:00-15:00'];
-
-    return days.map((day, index) => ({
-      day,
-      sessions: slots.map((slot, slotIndex) => ({
-        time: slot,
-        subject: labels[(index + slotIndex) % labels.length]
+    const offeringMap = new Map(studentOfferings.map((item) => [item.id, item]));
+    const grouped = {};
+    for (const slot of studentClassSlots) {
+      const day = slot.day || 'Unknown';
+      const offering = offeringMap.get(slot.course_offering_id) || {};
+      if (!grouped[day]) grouped[day] = [];
+      grouped[day].push({
+        time: `${slot.start_time}-${slot.end_time}`,
+        subject: offering.subject_name || offering.subject_code || offering.subject_id || 'Subject',
+        teacher: offering.teacher_name || offering.teacher_user_id || 'Teacher',
+        room: slot.room_code || '-',
+        type: offering.offering_type || '-',
+        group: offering.group_name || ''
+      });
+    }
+    return Object.entries(grouped)
+      .map(([day, sessions]) => ({
+        day,
+        sessions: [...sessions].sort((a, b) => String(a.time).localeCompare(String(b.time)))
       }))
-    }));
-  }, [studentAssignments, user?.role]);
+      .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
+  }, [studentClassSlots, studentOfferings, user?.role]);
 
   const todayTimetable = useMemo(() => {
     const dayName = new Date().toLocaleDateString(undefined, { weekday: 'long' });
@@ -269,6 +332,22 @@ export default function DashboardPage() {
     });
     return upcoming || sessions[0] || null;
   }, [todayTimetable]);
+
+  const internshipSummary = useMemo(() => {
+    if (!internshipStatus) {
+      return { label: 'No active session', detail: 'Clock in to start internship attendance.' };
+    }
+    const status = internshipStatus.status || 'unknown';
+    const inAt = internshipStatus.clock_in_at ? new Date(internshipStatus.clock_in_at).toLocaleString() : '-';
+    const outAt = internshipStatus.clock_out_at ? new Date(internshipStatus.clock_out_at).toLocaleString() : '-';
+    if (status === 'active') {
+      return { label: 'Active session', detail: `Started: ${inAt}` };
+    }
+    if (status === 'auto_closed') {
+      return { label: 'Auto-closed after 9h', detail: `Start: ${inAt} | Auto logout: ${outAt}` };
+    }
+    return { label: 'Closed session', detail: `Start: ${inAt} | End: ${outAt}` };
+  }, [internshipStatus]);
 
   function exportCsv(filename, rows) {
     if (!rows.length) {
@@ -401,6 +480,8 @@ export default function DashboardPage() {
                 <div key={`${todayTimetable.day}-${session.time}`} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                   <p className="text-xs text-slate-500">{session.time}</p>
                   <p className="text-sm font-semibold">{session.subject}</p>
+                  <p className="text-xs text-slate-500">{session.teacher}</p>
+                  <p className="text-xs text-slate-500">{session.room} | {session.type}{session.group ? ` | ${session.group}` : ''}</p>
                 </div>
               ))}
               {nextClass ? (
@@ -459,6 +540,31 @@ export default function DashboardPage() {
             </div>
           </Card>
         </div>
+
+        <Card>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Internship Attendance</h2>
+            <span className="text-xs text-slate-500">{internshipSummary.label}</span>
+          </div>
+          <p className="text-sm text-slate-500">{internshipSummary.detail}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="btn-primary"
+              onClick={() => handleInternshipAction('clock_in')}
+              disabled={internshipBusy || internshipStatus?.status === 'active'}
+            >
+              {internshipBusy ? 'Working...' : 'Clock In'}
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => handleInternshipAction('clock_out')}
+              disabled={internshipBusy || internshipStatus?.status !== 'active'}
+            >
+              {internshipBusy ? 'Working...' : 'Clock Out'}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Active sessions auto-close after 9 hours.</p>
+        </Card>
 
         <div className="grid gap-4 xl:grid-cols-3">
           <Card className="xl:col-span-2">

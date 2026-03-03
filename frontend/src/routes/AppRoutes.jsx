@@ -24,15 +24,22 @@ const TimetablePage = lazy(() => import('../pages/TimetablePage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
 const AcademicStructurePage = lazy(() => import('../pages/AcademicStructurePage'));
 const AnalyticsPage = lazy(() => import('../pages/AnalyticsPage'));
+const CoursesPage = lazy(() => import('../pages/CoursesPage'));
 const ProgramsPage = lazy(() => import('../pages/ProgramsPage'));
 const FacultiesPage = lazy(() => import('../pages/FacultiesPage'));
 const DepartmentsPage = lazy(() => import('../pages/DepartmentsPage'));
 const SpecializationsPage = lazy(() => import('../pages/SpecializationsPage'));
+const BranchesPage = lazy(() => import('../pages/BranchesPage'));
 const BatchesPage = lazy(() => import('../pages/BatchesPage'));
+const YearsPage = lazy(() => import('../pages/YearsPage'));
 const SemestersPage = lazy(() => import('../pages/SemestersPage'));
 const SectionsPage = lazy(() => import('../pages/ClassesPage'));
+const GroupsPage = lazy(() => import('../pages/GroupsPage'));
 const StudentsPage = lazy(() => import('../pages/StudentsPage'));
 const SubjectsPage = lazy(() => import('../pages/SubjectsPage'));
+const CourseOfferingsPage = lazy(() => import('../pages/CourseOfferingsPage'));
+const ClassSlotsPage = lazy(() => import('../pages/ClassSlotsPage'));
+const AttendanceRecordsPage = lazy(() => import('../pages/AttendanceRecordsPage'));
 const AssignmentsPage = lazy(() => import('../pages/AssignmentsPage'));
 const SubmissionsPage = lazy(() => import('../pages/SubmissionsPage'));
 const ReviewTicketsPage = lazy(() => import('../pages/ReviewTicketsPage'));
@@ -41,6 +48,8 @@ const CommunicationAnnouncementsPage = lazy(() => import('../pages/Communication
 const CommunicationMessagesPage = lazy(() => import('../pages/Communication/MessagesPage'));
 const NoticesPage = lazy(() => import('../pages/NoticesPage'));
 const ClubsPage = lazy(() => import('../pages/ClubsPage'));
+const ClubEventsPage = lazy(() => import('../pages/ClubEventsPage'));
+const EventRegistrationsPage = lazy(() => import('../pages/EventRegistrationsPage'));
 const NotificationsPage = lazy(() => import('../pages/NotificationsPage'));
 const EvaluationsPage = lazy(() => import('../pages/EvaluationsPage'));
 const EnrollmentsPage = lazy(() => import('../pages/EnrollmentsPage'));
@@ -211,8 +220,8 @@ export function AppRoutes() {
           <Route
             path="/courses"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.programs}>
-                <Navigate to="/programs" replace />
+              <ProtectedRoute {...FEATURE_ACCESS.courses}>
+                <CoursesPage />
               </ProtectedRoute>
             }
           />
@@ -243,8 +252,8 @@ export function AppRoutes() {
           <Route
             path="/branches"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.specializations}>
-                <Navigate to="/specializations" replace />
+              <ProtectedRoute {...FEATURE_ACCESS.branches}>
+                <BranchesPage />
               </ProtectedRoute>
             }
           />
@@ -259,8 +268,8 @@ export function AppRoutes() {
           <Route
             path="/years"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.batches}>
-                <Navigate to="/batches" replace />
+              <ProtectedRoute {...FEATURE_ACCESS.years}>
+                <YearsPage />
               </ProtectedRoute>
             }
           />
@@ -289,10 +298,42 @@ export function AppRoutes() {
             }
           />
           <Route
+            path="/groups"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.groups}>
+                <GroupsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/subjects"
             element={
               <ProtectedRoute {...FEATURE_ACCESS.subjects}>
                 <SubjectsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/course-offerings"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.courseOfferings}>
+                <CourseOfferingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/class-slots"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.classSlots}>
+                <ClassSlotsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance-records"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.attendanceRecords}>
+                <AttendanceRecordsPage />
               </ProtectedRoute>
             }
           />
@@ -379,8 +420,8 @@ export function AppRoutes() {
           <Route
             path="/club-events"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.clubs}>
-                <Navigate to="/clubs" replace />
+              <ProtectedRoute {...FEATURE_ACCESS.clubEvents}>
+                <ClubEventsPage />
               </ProtectedRoute>
             }
           />
@@ -403,8 +444,8 @@ export function AppRoutes() {
           <Route
             path="/event-registrations"
             element={
-              <ProtectedRoute {...FEATURE_ACCESS.clubs}>
-                <Navigate to="/clubs" replace />
+              <ProtectedRoute {...FEATURE_ACCESS.eventRegistrations}>
+                <EventRegistrationsPage />
               </ProtectedRoute>
             }
           />

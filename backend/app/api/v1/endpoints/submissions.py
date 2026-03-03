@@ -4,6 +4,7 @@ from typing import List
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
@@ -38,6 +39,29 @@ async def _teacher_can_access_assignment(teacher_user_id: str, assignment_id: st
     return class_doc.get('class_coordinator_user_id') == teacher_user_id
 
 
+async def _teacher_accessible_assignment_ids(teacher_user_id: str) -> set[str]:
+    created_rows = await db.assignments.find(
+        {'created_by': teacher_user_id},
+        {'_id': 1},
+    ).to_list(length=5000)
+    created_ids = {str(item.get('_id')) for item in created_rows if item.get('_id')}
+
+    class_rows = await db.classes.find(
+        {'class_coordinator_user_id': teacher_user_id, 'is_active': True},
+        {'_id': 1},
+    ).to_list(length=5000)
+    class_ids = [str(item.get('_id')) for item in class_rows if item.get('_id')]
+    if not class_ids:
+        return created_ids
+
+    class_assignment_rows = await db.assignments.find(
+        {'class_id': {'$in': class_ids}},
+        {'_id': 1},
+    ).to_list(length=10000)
+    class_assignment_ids = {str(item.get('_id')) for item in class_assignment_rows if item.get('_id')}
+    return created_ids.union(class_assignment_ids)
+
+
 async def _teacher_can_access_submission(teacher_user_id: str, submission: dict) -> bool:
     assignment_id = submission.get('assignment_id')
     if not assignment_id:
@@ -47,7 +71,7 @@ async def _teacher_can_access_submission(teacher_user_id: str, submission: dict)
 
 async def _evaluate_submission_and_save(submission_obj_id, item: dict) -> dict:
     extracted_text = item.get('extracted_text', '')
-    feedback = generate_ai_feedback(extracted_text, max_score=10.0)
+    feedback = await run_in_threadpool(generate_ai_feedback, extracted_text, max_score=10.0)
     ai_status = str(feedback.get('status') or 'failed')
     update_data = {
         'ai_status': ai_status,
@@ -81,16 +105,17 @@ async def list_submissions(
     if current_user.get('role') == 'student':
         query['student_user_id'] = str(current_user['_id'])
     if current_user.get('role') == 'teacher':
-        raw_items = await db.submissions.find(query).to_list(length=5000)
         teacher_user_id = str(current_user['_id'])
-        scoped_items = []
-        for item in raw_items:
-            assignment_id = item.get('assignment_id')
-            if not assignment_id:
-                continue
-            if await _teacher_can_access_assignment(teacher_user_id, assignment_id):
-                scoped_items.append(item)
-        items = scoped_items[skip : skip + limit]
+        accessible_assignment_ids = await _teacher_accessible_assignment_ids(teacher_user_id)
+        if not accessible_assignment_ids:
+            return []
+        if assignment_id and assignment_id not in accessible_assignment_ids:
+            return []
+        scoped_query = dict(query)
+        if not assignment_id:
+            scoped_query['assignment_id'] = {'$in': sorted(accessible_assignment_ids)}
+        cursor = db.submissions.find(scoped_query).skip(skip).limit(limit)
+        items = await cursor.to_list(length=limit)
     else:
         cursor = db.submissions.find(query).skip(skip).limit(limit)
         items = await cursor.to_list(length=limit)
@@ -143,12 +168,12 @@ async def upload_submission(
     if size > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='File exceeds 10MB limit')
 
-    extracted_text = parse_file_content(file.filename or 'submission', content)
+    extracted_text = await run_in_threadpool(parse_file_content, file.filename or 'submission', content)
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    await run_in_threadpool(UPLOAD_DIR.mkdir, parents=True, exist_ok=True)
     stored_name = f"{uuid4().hex}{suffix}"
     saved_path = UPLOAD_DIR / stored_name
-    saved_path.write_bytes(content)
+    await run_in_threadpool(saved_path.write_bytes, content)
 
     document = {
         'assignment_id': assignment_id,
@@ -302,7 +327,7 @@ async def delete_submission(
     saved_name = item.get('stored_filename')
     if saved_name:
         saved_path = UPLOAD_DIR / saved_name
-        if saved_path.exists():
-            saved_path.unlink()
+        if await run_in_threadpool(saved_path.exists):
+            await run_in_threadpool(saved_path.unlink)
 
     return {'message': 'Submission deleted'}

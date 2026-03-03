@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
@@ -141,15 +142,15 @@ async def upload_profile_avatar(
     if size > MAX_AVATAR_SIZE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Avatar exceeds 3MB limit")
 
-    PROFILE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    await run_in_threadpool(PROFILE_UPLOAD_DIR.mkdir, parents=True, exist_ok=True)
     user_id = str(current_user["_id"])
-    for existing in PROFILE_UPLOAD_DIR.glob(f"{user_id}.*"):
-        if existing.is_file():
-            existing.unlink()
+    for existing in await run_in_threadpool(lambda: list(PROFILE_UPLOAD_DIR.glob(f"{user_id}.*"))):
+        if await run_in_threadpool(existing.is_file):
+            await run_in_threadpool(existing.unlink)
 
     saved_name = f"{user_id}{suffix}"
     saved_path = PROFILE_UPLOAD_DIR / saved_name
-    saved_path.write_bytes(content)
+    await run_in_threadpool(saved_path.write_bytes, content)
 
     now = datetime.now(timezone.utc)
     await db.users.update_one(
@@ -178,6 +179,6 @@ async def get_profile_avatar(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avatar not found")
 
     file_path = PROFILE_UPLOAD_DIR / file_name
-    if not file_path.exists():
+    if not await run_in_threadpool(file_path.exists):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avatar file missing")
     return FileResponse(file_path)

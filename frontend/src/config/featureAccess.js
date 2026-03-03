@@ -17,7 +17,11 @@ export const FEATURE_ACCESS = {
   profile: { allowedRoles: ['admin', 'teacher', 'student'] },
   academicStructure: { allowedRoles: ['admin', 'teacher', 'student'] },
   students: { allowedRoles: ['admin', 'teacher'] },
+  groups: { allowedRoles: ['admin', 'teacher'] },
   subjects: { allowedRoles: ['admin', 'teacher'] },
+  courseOfferings: { allowedRoles: ['admin', 'teacher'] },
+  classSlots: { allowedRoles: ['admin', 'teacher', 'student'] },
+  attendanceRecords: { allowedRoles: ['admin', 'teacher', 'student'] },
   assignments: { allowedRoles: ['admin', 'teacher'] },
   submissions: { allowedRoles: ['admin', 'teacher', 'student'] },
   reviewTickets: { allowedRoles: ['admin', 'teacher'] },
@@ -36,7 +40,10 @@ export const FEATURE_ACCESS = {
   eventRegistrations: { allowedRoles: ['admin', 'teacher', 'student'] },
   auditLogs: { allowedRoles: ['admin', 'teacher'] },
   developerPanel: { allowedRoles: ['admin'] },
-  users: { allowedRoles: ['admin'] },
+  users: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin']
+  },
   faculties: { allowedRoles: ['admin'] },
   courses: { allowedRoles: ['admin'] },
   programs: { allowedRoles: ['admin'] },

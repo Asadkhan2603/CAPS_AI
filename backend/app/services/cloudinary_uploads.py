@@ -7,6 +7,7 @@ from typing import Any
 import cloudinary
 import cloudinary.uploader
 from fastapi import HTTPException, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 
@@ -67,7 +68,7 @@ async def upload_notice_file(content: bytes, mime_type: str, filename: str) -> d
     if resource_type == 'image':
         upload_options['transformation'] = [{'quality': 'auto'}, {'fetch_format': 'auto'}]
 
-    result = cloudinary.uploader.upload(content, **upload_options)
+    result = await run_in_threadpool(cloudinary.uploader.upload, content, **upload_options)
     return {
         'url': result.get('secure_url') or result.get('url'),
         'public_id': result.get('public_id'),

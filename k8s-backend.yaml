@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: caps-ai-backend:latest
+          image: caps_ai-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -59,7 +59,7 @@ spec:
               cpu: "500m"
           livenessProbe:
             httpGet:
-              path: /api/v1/health
+              path: /health
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 10
@@ -67,7 +67,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /api/v1/health
+              path: /health
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 5
@@ -75,7 +75,8 @@ spec:
             failureThreshold: 2
       volumes:
         - name: uploads
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: backend-uploads
       initContainers:
         - name: wait-for-mongodb
           image: busybox:latest

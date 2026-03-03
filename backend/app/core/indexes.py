@@ -63,5 +63,18 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.timetables, [('entries.teacher_user_id', ASCENDING), ('status', ASCENDING)])
     await _safe_create_index(db.timetables, [('entries.room_code', ASCENDING), ('status', ASCENDING)])
     await _safe_create_index(db.timetable_subject_teacher_maps, [('class_id', ASCENDING), ('subject_id', ASCENDING)], unique=True)
+    await _safe_create_index(db.groups, [('section_id', ASCENDING), ('code', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.groups, [('section_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.course_offerings, [('section_id', ASCENDING), ('semester_id', ASCENDING), ('academic_year', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.course_offerings, [('teacher_user_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.class_slots, [('course_offering_id', ASCENDING), ('day', ASCENDING), ('start_time', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.class_slots, [('day', ASCENDING), ('room_code', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.attendance_records, [('class_slot_id', ASCENDING), ('student_id', ASCENDING)], unique=True)
+    await _safe_create_index(db.attendance_records, [('student_id', ASCENDING), ('marked_at', ASCENDING)])
+    await _safe_create_index(db.students, [('class_id', ASCENDING), ('group_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.internship_sessions, [('student_user_id', ASCENDING), ('clock_in_at', ASCENDING)])
+    await _safe_create_index(db.internship_sessions, [('status', ASCENDING), ('clock_in_at', ASCENDING)])
+    await _safe_create_index(db.ai_evaluation_runs, [('evaluation_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.ai_evaluation_runs, [('submission_id', ASCENDING), ('created_at', ASCENDING)])
 
     _indexes_ensured = True

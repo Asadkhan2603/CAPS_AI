@@ -82,6 +82,26 @@ class AuthService:
 
     async def register(self, payload: UserCreate) -> UserOut:
         email = payload.email.lower().strip()
+        policy = settings.auth_registration_policy
+        has_admin = await self.repository.is_any_admin_registered()
+        if policy == "bootstrap_strict":
+            if has_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Self-registration is closed. Contact super admin.",
+                )
+            if payload.role != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="First account must be admin.",
+                )
+        elif policy == "single_admin_open":
+            if has_admin and payload.role == "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Self-registration is closed. Contact super admin.",
+                )
+
         extended_roles = payload.extended_roles or []
         if payload.role != "teacher" and extended_roles:
             raise HTTPException(
@@ -89,19 +109,15 @@ class AuthService:
                 detail="Extended roles are only allowed for teacher accounts",
             )
 
-        has_admin = await self.repository.is_any_admin_registered()
-        if has_admin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Self-registration is closed. Contact super admin.",
-            )
-
-        if payload.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="First account must be admin.",
-            )
-        admin_type = payload.admin_type or "super_admin"
+        if payload.role == "admin":
+            admin_type = payload.admin_type or "super_admin"
+        else:
+            if payload.admin_type is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="admin_type is allowed only for admin accounts",
+                )
+            admin_type = None
 
         existing_user = await self.repository.find_user_by_email(email)
         if existing_user:

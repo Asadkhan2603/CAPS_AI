@@ -15,7 +15,12 @@ def _now() -> datetime:
 
 async def get_governance_policy() -> dict[str, Any]:
     settings_collection = getattr(db, "settings", None)
-    row = await settings_collection.find_one({"key": "governance_policy"}) if settings_collection is not None else None
+    row = None
+    if settings_collection is not None:
+        try:
+            row = await settings_collection.find_one({"key": "governance_policy"})
+        except Exception:
+            row = None
     policy = (row or {}).get("value") or {}
     return {
         "two_person_rule_enabled": bool(policy.get("two_person_rule_enabled", False)),

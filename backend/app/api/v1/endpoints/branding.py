@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.security import require_roles
@@ -23,10 +24,14 @@ def _logo_file_path() -> Path | None:
     return matches[0]
 
 
+async def _logo_file_path_async() -> Path | None:
+    return await run_in_threadpool(_logo_file_path)
+
+
 @router.get("/logo/meta")
 async def get_logo_meta() -> dict:
     record = await db.settings.find_one({"key": "branding_logo"})
-    path = _logo_file_path()
+    path = await _logo_file_path_async()
     if not record or not path:
         return {"has_logo": False}
     return {
@@ -38,7 +43,7 @@ async def get_logo_meta() -> dict:
 
 @router.get("/logo")
 async def get_logo_file() -> FileResponse:
-    path = _logo_file_path()
+    path = await _logo_file_path_async()
     if not path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
     return FileResponse(path)
@@ -60,14 +65,14 @@ async def upload_logo(
     if size > MAX_LOGO_SIZE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Logo exceeds 2MB limit")
 
-    BRANDING_DIR.mkdir(parents=True, exist_ok=True)
-    for existing in BRANDING_DIR.glob("logo.*"):
-        if existing.is_file():
-            existing.unlink()
+    await run_in_threadpool(BRANDING_DIR.mkdir, parents=True, exist_ok=True)
+    for existing in await run_in_threadpool(lambda: list(BRANDING_DIR.glob("logo.*"))):
+        if await run_in_threadpool(existing.is_file):
+            await run_in_threadpool(existing.unlink)
 
     saved_name = f"logo{suffix}"
     saved_path = BRANDING_DIR / saved_name
-    saved_path.write_bytes(content)
+    await run_in_threadpool(saved_path.write_bytes, content)
 
     now = datetime.now(timezone.utc)
     await db.settings.update_one(

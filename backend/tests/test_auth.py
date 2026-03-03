@@ -198,6 +198,7 @@ class FakeDB:
         self.assignments = FakeUsersCollection()
         self.submissions = FakeUsersCollection()
         self.ai_evaluation_chats = FakeUsersCollection()
+        self.ai_evaluation_runs = FakeUsersCollection()
         self.evaluations = FakeUsersCollection()
         self.similarity_logs = FakeUsersCollection()
         self.notifications = FakeUsersCollection()
@@ -1298,7 +1299,7 @@ def test_teacher_cannot_access_out_of_scope_submission() -> None:
     assert ai_denied.json()["detail"] == "Not allowed to evaluate this submission"
 
 
-def test_second_admin_registration_is_blocked() -> None:
+def test_registration_is_closed_after_first_admin() -> None:
     _setup_fake_db()
     client = TestClient(app)
 
@@ -1323,7 +1324,7 @@ def test_second_admin_registration_is_blocked() -> None:
         },
     )
     assert second_admin.status_code == 403
-    assert second_admin.json()["detail"] == "Admin account registration is closed"
+    assert second_admin.json()["detail"] == "Self-registration is closed. Contact super admin."
 
 
 def test_student_cannot_tamper_submission_ai_fields() -> None:

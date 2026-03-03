@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import List, Set
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.database import db
@@ -128,7 +129,7 @@ async def _run_similarity_pipeline(
         candidate_texts.append((item_id, item.get('extracted_text', '')))
         id_to_submission[item_id] = item
 
-    scores = compute_similarity_scores(source_text, candidate_texts)
+    scores = await run_in_threadpool(compute_similarity_scores, source_text, candidate_texts)
 
     created_items = []
     max_score = 0.0

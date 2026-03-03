@@ -68,7 +68,11 @@ const groupedItems = [
     label: 'Academics',
     items: [
       { to: '/students', label: 'Students', featureKey: 'students', icon: GraduationCap },
+      { to: '/groups', label: 'Groups', featureKey: 'groups', icon: Users },
       { to: '/subjects', label: 'Subjects', featureKey: 'subjects', icon: BookOpen },
+      { to: '/course-offerings', label: 'Course Offerings', featureKey: 'courseOfferings', icon: Library },
+      { to: '/class-slots', label: 'Class Slots', featureKey: 'classSlots', icon: CalendarRange },
+      { to: '/attendance-records', label: 'Attendance', featureKey: 'attendanceRecords', icon: ClipboardCheck },
       { to: '/assignments', label: 'Assignments', featureKey: 'assignments', icon: FileText },
       { to: '/submissions', label: 'Submissions', featureKey: 'submissions', icon: ClipboardCheck },
       { to: '/review-tickets', label: 'Review Tickets', featureKey: 'reviewTickets', icon: ScrollText },
@@ -89,7 +93,9 @@ const groupedItems = [
     key: 'clubs',
     label: 'Clubs',
     items: [
-      { to: '/clubs', label: 'Clubs Hub', featureKey: 'clubs', icon: Users }
+      { to: '/clubs', label: 'Clubs Hub', featureKey: 'clubs', icon: Users },
+      { to: '/club-events', label: 'Club Events', featureKey: 'clubEvents', icon: CalendarDays },
+      { to: '/event-registrations', label: 'Event Registrations', featureKey: 'eventRegistrations', icon: UserCheck }
     ]
   },
   {
@@ -107,9 +113,12 @@ const groupedItems = [
     items: [
       { to: '/faculties', label: 'Faculties', featureKey: 'faculties', icon: Building2 },
       { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
+      { to: '/courses', label: 'Courses', featureKey: 'courses', icon: BookOpen },
       { to: '/programs', label: 'Programs', featureKey: 'programs', icon: Library },
       { to: '/specializations', label: 'Specializations', featureKey: 'specializations', icon: GitBranch },
+      { to: '/branches', label: 'Branches', featureKey: 'branches', icon: GitBranch },
       { to: '/batches', label: 'Batches', featureKey: 'batches', icon: GraduationCap },
+      { to: '/years', label: 'Years', featureKey: 'years', icon: GraduationCap },
       { to: '/semesters', label: 'Semesters', featureKey: 'semesters', icon: CalendarRange },
       { to: '/sections', label: 'Sections', featureKey: 'sections', icon: School }
     ]

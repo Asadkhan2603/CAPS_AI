@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { GraduationCap, ShieldCheck } from 'lucide-react';
 import Card from '../components/ui/Card';
 import FormInput from '../components/ui/FormInput';
 import { useAuth } from '../hooks/useAuth';
@@ -13,8 +14,8 @@ export default function RegisterPage() {
     full_name: '',
     email: '',
     password: '',
-    role: 'teacher',
-    extended_roles: []
+    role: 'admin',
+    admin_type: 'super_admin'
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,28 +25,14 @@ export default function RegisterPage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  function onExtendedRoleChange(event) {
-    const { value, checked } = event.target;
-    setForm((prev) => {
-      const nextRoles = checked
-        ? [...prev.extended_roles, value]
-        : prev.extended_roles.filter((item) => item !== value);
-      return { ...prev, extended_roles: nextRoles };
-    });
-  }
-
   async function onSubmit(event) {
     event.preventDefault();
     setLoading(true);
     setError('');
     try {
-      const payload = {
-        ...form,
-        extended_roles: form.role === 'teacher' ? form.extended_roles : []
-      };
-      await register(payload);
+      await register(form);
       await login(form.email, form.password);
-      pushToast({ title: 'Account ready', description: 'Registration completed.', variant: 'success' });
+      pushToast({ title: 'Bootstrap complete', description: 'Super admin created successfully.', variant: 'success' });
       navigate('/dashboard', { replace: true });
     } catch (err) {
       const detail = err?.response?.data?.detail || 'Registration failed';
@@ -57,45 +44,55 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-gradient-to-br from-brand-50 via-slate-50 to-sky-100 p-4 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      <Card className="w-full max-w-lg space-y-4">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-brand-500">CAPS AI</p>
-          <h1 className="mt-1 text-2xl font-semibold">Create your account</h1>
-        </div>
+    <main className="auth-shell p-4">
+      <div className="auth-wallpaper" />
+      <div className="auth-orb left-[-120px] top-[-120px] h-[340px] w-[340px] bg-cyan-400/50" />
+      <div className="auth-orb right-[-100px] top-1/3 h-[300px] w-[300px] bg-blue-500/45 [animation-delay:1.2s]" />
+      <div className="auth-orb bottom-[-140px] left-1/3 h-[360px] w-[360px] bg-sky-300/30 [animation-delay:2.5s]" />
 
-        <form className="grid gap-3" onSubmit={onSubmit}>
-          <FormInput label="Full Name" name="full_name" required value={form.full_name} onChange={onChange} />
-          <FormInput label="Email" name="email" type="email" required value={form.email} onChange={onChange} />
-          <FormInput label="Password" name="password" type="password" minLength={8} required value={form.password} onChange={onChange} />
-          <FormInput label="Role" as="select" name="role" value={form.role} onChange={onChange}>
-            <option value="admin">Admin</option>
-            <option value="teacher">Teacher</option>
-            <option value="student">Student</option>
-          </FormInput>
+      <section className="relative z-10 mx-auto grid w-full max-w-5xl items-center gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <aside className="auth-hero auth-reveal hidden lg:block">
+          <p className="inline-flex items-center gap-2 rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
+            <ShieldCheck size={14} />
+            Bootstrap Control
+          </p>
+          <h1 className="mt-4 text-4xl font-semibold leading-tight">Initialize secure administration in one guided step.</h1>
+          <p className="mt-4 max-w-xl text-sm leading-7 text-slate-200/90">
+            This route is bootstrap-only. After setup, user provisioning should be done from the admin user management module.
+          </p>
+        </aside>
 
-          {form.role === 'teacher' ? (
-            <div className="rounded-2xl border border-slate-200 p-3 dark:border-slate-700">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Teacher Extensions</p>
-              <div className="space-y-1 text-sm">
-                <label className="flex items-center gap-2"><input type="checkbox" value="year_head" checked={form.extended_roles.includes('year_head')} onChange={onExtendedRoleChange} /> Year Head</label>
-                <label className="flex items-center gap-2"><input type="checkbox" value="class_coordinator" checked={form.extended_roles.includes('class_coordinator')} onChange={onExtendedRoleChange} /> Class Coordinator</label>
-                <label className="flex items-center gap-2"><input type="checkbox" value="club_coordinator" checked={form.extended_roles.includes('club_coordinator')} onChange={onExtendedRoleChange} /> Club Coordinator</label>
-              </div>
+        <Card className="auth-card auth-reveal w-full max-w-[460px] justify-self-center space-y-4 !rounded-3xl !p-6 sm:!p-7 lg:justify-self-end">
+          <div className="text-center">
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-sky-600 text-white shadow-soft">
+              <GraduationCap size={24} />
             </div>
-          ) : null}
+            <p className="text-xs uppercase tracking-widest text-brand-500">CAPS AI</p>
+            <h1 className="mt-1 text-2xl font-semibold">Bootstrap super admin</h1>
+          </div>
 
-          <button className="btn-primary" type="submit" disabled={loading}>
-            {loading ? 'Creating account...' : 'Create Account'}
-          </button>
-        </form>
+          <form className="grid gap-3" onSubmit={onSubmit}>
+            <FormInput label="Full Name" name="full_name" required value={form.full_name} onChange={onChange} />
+            <FormInput label="Email" name="email" type="email" required value={form.email} onChange={onChange} />
+            <FormInput label="Password" name="password" type="password" minLength={8} required value={form.password} onChange={onChange} />
+            <FormInput label="Role" name="role" value="admin" readOnly disabled />
+            <FormInput label="Admin Type" name="admin_type" value="super_admin" readOnly disabled />
+            <p className="text-xs text-slate-500">
+              Bootstrap-only route: this page works only when no admin exists. After bootstrap, users must be provisioned by admin from the users module.
+            </p>
 
-        {error ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600 dark:bg-rose-900/20 dark:text-rose-300">{error}</p> : null}
+            <button className="btn-primary !bg-sky-600 hover:!bg-sky-700" type="submit" disabled={loading}>
+              {loading ? 'Creating super admin...' : 'Create Super Admin'}
+            </button>
+          </form>
 
-        <p className="text-sm text-slate-600 dark:text-slate-300">
-          Already registered? <Link className="font-medium text-brand-600" to="/login">Login here</Link>
-        </p>
-      </Card>
+          {error ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p> : null}
+
+          <p className="text-sm text-slate-600">
+            Already registered? <Link className="font-medium text-brand-600" to="/login">Login here</Link>
+          </p>
+        </Card>
+      </section>
     </main>
   );
 }

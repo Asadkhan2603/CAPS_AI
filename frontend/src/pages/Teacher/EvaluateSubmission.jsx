@@ -43,6 +43,8 @@ export default function EvaluateSubmissionPage() {
   const [selectedQuestionId, setSelectedQuestionId] = useState('q1');
   const [rubric, setRubric] = useState('Concept clarity, correctness, depth, and structure');
   const [evaluationId, setEvaluationId] = useState('');
+  const [aiPreview, setAiPreview] = useState(null);
+  const [aiPreviewLoading, setAiPreviewLoading] = useState(false);
   const [marks, setMarks] = useState({
     attendance_percent: 85,
     skill: 2,
@@ -147,6 +149,23 @@ export default function EvaluateSubmissionPage() {
       pushToast({ title: 'Saved', description: 'Marks saved successfully.', variant: 'success' });
     } catch (err) {
       pushToast({ title: 'Save failed', description: formatApiError(err, 'Failed to save marks'), variant: 'error' });
+    }
+  }
+
+  async function onPreviewAI() {
+    if (!submission) return;
+    setAiPreviewLoading(true);
+    try {
+      const response = await apiClient.post('/evaluations/ai-preview', {
+        submission_id: submission.id,
+        ...marks
+      });
+      setAiPreview(response.data || null);
+      pushToast({ title: 'AI preview ready', description: 'Review AI insight before saving marks.', variant: 'success' });
+    } catch (err) {
+      pushToast({ title: 'AI preview failed', description: formatApiError(err, 'Failed to generate AI preview'), variant: 'error' });
+    } finally {
+      setAiPreviewLoading(false);
     }
   }
 
@@ -258,7 +277,28 @@ export default function EvaluateSubmissionPage() {
                 <FormInput label="Final Exam (0-60)" type="number" step="0.1" value={marks.final_exam} onChange={(e) => setMarks((p) => ({ ...p, final_exam: Number(e.target.value) }))} />
               </div>
               <FormInput as="textarea" label="Remarks" value={marks.remarks} onChange={(e) => setMarks((p) => ({ ...p, remarks: e.target.value }))} />
-              <button className="btn-primary" onClick={onSaveMarks}>Save Marks</button>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn-secondary" onClick={onPreviewAI} disabled={aiPreviewLoading}>
+                  {aiPreviewLoading ? 'Generating...' : 'Preview AI Insight'}
+                </button>
+                <button className="btn-primary" onClick={onSaveMarks}>Save Marks</button>
+              </div>
+              {aiPreview ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                  <p className="text-sm font-semibold">AI Insight Preview</p>
+                  <p className="mt-1 text-xs text-slate-500">Grade: {aiPreview.grade} | Total: {aiPreview.grand_total} | AI Score: {aiPreview.ai_score ?? '-'}</p>
+                  <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{aiPreview.ai_feedback || aiPreview.ai_insight?.summary}</p>
+                  {(aiPreview.ai_insight?.strengths || []).length ? (
+                    <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">Strengths: {(aiPreview.ai_insight?.strengths || []).join(' | ')}</p>
+                  ) : null}
+                  {(aiPreview.ai_insight?.gaps || []).length ? (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Gaps: {(aiPreview.ai_insight?.gaps || []).join(' | ')}</p>
+                  ) : null}
+                  {(aiPreview.ai_insight?.suggestions || []).length ? (
+                    <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">Suggestions: {(aiPreview.ai_insight?.suggestions || []).join(' | ')}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </Card>
           </div>
 

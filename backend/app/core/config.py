@@ -71,6 +71,9 @@ class Settings:
     account_lockout_duration_minutes: int = field(
         default_factory=lambda: _as_int(os.getenv("ACCOUNT_LOCKOUT_DURATION_MINUTES", "30"), 30)
     )
+    auth_registration_policy: str = field(
+        default_factory=lambda: os.getenv("AUTH_REGISTRATION_POLICY", "single_admin_open").strip().lower()
+    )
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
     openai_timeout_seconds: int = field(
@@ -102,6 +105,15 @@ class Settings:
     scheduler_enabled: bool = field(
         default_factory=lambda: _as_bool(os.getenv("SCHEDULER_ENABLED"), False)
     )
+    scheduler_lock_id: str = field(
+        default_factory=lambda: os.getenv("SCHEDULER_LOCK_ID", "caps_ai_scheduler_primary").strip()
+    )
+    scheduler_lock_ttl_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("SCHEDULER_LOCK_TTL_SECONDS", "90"), 90)
+    )
+    scheduler_lock_renew_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("SCHEDULER_LOCK_RENEW_SECONDS", "20"), 20)
+    )
     scheduled_notice_poll_seconds: int = field(
         default_factory=lambda: _as_int(os.getenv("SCHEDULED_NOTICE_POLL_SECONDS", "60"), 60)
     )
@@ -110,6 +122,9 @@ class Settings:
     )
     analytics_snapshot_minute_utc: int = field(
         default_factory=lambda: _as_int(os.getenv("ANALYTICS_SNAPSHOT_MINUTE_UTC", "15"), 15)
+    )
+    internship_auto_logout_hours: int = field(
+        default_factory=lambda: _as_int(os.getenv("INTERNSHIP_AUTO_LOGOUT_HOURS", "9"), 9)
     )
     cloudinary_cloud_name: str = field(default_factory=lambda: os.getenv("CLOUDINARY_CLOUD_NAME", "").strip())
     cloudinary_api_key: str = field(default_factory=lambda: os.getenv("CLOUDINARY_API_KEY", "").strip())
@@ -123,6 +138,8 @@ class Settings:
     def __post_init__(self) -> None:
         if self.environment != "development" and self.jwt_secret == "change_me":
             raise ValueError("JWT_SECRET must be set for non-development environments")
+        if self.auth_registration_policy not in {"single_admin_open", "bootstrap_strict", "open"}:
+            self.auth_registration_policy = "single_admin_open"
 
 
 settings = Settings()

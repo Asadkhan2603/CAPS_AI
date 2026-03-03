@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     admin_governance,
     admin_recovery,
     admin_system,
+    attendance_records,
     ai,
     analytics,
     assignments,
@@ -20,7 +21,9 @@ from app.api.v1.endpoints import (
     event_registrations,
     auth,
     classes,
+    class_slots,
     courses,
+    course_offerings,
     evaluations,
     notices,
     notifications,
@@ -28,6 +31,7 @@ from app.api.v1.endpoints import (
     semesters,
     similarity,
     specializations,
+    groups,
     students,
     subjects,
     submissions,
@@ -49,10 +53,15 @@ api_router.include_router(specializations.router, prefix="/specializations", tag
 api_router.include_router(years.router, prefix="/years", tags=["years"])
 api_router.include_router(batches.router, prefix="/batches", tags=["batches"])
 api_router.include_router(semesters.router, prefix="/semesters", tags=["semesters"])
-# Legacy compatibility alias; canonical path is /sections.
+# Canonical section endpoint is /sections.
+# /classes is a legacy compatibility alias and should be treated as deprecated for new clients.
 api_router.include_router(classes.router, prefix="/classes", tags=["classes"])
 api_router.include_router(classes.router, prefix="/sections", tags=["sections"])
 api_router.include_router(students.router, prefix="/students", tags=["students"])
+api_router.include_router(groups.router, prefix="/groups", tags=["groups"])
+api_router.include_router(course_offerings.router, prefix="/course-offerings", tags=["course-offerings"])
+api_router.include_router(class_slots.router, prefix="/class-slots", tags=["class-slots"])
+api_router.include_router(attendance_records.router, prefix="/attendance-records", tags=["attendance-records"])
 api_router.include_router(subjects.router, prefix="/subjects", tags=["subjects"])
 api_router.include_router(assignments.router, prefix="/assignments", tags=["assignments"])
 api_router.include_router(submissions.router, prefix="/submissions", tags=["submissions"])

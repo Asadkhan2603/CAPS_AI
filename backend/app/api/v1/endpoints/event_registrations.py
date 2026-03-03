@@ -4,6 +4,7 @@ from typing import List
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
@@ -244,10 +245,10 @@ async def submit_event_registration(
         if size > MAX_RECEIPT_SIZE:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Receipt file exceeds 10MB limit')
 
-        RECEIPT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        await run_in_threadpool(RECEIPT_UPLOAD_DIR.mkdir, parents=True, exist_ok=True)
         stored_name = f"{uuid4().hex}{suffix}"
         saved_path = RECEIPT_UPLOAD_DIR / stored_name
-        saved_path.write_bytes(content)
+        await run_in_threadpool(saved_path.write_bytes, content)
 
         document['payment_receipt_original_filename'] = payment_receipt.filename or 'receipt'
         document['payment_receipt_stored_filename'] = stored_name

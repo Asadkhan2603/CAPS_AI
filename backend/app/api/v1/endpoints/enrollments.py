@@ -38,6 +38,26 @@ async def _resolve_student_identifier(student_identifier: str) -> dict | None:
     return await db.students.find_one({"roll_number": student_identifier})
 
 
+async def _teacher_manageable_class_ids(current_user: dict, class_id_filter: str | None = None) -> set[str]:
+    if current_user.get("role") != "teacher":
+        return set()
+    teacher_user_id = str(current_user.get("_id"))
+    extensions = current_user.get("extended_roles", [])
+    if "year_head" in extensions:
+        query = {"is_active": True}
+        if class_id_filter:
+            query["_id"] = parse_object_id(class_id_filter)
+        rows = await db.classes.find(query, {"_id": 1}).to_list(length=10000)
+        return {str(item.get("_id")) for item in rows if item.get("_id")}
+    if "class_coordinator" in extensions:
+        query = {"class_coordinator_user_id": teacher_user_id, "is_active": True}
+        if class_id_filter:
+            query["_id"] = parse_object_id(class_id_filter)
+        rows = await db.classes.find(query, {"_id": 1}).to_list(length=1000)
+        return {str(item.get("_id")) for item in rows if item.get("_id")}
+    return set()
+
+
 @router.get("/", response_model=List[EnrollmentOut])
 async def list_enrollments(
     class_id: str | None = Query(default=None),
@@ -56,13 +76,15 @@ async def list_enrollments(
         query["student_id"] = {"$in": [str(student["_id"]), student.get("roll_number")]}
 
     if current_user.get("role") == "teacher":
-        raw_items = await db.enrollments.find(query).to_list(length=5000)
-        scoped_items = []
-        for item in raw_items:
-            class_doc = await db.classes.find_one({"_id": parse_object_id(item["class_id"])})
-            if class_doc and _can_manage_class(current_user, class_doc):
-                scoped_items.append(item)
-        items = scoped_items[skip : skip + limit]
+        manageable_class_ids = await _teacher_manageable_class_ids(current_user, class_id_filter=class_id)
+        if not manageable_class_ids:
+            return []
+        if class_id and class_id not in manageable_class_ids:
+            return []
+        scoped_query = dict(query)
+        if not class_id:
+            scoped_query["class_id"] = {"$in": sorted(manageable_class_ids)}
+        items = await db.enrollments.find(scoped_query).skip(skip).limit(limit).to_list(length=limit)
     else:
         items = await db.enrollments.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [EnrollmentOut(**enrollment_public(item)) for item in items]
