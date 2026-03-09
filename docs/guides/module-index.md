@@ -181,7 +181,6 @@ Department
 ## Archives
 
 - `docs/archives/OLD_DATA`
-- `docs/archives/OLD DATA`
 
 ## Recommended Reading Order
 
@@ -197,3 +196,4 @@ Department
 - `ACADEMIC_MODULE_MASTER.md` should remain the umbrella for the canonical hierarchy:
   `Faculty -> Department -> Program -> Specialization -> Batch -> Semester -> Section`
 - Legacy compatibility areas such as courses, years, branches, and classes should be documented inside the relevant module masters with explicit deprecation or compatibility notes.
+

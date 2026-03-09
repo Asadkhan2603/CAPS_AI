@@ -67,51 +67,51 @@ This tree shows the current module order and structural relationships in the cod
 
 ```text
 CAPS AI
-├── Platform Foundation
-│   ├── Auth
-│   ├── User
-│   ├── RBAC
-│   ├── Governance
-│   │   ├── Review Ticket
-│   │   ├── Audit
-│   │   └── Recovery
-│   ├── System
-│   └── Branding
-│
-├── Academic Core
-│   ├── Academic Setup
-│   │   ├── Faculty
-│   │   ├── Department
-│   │   ├── Program
-│   │   ├── Specialization
-│   │   ├── Batch
-│   │   ├── Semester
-│   │   └── Section
-│   ├── Subject
-│   ├── Teacher
-│   ├── Student
-│   ├── Enrollment
-│   ├── Group
-│   ├── Course Offering
-│   ├── Class Section
-│   ├── Class Slot
-│   ├── Timetable
-│   ├── Attendance
-│   └── Assessment
-│       ├── Assignment
-│       ├── Submission
-│       ├── Evaluation
-│       └── Exam
-│
-├── Communication And Campus Operations
-│   ├── Communication
-│   │   └── Notification
-│   ├── Club
-│   └── Event
-│
-└── Intelligence And Reporting
-    ├── AI
-    └── Analytics
+|-- Platform Foundation
+|   |-- Auth
+|   |-- User
+|   |-- RBAC
+|   |-- Governance
+|   |   |-- Review Ticket
+|   |   |-- Audit
+|   |   `-- Recovery
+|   |-- System
+|   `-- Branding
+|
+|-- Academic Core
+|   |-- Academic Setup
+|   |   |-- Faculty
+|   |   |-- Department
+|   |   |-- Program
+|   |   |-- Specialization
+|   |   |-- Batch
+|   |   |-- Semester
+|   |   `-- Section
+|   |-- Subject
+|   |-- Teacher
+|   |-- Student
+|   |-- Enrollment
+|   |-- Group
+|   |-- Course Offering
+|   |-- Class Section
+|   |-- Class Slot
+|   |-- Timetable
+|   |-- Attendance
+|   `-- Assessment
+|       |-- Assignment
+|       |-- Submission
+|       |-- Evaluation
+|       `-- Exam
+|
+|-- Communication And Campus Operations
+|   |-- Communication
+|   |   `-- Notification
+|   |-- Club
+|   `-- Event
+|
+`-- Intelligence And Reporting
+    |-- AI
+    `-- Analytics
 ```
 
 ## Functional Dependency Order
@@ -162,29 +162,28 @@ The canonical academic hierarchy remains the central business tree for the produ
 
 ```text
 University
-└── Faculty
-    └── Department
-        └── Program
-            └── Specialization
-                └── Batch
-                    └── Semester
-                        └── Section
+`-- Faculty
+    `-- Department
+        `-- Program
+            `-- Specialization
+                `-- Batch
+                    `-- Semester
+                        `-- Section
 ```
 
 Legacy compatibility hierarchy still exists in parts of the codebase and should not be extended:
 
 ```text
 Department
-└── Branch
-    └── Course
-        └── Year
-            └── Section/Class
+`-- Branch
+    `-- Course
+        `-- Year
+            `-- Section/Class
 ```
 
 ## Archives
 
 - `docs/archives/OLD_DATA`
-- `docs/archives/OLD DATA`
 
 ## Recommended Reading Order
 
@@ -201,3 +200,4 @@ Department
 - The canonical academic hierarchy remains:
   `Faculty -> Department -> Program -> Specialization -> Batch -> Semester -> Section`
 - Legacy compatibility areas such as `courses`, `years`, `branches`, and class-named section storage should be treated as compatibility layers, not new design targets.
+
