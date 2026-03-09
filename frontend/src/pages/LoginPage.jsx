@@ -149,7 +149,7 @@ export default function LoginPage() {
             {[
               'Role-aware access for admins, teachers, and students.',
               'Live API + analytics modules with secure token sessions.',
-              'Designed for institution-scale operations on AKS.'
+              'Designed for institution-scale operations on Docker and Kubernetes.'
             ].map((text, index) => (
               <motion.div
                 key={text}

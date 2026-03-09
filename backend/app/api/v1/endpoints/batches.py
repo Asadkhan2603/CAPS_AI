@@ -12,6 +12,22 @@ from app.schemas.batch import BatchCreate, BatchOut, BatchUpdate
 router = APIRouter()
 
 
+def _normalize_program_duration(program: dict) -> tuple[int, int]:
+    try:
+        duration_years = int(program.get("duration_years"))
+    except (TypeError, ValueError):
+        duration_years = 4
+    duration_years = max(3, min(5, duration_years))
+
+    try:
+        total_semesters = int(program.get("total_semesters"))
+    except (TypeError, ValueError):
+        total_semesters = duration_years * 2
+    if total_semesters <= 0:
+        total_semesters = duration_years * 2
+    return duration_years, total_semesters
+
+
 @router.get("/", response_model=List[BatchOut])
 async def list_batches(
     program_id: str | None = Query(default=None),
@@ -57,12 +73,31 @@ async def create_batch(
     program = await db.programs.find_one({"_id": parse_object_id(payload.program_id)})
     if not program:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program not found for provided program_id")
+    duration_years, total_semesters = _normalize_program_duration(program)
     if payload.specialization_id:
         specialization = await db.specializations.find_one({"_id": parse_object_id(payload.specialization_id)})
         if not specialization:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Specialization not found for provided specialization_id")
         if specialization.get("program_id") != payload.program_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="specialization_id does not belong to program_id")
+
+    start_year = payload.start_year
+    end_year = payload.end_year
+    if start_year is not None and end_year is None:
+        end_year = start_year + duration_years - 1
+    elif end_year is not None and start_year is None:
+        start_year = end_year - duration_years + 1
+
+    if start_year is not None and end_year is not None:
+        if end_year < start_year:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End year cannot be earlier than start year")
+        expected_end_year = start_year + duration_years - 1
+        if end_year != expected_end_year:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Batch span must match program duration of {duration_years} years.",
+            )
+
     normalized_code = payload.code.strip().upper()
     existing = await db.batches.find_one({"code": normalized_code})
     if existing:
@@ -72,12 +107,27 @@ async def create_batch(
         "specialization_id": payload.specialization_id,
         "name": payload.name.strip(),
         "code": normalized_code,
-        "start_year": payload.start_year,
-        "end_year": payload.end_year,
+        "start_year": start_year,
+        "end_year": end_year,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
     }
     result = await db.batches.insert_one(document)
+    batch_id = str(result.inserted_id)
+
+    semester_docs = [
+        {
+            "batch_id": batch_id,
+            "semester_number": semester_number,
+            "label": f"Semester {semester_number}",
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+        }
+        for semester_number in range(1, total_semesters + 1)
+    ]
+    if semester_docs:
+        await db.semesters.insert_many(semester_docs)
+
     created = await db.batches.find_one({"_id": result.inserted_id})
     return BatchOut(**batch_public(created))
 

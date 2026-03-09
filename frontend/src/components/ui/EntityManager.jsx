@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import Card from './Card';
 import FormInput from './FormInput';
+import SearchableSelect from './SearchableSelect';
 import Table from './Table';
 import { apiClient } from '../../services/apiClient';
 import { useToast } from '../../hooks/useToast';
@@ -12,25 +13,39 @@ export default function EntityManager({
   endpoint,
   listEndpoint,
   createEndpoint,
+  updateEndpoint,
   deleteEndpoint,
   filters = [],
   createFields = [],
+  editFields,
   columns = [],
   pageSizeOptions = [5, 10, 20],
   createTransform,
+  updateTransform,
   enableDelete = false,
+  enableEdit = false,
   hideCreate = false,
   rowActions = []
 }) {
-  const listPath = (listEndpoint || endpoint).replace(/\/+$/, '');
-  const createPath = (createEndpoint || endpoint).replace(/\/+$/, '');
+  const ensureTrailingSlash = (path) => `${String(path || '').replace(/\/+$/, '')}/`;
+  const listPath = ensureTrailingSlash(listEndpoint || endpoint);
+  const createPath = ensureTrailingSlash(createEndpoint || endpoint);
+  const updatePath = ensureTrailingSlash(updateEndpoint || endpoint);
   const deletePath = (deleteEndpoint || listEndpoint || endpoint).replace(/\/+$/, '');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(pageSizeOptions[1] ?? 10);
   const [error, setError] = useState('');
+  const [editingRowId, setEditingRowId] = useState(null);
   const { pushToast } = useToast();
+
+  const singularTitle = useMemo(() => {
+    if (!title) return 'Item';
+    if (title.endsWith('ies')) return `${title.slice(0, -3)}y`;
+    if (title.endsWith('s')) return title.slice(0, -1);
+    return title;
+  }, [title]);
 
   const initialFilterState = useMemo(
     () =>
@@ -48,7 +63,7 @@ export default function EntityManager({
   const initialCreateState = useMemo(
     () =>
       createFields.reduce((acc, item) => {
-        acc[item.name] = item.defaultValue ?? (item.type === 'number' ? 0 : '');
+        acc[item.name] = item.defaultValue ?? (item.type === 'number' ? (item.nullable ? '' : 0) : '');
         return acc;
       }, {}),
     [createFields]
@@ -56,6 +71,7 @@ export default function EntityManager({
 
   const [filterValues, setFilterValues] = useState(initialFilterState);
   const [createValues, setCreateValues] = useState(initialCreateState);
+  const activeFormFields = editFields || createFields;
 
   useEffect(() => {
     setFilterValues(initialFilterState);
@@ -93,25 +109,119 @@ export default function EntityManager({
     loadData();
   }, [skip, limit]);
 
+  function resolveFieldOptions(field, mode, nextCreateValues = createValues, nextFilterValues = filterValues) {
+    const rawOptions = typeof field.optionsResolver === 'function'
+      ? field.optionsResolver({
+          mode,
+          createValues: nextCreateValues,
+          filterValues: nextFilterValues,
+          rows
+        })
+      : (field.options || []);
+
+    const options = Array.isArray(rawOptions) ? rawOptions : [];
+    const dependsOn = mode === 'create' ? field.dependsOn : (field.filterDependsOn ?? field.dependsOn);
+    const matchKey = mode === 'create'
+      ? (field.optionMatchKey || dependsOn)
+      : (field.filterOptionMatchKey || field.optionMatchKey || dependsOn);
+    const requireParentSelection = mode === 'create'
+      ? Boolean(field.requireParentSelection)
+      : Boolean(field.filterRequireParentSelection ?? field.requireParentSelection);
+
+    if (!dependsOn) {
+      return options;
+    }
+
+    const parentValue = mode === 'create'
+      ? nextCreateValues?.[dependsOn]
+      : nextFilterValues?.[dependsOn];
+
+    if ((parentValue === '' || parentValue === null || parentValue === undefined) && requireParentSelection) {
+      return [];
+    }
+
+    if (parentValue === '' || parentValue === null || parentValue === undefined) {
+      return options;
+    }
+
+    return options.filter((option) => String(option?.[matchKey]) === String(parentValue));
+  }
+
   function onFilterChange(name, value) {
-    setFilterValues((prev) => ({ ...prev, [name]: value }));
+    setFilterValues((prev) => {
+      const next = { ...prev, [name]: value };
+
+      for (const field of filters) {
+        const dependsOn = field.filterDependsOn ?? field.dependsOn;
+        if (dependsOn !== name) continue;
+        const currentValue = next[field.name];
+        if (currentValue === '' || currentValue === null || currentValue === undefined) continue;
+
+        const options = resolveFieldOptions(field, 'filter', createValues, next);
+        const stillValid = options.some((option) => String(option.value) === String(currentValue));
+        if (!stillValid) {
+          next[field.name] = '';
+        }
+      }
+
+      return next;
+    });
   }
 
   function onCreateChange(name, value) {
-    setCreateValues((prev) => ({ ...prev, [name]: value }));
+    setCreateValues((prev) => {
+      const next = { ...prev, [name]: value };
+
+      for (const field of activeFormFields) {
+        if (field.dependsOn !== name) continue;
+        const currentValue = next[field.name];
+        if (currentValue === '' || currentValue === null || currentValue === undefined) continue;
+
+        const options = resolveFieldOptions(field, 'create', next, filterValues);
+        const stillValid = options.some((option) => String(option.value) === String(currentValue));
+        if (!stillValid) {
+          next[field.name] = '';
+        }
+      }
+
+      return next;
+    });
   }
 
-  async function onCreate(event) {
+  function startEdit(row) {
+    const nextValues = activeFormFields.reduce((acc, field) => {
+      if (row[field.name] !== undefined && row[field.name] !== null) {
+        acc[field.name] = row[field.name];
+      } else {
+        acc[field.name] = field.defaultValue ?? (field.type === 'number' ? 0 : '');
+      }
+      return acc;
+    }, {});
+    setCreateValues(nextValues);
+    setEditingRowId(row.id);
+  }
+
+  function cancelEdit() {
+    setEditingRowId(null);
+    setCreateValues(initialCreateState);
+  }
+
+  async function onSubmit(event) {
     event.preventDefault();
     setError('');
     try {
       let payload = { ...createValues };
-      payload = createFields.reduce((acc, field) => {
+      payload = activeFormFields.reduce((acc, field) => {
         if (field.nullable && acc[field.name] === '') {
           acc[field.name] = null;
         }
         if (field.type === 'number') {
-          acc[field.name] = Number(acc[field.name]);
+          const currentValue = acc[field.name];
+          if (currentValue === null || currentValue === undefined || currentValue === '') {
+            acc[field.name] = field.nullable ? null : 0;
+          } else {
+            acc[field.name] = Number(currentValue);
+          }
         }
         if (field.type === 'datetime' && acc[field.name]) {
           acc[field.name] = new Date(acc[field.name]).toISOString();
@@ -119,18 +229,30 @@ export default function EntityManager({
         return acc;
       }, payload);
 
-      if (createTransform) {
+      if (editingRowId && updateTransform) {
+        payload = updateTransform(payload);
+      } else if (!editingRowId && createTransform) {
         payload = createTransform(payload);
       }
 
-      await apiClient.post(createPath, payload);
+      if (editingRowId) {
+        await apiClient.put(`${updatePath}${editingRowId}`, payload);
+      } else {
+        await apiClient.post(createPath, payload);
+      }
       setCreateValues(initialCreateState);
-      pushToast({ title: 'Saved', description: `${title.slice(0, -1)} created successfully.`, variant: 'success' });
+      setEditingRowId(null);
+      pushToast({
+        title: 'Saved',
+        description: editingRowId ? `${singularTitle} updated successfully.` : `${singularTitle} created successfully.`,
+        variant: 'success'
+      });
       await loadData();
     } catch (err) {
-      const message = formatApiError(err, `Failed to create ${title.toLowerCase()}`);
+      const action = editingRowId ? 'update' : 'create';
+      const message = formatApiError(err, `Failed to ${action} ${title.toLowerCase()}`);
       setError(message);
-      pushToast({ title: 'Create failed', description: message, variant: 'error' });
+      pushToast({ title: editingRowId ? 'Update failed' : 'Create failed', description: message, variant: 'error' });
     }
   }
 
@@ -176,6 +298,17 @@ export default function EntityManager({
                       {filterValues[field.name] === null ? 'Any' : filterValues[field.name] ? 'On' : 'Off'}
                     </button>
                   </label>
+                ) : field.type === 'select' && field.searchable ? (
+                  <SearchableSelect
+                    key={field.name}
+                    label={field.label}
+                    value={filterValues[field.name]}
+                    options={resolveFieldOptions(field, 'filter')}
+                    placeholder={field.placeholder || `Search ${field.label}`}
+                    allowEmpty
+                    emptyLabel={field.placeholder || `All ${field.label}`}
+                    onValueChange={(nextValue) => onFilterChange(field.name, nextValue)}
+                  />
                 ) : field.type === 'select' ? (
                   <FormInput
                     key={field.name}
@@ -185,7 +318,7 @@ export default function EntityManager({
                     onChange={(e) => onFilterChange(field.name, e.target.value)}
                   >
                     <option value="">{field.placeholder || `All ${field.label}`}</option>
-                    {(field.options || []).map((option) => (
+                    {resolveFieldOptions(field, 'filter').map((option) => (
                       <option key={`${field.name}-${option.value}`} value={option.value}>
                         {option.label}
                       </option>
@@ -210,9 +343,9 @@ export default function EntityManager({
       {!hideCreate ? (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
           <Card>
-            <h2 className="mb-3 text-lg font-semibold">Create {title.slice(0, -1)}</h2>
-            <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {createFields.map((field) => (
+            <h2 className="mb-3 text-lg font-semibold">{editingRowId ? `Edit ${singularTitle}` : `Create ${singularTitle}`}</h2>
+            <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {activeFormFields.map((field) => (
                 field.type === 'switch' ? (
                   <label key={field.name} className="block space-y-1">
                     <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
@@ -231,6 +364,18 @@ export default function EntityManager({
                       </label>
                     </div>
                   </label>
+                ) : field.type === 'select' && field.searchable ? (
+                  <SearchableSelect
+                    key={field.name}
+                    label={field.label}
+                    value={createValues[field.name]}
+                    options={resolveFieldOptions(field, 'create')}
+                    placeholder={field.placeholder || `Search ${field.label}`}
+                    required={field.required}
+                    allowEmpty={!field.required}
+                    emptyLabel={field.placeholder || `Select ${field.label}`}
+                    onValueChange={(nextValue) => onCreateChange(field.name, nextValue)}
+                  />
                 ) : field.type === 'select' ? (
                   <FormInput
                     key={field.name}
@@ -241,7 +386,7 @@ export default function EntityManager({
                     onChange={(e) => onCreateChange(field.name, e.target.value)}
                   >
                     <option value="">{field.placeholder || `Select ${field.label}`}</option>
-                    {(field.options || []).map((option) => (
+                    {resolveFieldOptions(field, 'create').map((option) => (
                       <option key={`${field.name}-${option.value}`} value={option.value}>
                         {option.label}
                       </option>
@@ -261,8 +406,13 @@ export default function EntityManager({
                   />
                 )
               ))}
-              <div className="flex items-end">
-                <button type="submit" className="btn-primary w-full">Create</button>
+              <div className="flex items-end gap-2">
+                <button type="submit" className="btn-primary w-full">{editingRowId ? 'Update' : 'Create'}</button>
+                {editingRowId ? (
+                  <button type="button" className="btn-secondary w-full" onClick={cancelEdit}>
+                    Cancel
+                  </button>
+                ) : null}
               </div>
             </form>
           </Card>
@@ -290,6 +440,7 @@ export default function EntityManager({
           <Table
             columns={columns}
             data={rows}
+            onEdit={enableEdit ? startEdit : undefined}
             onDelete={enableDelete ? onDelete : undefined}
             rowActions={rowActions.map((action) => ({
               ...action,

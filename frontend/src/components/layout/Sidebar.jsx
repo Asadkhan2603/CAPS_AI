@@ -113,14 +113,14 @@ const groupedItems = [
     items: [
       { to: '/faculties', label: 'Faculties', featureKey: 'faculties', icon: Building2 },
       { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
-      { to: '/courses', label: 'Courses', featureKey: 'courses', icon: BookOpen },
       { to: '/programs', label: 'Programs', featureKey: 'programs', icon: Library },
       { to: '/specializations', label: 'Specializations', featureKey: 'specializations', icon: GitBranch },
-      { to: '/branches', label: 'Branches', featureKey: 'branches', icon: GitBranch },
       { to: '/batches', label: 'Batches', featureKey: 'batches', icon: GraduationCap },
-      { to: '/years', label: 'Years', featureKey: 'years', icon: GraduationCap },
       { to: '/semesters', label: 'Semesters', featureKey: 'semesters', icon: CalendarRange },
-      { to: '/sections', label: 'Sections', featureKey: 'sections', icon: School }
+      { to: '/sections', label: 'Sections', featureKey: 'sections', icon: School },
+      { to: '/courses', label: 'Courses', featureKey: 'courses', icon: BookOpen },
+      { to: '/years', label: 'Years', featureKey: 'years', icon: GraduationCap },
+      { to: '/branches', label: 'Branches', featureKey: 'branches', icon: GitBranch }
     ]
   }
 ];

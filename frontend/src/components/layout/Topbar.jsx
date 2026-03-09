@@ -1,20 +1,15 @@
 import { Menu, Moon, Sun, UserCircle2, ChevronDown, LogOut, History, PanelLeftClose, PanelLeftOpen, UserRoundCog, Search, Bell } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Breadcrumb from './Breadcrumb';
 import { apiClient } from '../../services/apiClient';
 import { unreadNoticeCount } from '../../utils/noticeReadTracker';
+import { useAuthorizedImage } from '../../hooks/useAuthorizedImage';
 
 export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse, isDark, onToggleTheme, onLogout }) {
   const [open, setOpen] = useState(false);
   const [noticeCount, setNoticeCount] = useState(0);
-  const backendBaseUrl = useMemo(() => {
-    const base = apiClient.defaults.baseURL || '';
-    return base.replace(/\/api\/v1\/?$/, '');
-  }, []);
-  const avatarSrc = user?.avatar_url
-    ? `${backendBaseUrl}${user.avatar_url}${user.avatar_updated_at ? `?v=${encodeURIComponent(user.avatar_updated_at)}` : ''}`
-    : '';
+  const avatarSrc = useAuthorizedImage(user?.avatar_url, user?.avatar_updated_at);
 
   useEffect(() => {
     let alive = true;

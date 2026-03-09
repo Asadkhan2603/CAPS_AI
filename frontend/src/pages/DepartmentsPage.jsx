@@ -8,7 +8,7 @@ export default function DepartmentsPage() {
   useEffect(() => {
     async function loadFaculties() {
       try {
-        const response = await apiClient.get('/faculties/', { params: { skip: 0, limit: 200 } });
+        const response = await apiClient.get('/faculties/', { params: { skip: 0, limit: 100 } });
         setFaculties(response.data || []);
       } catch {
         setFaculties([]);

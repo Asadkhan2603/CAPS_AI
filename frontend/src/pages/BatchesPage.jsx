@@ -9,8 +9,8 @@ export default function BatchesPage() {
   useEffect(() => {
     async function loadLookups() {
       const [programsRes, specializationsRes] = await Promise.allSettled([
-        apiClient.get('/programs/', { params: { skip: 0, limit: 200 } }),
-        apiClient.get('/specializations/', { params: { skip: 0, limit: 200 } })
+        apiClient.get('/programs/', { params: { skip: 0, limit: 100 } }),
+        apiClient.get('/specializations/', { params: { skip: 0, limit: 100 } })
       ]);
       setPrograms(programsRes.status === 'fulfilled' ? programsRes.value.data || [] : []);
       setSpecializations(specializationsRes.status === 'fulfilled' ? specializationsRes.value.data || [] : []);
@@ -23,7 +23,11 @@ export default function BatchesPage() {
     [programs]
   );
   const specializationOptions = useMemo(
-    () => specializations.map((item) => ({ value: item.id, label: `${item.name} (${item.code})` })),
+    () => specializations.map((item) => ({
+      value: item.id,
+      label: `${item.name} (${item.code})`,
+      program_id: item.program_id
+    })),
     [specializations]
   );
 
@@ -36,12 +40,22 @@ export default function BatchesPage() {
   const filters = useMemo(
     () => [
       { name: 'q', label: 'Search' },
-      { name: 'program_id', label: 'Program', type: 'select', options: programOptions, placeholder: 'All Programs' },
+      {
+        name: 'program_id',
+        label: 'Program',
+        type: 'select',
+        searchable: true,
+        options: programOptions,
+        placeholder: 'All Programs'
+      },
       {
         name: 'specialization_id',
         label: 'Specialization',
         type: 'select',
+        searchable: true,
         options: specializationOptions,
+        filterDependsOn: 'program_id',
+        filterOptionMatchKey: 'program_id',
         placeholder: 'All Specializations'
       },
       { name: 'is_active', label: 'Active', type: 'switch', defaultValue: null }
@@ -53,10 +67,45 @@ export default function BatchesPage() {
     () => [
       { name: 'name', label: 'Batch Name', required: true },
       { name: 'code', label: 'Batch Code', required: true },
-      { name: 'program_id', label: 'Program', type: 'select', options: programOptions, required: true },
-      { name: 'specialization_id', label: 'Specialization (Optional)', type: 'select', options: specializationOptions, nullable: true },
-      { name: 'start_year', label: 'Start Year', type: 'number', min: 2000, max: 2100, nullable: true },
-      { name: 'end_year', label: 'End Year', type: 'number', min: 2000, max: 2100, nullable: true }
+      {
+        name: 'program_id',
+        label: 'Program',
+        type: 'select',
+        searchable: true,
+        options: programOptions,
+        required: true,
+        placeholder: 'Select Program'
+      },
+      {
+        name: 'specialization_id',
+        label: 'Specialization (Optional)',
+        type: 'select',
+        searchable: true,
+        options: specializationOptions,
+        dependsOn: 'program_id',
+        optionMatchKey: 'program_id',
+        requireParentSelection: true,
+        nullable: true,
+        placeholder: 'Select Specialization (Optional)'
+      },
+      {
+        name: 'start_year',
+        label: 'Start Year (Optional)',
+        type: 'number',
+        min: 2000,
+        max: 2100,
+        nullable: true,
+        placeholder: 'Auto if end year is provided'
+      },
+      {
+        name: 'end_year',
+        label: 'End Year (Optional)',
+        type: 'number',
+        min: 2000,
+        max: 2100,
+        nullable: true,
+        placeholder: 'Auto from program duration if blank'
+      }
     ],
     [programOptions, specializationOptions]
   );

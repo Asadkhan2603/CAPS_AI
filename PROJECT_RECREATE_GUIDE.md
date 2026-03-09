@@ -1,7 +1,7 @@
 # PROJECT_RECREATE_GUIDE (Master)
 
 Status: authoritative recreate + validation guide for CAPS_AI.
-Last updated: 2026-03-03 (Asia/Calcutta).
+Last updated: 2026-03-05 (Asia/Calcutta).
 
 ## 1. Master rule (mandatory)
 Whenever any repository code/config/infra changes:
@@ -90,55 +90,10 @@ kubectl -n caps-ai rollout status deployment/frontend --timeout=300s
 kubectl -n caps-ai get pods,svc,ingress,pvc
 ```
 
-## 6. AKS deployment path (Azure Student Premium)
-Use Azure variants:
-- `k8s-backend.azure.yaml`
-- `k8s-frontend.azure.yaml`
-- `k8s-redis.azure.yaml`
-- `k8s-ingress.azure.yaml`
-- `k8s-configmap.azure.yaml`
-- `k8s-secrets.azure.example.yaml`
-- `k8s-uploads-pvc.azure.yaml`
-- `k8s-mongodb.azure.yaml`
-- `scripts/migrate_to_azure_aks.ps1`
-
-Prerequisites:
-- AKS cluster is reachable via current `kubectl` context.
-- AKS is attached to ACR (`az aks update --attach-acr ...`).
-- `az`, `kubectl`, and `docker` are installed.
-
-One-command migration:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/migrate_to_azure_aks.ps1 `
-  -SubscriptionId "<SUBSCRIPTION_ID>" `
-  -ResourceGroup "caps-ai-rg" `
-  -AksName "caps-ai-aks" `
-  -AcrName "<UNIQUE_ACR_NAME>" `
-  -IngressHost "caps-ai.your-domain.com" `
-  -JwtSecret "<AT_LEAST_64_CHAR_SECRET>" `
-  -Location "centralindia"
-```
-
-Script behavior:
-- optionally bootstraps RG + ACR + AKS and attaches ACR
-- builds and pushes backend/frontend images to ACR
-- renders manifests to `out/azure-manifests`
-- validates via `kubectl apply --dry-run=client`
-- applies manifests and runs rollout checks
-
-Render-only mode (no apply):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/migrate_to_azure_aks.ps1 `
-  -SubscriptionId "<SUBSCRIPTION_ID>" `
-  -ResourceGroup "caps-ai-rg" `
-  -AksName "caps-ai-aks" `
-  -AcrName "<UNIQUE_ACR_NAME>" `
-  -IngressHost "caps-ai.your-domain.com" `
-  -JwtSecret "<AT_LEAST_64_CHAR_SECRET>" `
-  -SkipApply
-```
+## 6. Docker-only deployment policy
+- Primary runtime for this project is Docker Compose.
+- Cloud-variant manifests and automation are removed from active usage.
+- Kubernetes YAMLs remain optional and cloud-neutral.
 
 ## 7. Kubernetes image strategy (critical)
 For Docker Desktop local cluster, manifests must reference local compose image names:
@@ -217,58 +172,20 @@ Local real browser on `http://localhost` generally works, but this is still a po
   - `kubectl -n caps-ai rollout status deployment/frontend --timeout=300s` passed.
   - `kubectl -n caps-ai get deploy backend frontend` -> ready replicas met desired.
 
-### 2026-03-03 (AKS variants)
+### 2026-03-05 (Docker-only migration)
 - Changed:
-  - `k8s-backend.azure.yaml`
-  - `k8s-frontend.azure.yaml`
-  - `k8s-ingress.azure.yaml`
+  - `README.md`
   - `PROJECT_RECREATE_GUIDE.md`
-  - `code_recreate.md`
-- Reason:
-  - Added Azure-ready deployment variants with ACR and ingress host/TLS placeholders.
-- Validation:
-  - `kubectl apply --dry-run=client -f k8s-backend.azure.yaml -f k8s-frontend.azure.yaml -f k8s-ingress.azure.yaml` passed.
-
-### 2026-03-03 (AKS complete migration package)
-- Changed:
-  - `k8s-configmap.azure.yaml`
-  - `k8s-secrets.azure.example.yaml`
-  - `k8s-uploads-pvc.azure.yaml`
-  - `k8s-mongodb.azure.yaml`
-  - `scripts/migrate_to_azure_aks.ps1`
-  - `scripts/README.md`
-  - `docs/AZURE_AKS_MIGRATION.md`
   - `docs/DEPLOYMENT_CHECKLIST.md`
-  - `PROJECT_RECREATE_GUIDE.md`
-  - `code_recreate.md`
-- Reason:
-  - Added end-to-end AKS migration automation and Azure-safe manifests for storage/config/secrets.
-- Validation:
-  - `kubectl apply --dry-run=client -f k8s-namespace.yaml -f k8s-secrets.azure.example.yaml -f k8s-configmap.azure.yaml -f k8s-uploads-pvc.azure.yaml -f k8s-redis.yaml -f k8s-mongodb.azure.yaml -f k8s-backend.azure.yaml -f k8s-frontend.azure.yaml -f k8s-ingress.azure.yaml` passed.
-  - `powershell -NoProfile -Command "& { ./scripts/migrate_to_azure_aks.ps1 -? }"` passed (script parses).
-
-### 2026-03-03 (AKS node-pool hardening + workload isolation)
-- Changed:
-  - `k8s-backend.azure.yaml`
-  - `k8s-frontend.azure.yaml`
-  - `k8s-mongodb.azure.yaml`
-  - `k8s-redis.azure.yaml`
-  - `scripts/migrate_to_azure_aks.ps1`
-  - `docs/AZURE_AKS_MIGRATION.md`
   - `scripts/README.md`
-  - `PROJECT_RECREATE_GUIDE.md`
-  - `code_recreate.md`
+  - cloud variant manifests and migration docs/scripts (removed)
 - Reason:
-  - Eliminated B-series usage for system node pools and removed single-pool topology risk by enforcing dedicated pools:
-    - `syspool` (System, non-B, tainted `CriticalAddonsOnly=true:NoSchedule`)
-    - `nodepool1` (User, app workloads)
-  - Added Azure-specific Redis manifest and workload `nodeSelector: pool=user` in Azure manifests.
-  - Updated migration script to enforce this topology by default (with override flags).
+  - Shifted project operations to Docker-first deployment and retired cloud-specific artifacts.
 - Validation:
-  - `az aks nodepool list -g caps-ai-rg-sea --cluster-name caps-ai-aks-sea -o table` -> `syspool`=`System` (`Standard_D2s_v3`, count=2), `nodepool1`=`User` (`Standard_B2s_v2`, count=1).
-  - `kubectl get nodes -o custom-columns=NAME:.metadata.name,POOL:.metadata.labels.kubernetes\\.azure\\.com/agentpool,TAINTS:.spec.taints` -> syspool nodes tainted `CriticalAddonsOnly=true:NoSchedule`.
-  - `kubectl -n caps-ai get pods -o wide` -> backend/frontend/redis/mongodb all `Running` on user pool node.
-  - `curl -k https://20.197.115.29/health -H "Host: caps-ai.example.com"` -> `200`.
+  - Project cloud resource groups deletion initiated:
+    - `caps-ai-rg` deleted.
+    - `caps-ai-rg-sea` state `Deleting`.
+    - `MC_caps-ai-rg-sea_caps-ai-aks-sea_southeastasia` state `Deleting`.
 
 ## 12. Code snapshot file
 All critical recreate code/config snapshots are stored in:

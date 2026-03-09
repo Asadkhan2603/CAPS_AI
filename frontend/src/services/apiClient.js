@@ -2,8 +2,50 @@ import axios from 'axios';
 
 export const TOKEN_KEY = 'caps_ai_token';
 export const REFRESH_TOKEN_KEY = 'caps_ai_refresh_token';
+export const USER_KEY = 'caps_ai_user';
 const MAX_TRACE_ENTRIES = 100;
 const traceEntries = [];
+
+function getSessionStore() {
+  try {
+    return globalThis.sessionStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function removeLegacyLocalValue(key) {
+  try {
+    globalThis.localStorage?.removeItem(key);
+  } catch {
+    // Ignore legacy storage cleanup failures.
+  }
+}
+
+export function readAuthStorage(key) {
+  const store = getSessionStore();
+  return store?.getItem(key) || '';
+}
+
+export function writeAuthStorage(key, value) {
+  const store = getSessionStore();
+  if (store) {
+    store.setItem(key, value);
+  }
+  removeLegacyLocalValue(key);
+}
+
+export function removeAuthStorage(key) {
+  const store = getSessionStore();
+  store?.removeItem(key);
+  removeLegacyLocalValue(key);
+}
+
+export function clearAuthStorage() {
+  removeAuthStorage(TOKEN_KEY);
+  removeAuthStorage(REFRESH_TOKEN_KEY);
+  removeAuthStorage(USER_KEY);
+}
 
 function makeTraceId() {
   if (globalThis.crypto?.randomUUID) {
@@ -38,7 +80,7 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = readAuthStorage(TOKEN_KEY);
   const traceId = makeTraceId();
   const startedAt = Date.now();
   config.headers['X-Trace-Id'] = traceId;
@@ -111,7 +153,7 @@ apiClient.interceptors.response.use(
 
     if (statusCode === 401 && originalRequest && !originalRequest._retry && !isAuthPath) {
       originalRequest._retry = true;
-      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+      const refreshToken = readAuthStorage(REFRESH_TOKEN_KEY);
       if (refreshToken) {
         try {
           const refreshResponse = await axios.post(
@@ -122,18 +164,16 @@ apiClient.interceptors.response.use(
           const nextAccessToken = refreshPayload?.access_token;
           const nextRefreshToken = refreshPayload?.refresh_token;
           if (nextAccessToken) {
-            localStorage.setItem(TOKEN_KEY, nextAccessToken);
+            writeAuthStorage(TOKEN_KEY, nextAccessToken);
             originalRequest.headers = originalRequest.headers || {};
             originalRequest.headers.Authorization = `Bearer ${nextAccessToken}`;
           }
           if (nextRefreshToken) {
-            localStorage.setItem(REFRESH_TOKEN_KEY, nextRefreshToken);
+            writeAuthStorage(REFRESH_TOKEN_KEY, nextRefreshToken);
           }
           return apiClient(originalRequest);
         } catch {
-          localStorage.removeItem(TOKEN_KEY);
-          localStorage.removeItem(REFRESH_TOKEN_KEY);
-          localStorage.removeItem('caps_ai_user');
+          clearAuthStorage();
         }
       }
     }

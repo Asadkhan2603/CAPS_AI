@@ -28,6 +28,7 @@ Completed backend phases (roadmap-aligned):
 - Python 3.11+
 - Node.js 20+
 - MongoDB on `mongodb://localhost:27017`
+- Docker Desktop (recommended for full stack run)
 
 ## Backend Run
 
@@ -56,6 +57,28 @@ npm run dev -- --host 0.0.0.0 --port 5173
 
 Frontend URL:
 - App: `http://localhost:5173`
+
+## Docker Deployment (Primary)
+
+Run the complete stack from repo root:
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Verify:
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:5173
+```
+
+Stop stack:
+
+```bash
+docker compose down
+```
 
 ## Test Commands
 
@@ -93,7 +116,6 @@ npm run build
 - CORS-configured local origins
 - Security response headers (`X-Content-Type-Options`, `X-Frame-Options`, etc.)
 
-## Azure AKS Deployment
+## Kubernetes (Optional)
 
-- Migration guide: `docs/AZURE_AKS_MIGRATION.md`
-- One-command AKS migration script: `scripts/migrate_to_azure_aks.ps1`
+Base manifests are available in repo root as `k8s-*.yaml`.

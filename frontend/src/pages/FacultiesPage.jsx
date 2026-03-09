@@ -8,8 +8,8 @@ const filters = [
 const createFields = [
   { name: 'name', label: 'Faculty Name', required: true },
   { name: 'code', label: 'Faculty Code', required: true },
-  { name: 'university_name', label: 'University Name', defaultValue: 'Medi-Caps University' },
-  { name: 'university_code', label: 'University Code', defaultValue: 'MEDICAPS' }
+  { name: 'university_name', label: 'University Name', defaultValue: 'UM University' },
+  { name: 'university_code', label: 'University Code', defaultValue: 'UM' }
 ];
 
 const columns = [
@@ -20,5 +20,5 @@ const columns = [
 ];
 
 export default function FacultiesPage() {
-  return <EntityManager title="Faculties" endpoint="/faculties/" filters={filters} createFields={createFields} columns={columns} enableDelete />;
+  return <EntityManager title="Faculties" endpoint="/faculties/" filters={filters} createFields={createFields} columns={columns} enableEdit enableDelete />;
 }

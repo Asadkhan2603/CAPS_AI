@@ -7,6 +7,7 @@ import { apiClient } from '../services/apiClient';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { formatApiError } from '../utils/apiError';
+import { useAuthorizedImage } from '../hooks/useAuthorizedImage';
 
 const personalFields = [
   { name: 'full_name', label: 'Full Name' },
@@ -72,12 +73,7 @@ export default function ProfilePage() {
   });
   const fileInputRef = useRef(null);
 
-  const backendBaseUrl = useMemo(() => {
-    const base = apiClient.defaults.baseURL || '';
-    return base.replace(/\/api\/v1\/?$/, '');
-  }, []);
-
-  const avatarSrc = user?.avatar_url ? `${backendBaseUrl}${user.avatar_url}${user.avatar_updated_at ? `?v=${encodeURIComponent(user.avatar_updated_at)}` : ''}` : '';
+  const avatarSrc = useAuthorizedImage(user?.avatar_url, user?.avatar_updated_at);
 
   useEffect(() => {
     setForm(initialProfileForm(user));

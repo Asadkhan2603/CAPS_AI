@@ -55,11 +55,14 @@
 - Record DB backup/snapshot reference.
 - Record known warnings and mitigations.
 
-## 7. Azure AKS Checklist
+## 7. Docker Release Checklist
 
-- Confirm `az`, `kubectl`, `docker` are installed.
-- Run AKS migration script:
-  - `powershell -ExecutionPolicy Bypass -File scripts/migrate_to_azure_aks.ps1 ...`
-- Verify rendered manifests in `out/azure-manifests`.
-- Verify ACR image tags match deployed backend/frontend image refs.
-- Verify ingress DNS points to AKS load balancer endpoint.
+- Confirm Docker Desktop is running.
+- Rebuild and start stack:
+  - `docker compose up -d --build`
+- Verify containers:
+  - `docker compose ps`
+- Verify backend health:
+  - `GET http://localhost:8000/health`
+- Verify frontend:
+  - `http://localhost:5173`

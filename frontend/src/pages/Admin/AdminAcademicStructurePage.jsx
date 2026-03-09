@@ -9,7 +9,10 @@ const links = [
   { to: '/specializations', label: 'Specializations' },
   { to: '/batches', label: 'Batches' },
   { to: '/semesters', label: 'Semesters' },
-  { to: '/sections', label: 'Sections' }
+  { to: '/sections', label: 'Sections' },
+  { to: '/courses', label: 'Courses' },
+  { to: '/years', label: 'Years' },
+  { to: '/branches', label: 'Branches' }
 ];
 
 export default function AdminAcademicStructurePage() {
