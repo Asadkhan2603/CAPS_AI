@@ -19,3 +19,9 @@ Available scripts:
     - login + `/auth/me`
     - timetable shifts/lookups
     - student `/timetables/my`
+- `python scripts/migrate_academic_soft_delete.py`
+  - Dry-run migration for academic setup collections to canonical soft-delete metadata:
+    - `is_active`
+    - `deleted_at`
+    - `deleted_by`
+  - Run with `--apply` to persist the normalization.

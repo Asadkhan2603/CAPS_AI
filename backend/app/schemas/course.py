@@ -22,4 +22,6 @@ class CourseOut(BaseModel):
     code: str
     description: str | None = None
     is_active: bool = True
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
     created_at: datetime | None = None

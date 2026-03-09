@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission
+from app.core.soft_delete import build_restore_update, build_soft_deleted_query
 from app.services.audit import log_audit_event
 
 router = APIRouter()
@@ -40,19 +41,14 @@ async def list_recovery_items(
     data = {}
     for target in targets:
         rows = await db[target].find(
-            {
-                '$or': [
-                    {'is_deleted': True},
-                    {'$and': [{'is_active': False}, {'deleted_at': {'$ne': None}}]},
-                ]
-            }
+            build_soft_deleted_query(include_legacy_marker=True)
         ).limit(limit).to_list(length=limit)
 
         data[target] = [
             {
                 'id': str(item.get('_id')),
                 'name': item.get('name') or item.get('title') or item.get('full_name') or '-',
-                'is_deleted': bool(item.get('is_deleted', False)),
+                'is_deleted': item.get('deleted_at') is not None,
                 'is_active': item.get('is_active'),
                 'deleted_at': item.get('deleted_at'),
                 'deleted_by': item.get('deleted_by'),
@@ -84,15 +80,7 @@ async def restore_item(
 
     await db[collection].update_one(
         {'_id': obj_id},
-        {
-            '$set': {
-                'is_deleted': False,
-                'is_active': True,
-                'restored_at': datetime.now(timezone.utc),
-                'restored_by': str(current_user.get('_id')),
-            },
-            '$unset': {'deleted_at': '', 'deleted_by': ''},
-        },
+        build_restore_update(restored_by=str(current_user.get('_id'))),
     )
 
     await log_audit_event(

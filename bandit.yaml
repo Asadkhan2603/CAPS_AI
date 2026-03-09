@@ -1,0 +1,4 @@
+exclude_dirs:
+  - backend/tests
+  - backend/.venv
+  - frontend

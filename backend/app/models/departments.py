@@ -10,5 +10,7 @@ def department_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'university_name': document.get('university_name'),
         'university_code': document.get('university_code'),
         'is_active': document.get('is_active', True),
+        'deleted_at': document.get('deleted_at'),
+        'deleted_by': document.get('deleted_by'),
         'created_at': document.get('created_at'),
     }

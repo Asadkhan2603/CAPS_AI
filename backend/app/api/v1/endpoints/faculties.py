@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.faculties import faculty_public
 from app.schemas.faculty import FacultyCreate, FacultyOut, FacultyUpdate
+from app.services.audit import log_destructive_action_event
 
 router = APIRouter()
 
@@ -26,8 +28,7 @@ async def list_faculties(
             {"name": {"$regex": q, "$options": "i"}},
             {"code": {"$regex": q, "$options": "i"}},
         ]
-    if is_active is not None:
-        query["is_active"] = is_active
+    apply_is_active_filter(query, is_active)
     items = await db.faculties.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [FacultyOut(**faculty_public(item)) for item in items]
 
@@ -46,7 +47,7 @@ async def get_faculty(
 @router.post("/", response_model=FacultyOut, status_code=status.HTTP_201_CREATED)
 async def create_faculty(
     payload: FacultyCreate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("faculties.manage")),
 ) -> FacultyOut:
     normalized_code = payload.code.strip().upper()
     existing = await db.faculties.find_one({"code": normalized_code})
@@ -69,7 +70,7 @@ async def create_faculty(
 async def update_faculty(
     faculty_id: str,
     payload: FacultyUpdate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("faculties.manage")),
 ) -> FacultyOut:
     faculty_obj_id = parse_object_id(faculty_id)
     update_data = payload.model_dump(exclude_none=True)
@@ -86,7 +87,7 @@ async def update_faculty(
         update_data["university_code"] = update_data["university_code"].strip().upper()
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    result = await db.faculties.update_one({"_id": faculty_obj_id}, {"$set": update_data})
+    result = await db.faculties.update_one({"_id": faculty_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Faculty not found")
     updated = await db.faculties.find_one({"_id": faculty_obj_id})
@@ -96,12 +97,32 @@ async def update_faculty(
 @router.delete("/{faculty_id}")
 async def delete_faculty(
     faculty_id: str,
-    _current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("faculties.manage")),
 ) -> dict:
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="faculties.delete",
+        entity_type="faculty",
+        entity_id=faculty_id,
+        stage="requested",
+        detail="Faculty delete requested",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     result = await db.faculties.update_one(
         {"_id": parse_object_id(faculty_id), "is_active": True},
-        {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc)}},
+        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Faculty not found")
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="faculties.delete",
+        entity_type="faculty",
+        entity_id=faculty_id,
+        stage="completed",
+        detail="Faculty archived",
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {"message": "Faculty archived"}

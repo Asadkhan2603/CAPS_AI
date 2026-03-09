@@ -44,14 +44,81 @@ export const FEATURE_ACCESS = {
     allowedRoles: ['admin'],
     requiredAdminTypes: ['super_admin', 'admin']
   },
-  faculties: { allowedRoles: ['admin'] },
-  courses: { allowedRoles: ['admin'] },
-  programs: { allowedRoles: ['admin'] },
-  departments: { allowedRoles: ['admin'] },
-  specializations: { allowedRoles: ['admin'] },
-  branches: { allowedRoles: ['admin'] },
-  batches: { allowedRoles: ['admin'] },
-  years: { allowedRoles: ['admin'] },
-  semesters: { allowedRoles: ['admin'] },
-  sections: { allowedRoles: ['admin', 'teacher'] }
+  faculties: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin']
+  },
+  courses: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'],
+    deleteGovernance: {
+      enabled: true,
+      promptDescription: 'Course deletes are governance-gated. Provide the approved review_id before retrying the archive request.',
+      metadataFields: [
+        { name: 'reason', label: 'Delete Reason', placeholder: 'Why is this course being archived?' }
+      ]
+    }
+  },
+  programs: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'department_admin']
+  },
+  departments: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'],
+    deleteGovernance: {
+      enabled: true,
+      promptDescription: 'Department deletes require governance approval because related branches and dependent academic records may also be archived.',
+      metadataFields: [
+        { name: 'reason', label: 'Delete Reason', placeholder: 'Why is this department being archived?' },
+        { name: 'impact_note', label: 'Impact Note', placeholder: 'List dependent entities or migration notes' }
+      ]
+    }
+  },
+  specializations: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'department_admin']
+  },
+  branches: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'],
+    deleteGovernance: {
+      enabled: true,
+      promptDescription: 'Branch deletes require an approved governance review. Capture the business reason before retrying.',
+      metadataFields: [
+        { name: 'reason', label: 'Delete Reason', placeholder: 'Why is this branch being archived?' }
+      ]
+    }
+  },
+  batches: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'department_admin']
+  },
+  years: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'],
+    deleteGovernance: {
+      enabled: true,
+      promptDescription: 'Year deletes are protected by governance review because downstream academic assignments may depend on them.',
+      metadataFields: [
+        { name: 'reason', label: 'Delete Reason', placeholder: 'Why is this year record being archived?' }
+      ]
+    }
+  },
+  semesters: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'department_admin']
+  },
+  sections: {
+    allowedRoles: ['admin', 'teacher'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'department_admin'],
+    deleteGovernance: {
+      enabled: true,
+      promptDescription: 'Section deletes require governance approval before the archive can proceed.',
+      metadataFields: [
+        { name: 'reason', label: 'Delete Reason', placeholder: 'Why is this section being archived?' },
+        { name: 'replacement_section', label: 'Replacement Section', placeholder: 'Optional replacement section or migration target' }
+      ]
+    }
+  }
 };

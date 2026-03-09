@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.services.audit import log_destructive_action_event
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -94,7 +98,9 @@ async def approve_admin_review(*, review_id: str, approver_id: str, approve: boo
         },
     )
     updated = await db.admin_action_reviews.find_one({"_id": row["_id"]})
-    return updated or row
+    if updated:
+        return cast(dict[str, Any], updated)
+    return cast(dict[str, Any], row)
 
 
 async def enforce_review_approval(
@@ -105,9 +111,31 @@ async def enforce_review_approval(
     entity_type: str,
     entity_id: str | None,
     review_type: str = "destructive",
-) -> None:
+) -> bool:
+    actor_user_id = str(current_user.get("_id") or "") or None
+
+    async def _log_blocked(detail: str, *, review_status: str | None = None) -> None:
+        await log_destructive_action_event(
+            actor_user_id=actor_user_id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            stage="governance_blocked",
+            detail=detail,
+            review_id=review_id,
+            governance_required=True,
+            governance_completed=False,
+            outcome="blocked",
+            metadata={
+                "review_type": review_type,
+                "review_status": review_status,
+                "admin_type": current_user.get("admin_type"),
+            },
+            severity="high",
+        )
+
     if current_user.get("role") != "admin":
-        return
+        return False
 
     policy = await get_governance_policy()
     if review_type == "role_change":
@@ -115,27 +143,44 @@ async def enforce_review_approval(
     else:
         enabled = policy.get("two_person_rule_enabled", False)
     if not enabled:
-        return
+        return False
 
     if not review_id:
+        await _log_blocked("Governance approval required but review_id missing", review_status="missing_review_id")
+        logger.warning(
+            "Governance approval required but review_id missing",
+            extra={
+                "review_type": review_type,
+                "action": action,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "current_user_id": str(current_user.get("_id") or ""),
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Approval required: provide review_id for {review_type} action",
+            detail="Governance approval required. Provide an approved review_id before completing this action.",
         )
 
     review = await db.admin_action_reviews.find_one({"_id": parse_object_id(review_id)})
     if not review:
+        await _log_blocked("Approval review not found", review_status="not_found")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval review not found")
     if review.get("status") != "approved":
+        await _log_blocked("Approval review is not approved", review_status=str(review.get("status") or "unknown"))
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Approval review is not approved")
     if review.get("requested_by") == str(current_user.get("_id")):
+        await _log_blocked("Two-person rule violation", review_status="self_approval_blocked")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Two-person rule violation")
 
     if review.get("review_type") != review_type:
+        await _log_blocked("Approval type mismatch", review_status="type_mismatch")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Approval type mismatch")
     if review.get("action") != action or review.get("entity_type") != entity_type:
+        await _log_blocked("Approval scope mismatch", review_status="scope_mismatch")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Approval scope mismatch")
     if entity_id and review.get("entity_id") and review.get("entity_id") != entity_id:
+        await _log_blocked("Approval entity mismatch", review_status="entity_mismatch")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Approval entity mismatch")
 
     await db.admin_action_reviews.update_one(
@@ -149,3 +194,22 @@ async def enforce_review_approval(
             }
         },
     )
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        stage="governance_completed",
+        detail="Governance review executed for destructive action",
+        review_id=review_id,
+        governance_required=True,
+        governance_completed=True,
+        outcome="approved",
+        metadata={
+            "review_type": review_type,
+            "review_status": "executed",
+            "admin_type": current_user.get("admin_type"),
+        },
+        severity="medium",
+    )
+    return True

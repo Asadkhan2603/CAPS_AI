@@ -1,26 +1,34 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.batches import batch_public
 from app.schemas.batch import BatchCreate, BatchOut, BatchUpdate
+from app.services.audit import log_destructive_action_event
 
 router = APIRouter()
 
 
-def _normalize_program_duration(program: dict) -> tuple[int, int]:
+def _normalize_program_duration(program: dict[str, Any]) -> tuple[int, int]:
     try:
-        duration_years = int(program.get("duration_years"))
+        raw_duration_years = program.get("duration_years")
+        if raw_duration_years is None:
+            raise TypeError
+        duration_years = int(raw_duration_years)
     except (TypeError, ValueError):
         duration_years = 4
     duration_years = max(3, min(5, duration_years))
 
     try:
-        total_semesters = int(program.get("total_semesters"))
+        raw_total_semesters = program.get("total_semesters")
+        if raw_total_semesters is None:
+            raise TypeError
+        total_semesters = int(raw_total_semesters)
     except (TypeError, ValueError):
         total_semesters = duration_years * 2
     if total_semesters <= 0:
@@ -38,7 +46,7 @@ async def list_batches(
     limit: int = Query(default=20, ge=1, le=100),
     _current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> List[BatchOut]:
-    query = {}
+    query: dict[str, Any] = {}
     if program_id:
         query["program_id"] = program_id
     if specialization_id:
@@ -48,8 +56,7 @@ async def list_batches(
             {"name": {"$regex": q, "$options": "i"}},
             {"code": {"$regex": q, "$options": "i"}},
         ]
-    if is_active is not None:
-        query["is_active"] = is_active
+    apply_is_active_filter(query, is_active)
     items = await db.batches.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [BatchOut(**batch_public(item)) for item in items]
 
@@ -68,7 +75,7 @@ async def get_batch(
 @router.post("/", response_model=BatchOut, status_code=status.HTTP_201_CREATED)
 async def create_batch(
     payload: BatchCreate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("batches.manage")),
 ) -> BatchOut:
     program = await db.programs.find_one({"_id": parse_object_id(payload.program_id)})
     if not program:
@@ -136,7 +143,7 @@ async def create_batch(
 async def update_batch(
     batch_id: str,
     payload: BatchUpdate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("batches.manage")),
 ) -> BatchOut:
     batch_obj_id = parse_object_id(batch_id)
     current = await db.batches.find_one({"_id": batch_obj_id})
@@ -161,7 +168,7 @@ async def update_batch(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Specialization not found for provided specialization_id")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    result = await db.batches.update_one({"_id": batch_obj_id}, {"$set": update_data})
+    result = await db.batches.update_one({"_id": batch_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
     updated = await db.batches.find_one({"_id": batch_obj_id})
@@ -171,12 +178,32 @@ async def update_batch(
 @router.delete("/{batch_id}")
 async def delete_batch(
     batch_id: str,
-    _current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("batches.manage")),
 ) -> dict:
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="batches.delete",
+        entity_type="batch",
+        entity_id=batch_id,
+        stage="requested",
+        detail="Batch delete requested",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     result = await db.batches.update_one(
         {"_id": parse_object_id(batch_id), "is_active": True},
-        {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc)}},
+        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="batches.delete",
+        entity_type="batch",
+        entity_id=batch_id,
+        stage="completed",
+        detail="Batch archived",
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {"message": "Batch archived"}

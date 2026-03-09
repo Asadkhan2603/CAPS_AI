@@ -58,5 +58,15 @@ export default function YearsPage() {
     [courseNameById]
   );
 
-  return <EntityManager title="Years" endpoint="/years/" filters={filters} createFields={createFields} columns={columns} enableDelete />;
+  return (
+    <EntityManager
+      title="Years"
+      endpoint="/years/"
+      filters={filters}
+      createFields={createFields}
+      columns={columns}
+      enableDelete
+      deleteReviewEnabled
+    />
+  );
 }

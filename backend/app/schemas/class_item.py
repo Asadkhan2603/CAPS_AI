@@ -49,4 +49,6 @@ class ClassOut(BaseModel):
     branch_name: str | None = None
     class_coordinator_user_id: str | None = None
     is_active: bool = True
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
     created_at: datetime | None = None

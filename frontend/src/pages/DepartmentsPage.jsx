@@ -40,7 +40,9 @@ export default function DepartmentsPage() {
     () => [
       { name: 'name', label: 'Department Name', required: true },
       { name: 'code', label: 'Department Code', required: true },
-      { name: 'faculty_id', label: 'Faculty', type: 'select', options: facultyOptions, nullable: true }
+      { name: 'faculty_id', label: 'Faculty', type: 'select', options: facultyOptions, nullable: true },
+      { name: 'university_name', label: 'University Name', defaultValue: 'UM University', nullable: true },
+      { name: 'university_code', label: 'University Code', defaultValue: 'UM', nullable: true }
     ],
     [facultyOptions]
   );
@@ -50,6 +52,7 @@ export default function DepartmentsPage() {
       { key: 'name', label: 'Department' },
       { key: 'code', label: 'Code' },
       { key: 'faculty_id', label: 'Faculty', render: (row) => facultyNameById[row.faculty_id] || '-' },
+      { key: 'university_name', label: 'University', render: (row) => row.university_name || '-' },
       { key: 'is_active', label: 'Active', render: (row) => (row.is_active ? 'Yes' : 'No') }
     ],
     [facultyNameById]
@@ -62,7 +65,9 @@ export default function DepartmentsPage() {
       filters={filters}
       createFields={createFields}
       columns={columns}
+      enableEdit
       enableDelete
+      deleteReviewEnabled
     />
   );
 }

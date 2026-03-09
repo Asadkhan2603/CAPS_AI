@@ -2,11 +2,124 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import Card from './Card';
 import FormInput from './FormInput';
+import Modal from './Modal';
 import SearchableSelect from './SearchableSelect';
 import Table from './Table';
+import { FEATURE_ACCESS } from '../../config/featureAccess';
 import { apiClient } from '../../services/apiClient';
 import { useToast } from '../../hooks/useToast';
 import { formatApiError } from '../../utils/apiError';
+
+const DEFAULT_DELETE_REVIEW_CONFIG = {
+  enabled: false,
+  label: 'Approved Review ID',
+  placeholder: 'Enter review_id when governance approval is required',
+  helpText:
+    'Governance-gated deletes require an approved review_id. If the two-person rule is enabled, delete requests without this value will be rejected.',
+  promptTitle: 'Governance Review Required',
+  promptDescription:
+    'This delete operation requires an approved governance review. Enter the approved review_id and any supporting metadata before retrying the delete.',
+  metadataFields: []
+};
+
+function getFeatureKeyFromPath(...paths) {
+  const rawPath = paths.find(Boolean);
+  if (!rawPath) return null;
+
+  const segments = String(rawPath).split('?')[0].split('/').filter(Boolean);
+  const key = segments.at(-1) || null;
+  if (key === 'classes') return 'sections';
+  return key;
+}
+
+function buildInitialReviewMetadata(fields = []) {
+  return fields.reduce((acc, field) => {
+    acc[field.name] = field.defaultValue ?? '';
+    return acc;
+  }, {});
+}
+
+function extractReviewRequirement(err, fallbackMessage) {
+  const data = err?.response?.data ?? {};
+  const detail = data?.detail;
+  const errorDetail = data?.error?.detail;
+  const explicitFlag =
+    data?.delete_requires_review ??
+    data?.error?.delete_requires_review ??
+    detail?.delete_requires_review ??
+    errorDetail?.delete_requires_review;
+
+  let required = false;
+  let overrides = {};
+
+  if (typeof explicitFlag === 'boolean') {
+    required = explicitFlag;
+  } else if (explicitFlag && typeof explicitFlag === 'object') {
+    required = explicitFlag.required ?? true;
+    overrides = explicitFlag;
+  }
+
+  const textualHints = [
+    fallbackMessage,
+    data?.message,
+    data?.error?.message,
+    typeof detail === 'string' ? detail : null,
+    typeof errorDetail === 'string' ? errorDetail : null
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (!required) {
+    required =
+      textualHints.includes('review_id') ||
+      textualHints.includes('approval required') ||
+      textualHints.includes('governance approval');
+  }
+
+  if (!required) {
+    return { required: false, overrides: {} };
+  }
+
+  const detailObject = typeof detail === 'object' && detail !== null ? detail : {};
+  const errorDetailObject = typeof errorDetail === 'object' && errorDetail !== null ? errorDetail : {};
+
+  return {
+    required: true,
+    overrides: {
+      label:
+        overrides.label ??
+        data?.review_id_label ??
+        detailObject.review_id_label ??
+        errorDetailObject.review_id_label,
+      placeholder:
+        overrides.placeholder ??
+        data?.review_id_placeholder ??
+        detailObject.review_id_placeholder ??
+        errorDetailObject.review_id_placeholder,
+      helpText:
+        overrides.helpText ??
+        data?.review_help_text ??
+        detailObject.review_help_text ??
+        errorDetailObject.review_help_text,
+      promptTitle:
+        overrides.promptTitle ??
+        data?.review_prompt_title ??
+        detailObject.review_prompt_title ??
+        errorDetailObject.review_prompt_title,
+      promptDescription:
+        overrides.promptDescription ??
+        data?.review_prompt_description ??
+        detailObject.review_prompt_description ??
+        errorDetailObject.review_prompt_description,
+      metadataFields:
+        overrides.metadataFields ??
+        data?.review_metadata_fields ??
+        detailObject.review_metadata_fields ??
+        errorDetailObject.review_metadata_fields
+    }
+  };
+}
 
 export default function EntityManager({
   title,
@@ -15,6 +128,7 @@ export default function EntityManager({
   createEndpoint,
   updateEndpoint,
   deleteEndpoint,
+  featureKey,
   filters = [],
   createFields = [],
   editFields,
@@ -25,6 +139,13 @@ export default function EntityManager({
   enableDelete = false,
   enableEdit = false,
   hideCreate = false,
+  deleteReviewEnabled = false,
+  deleteReviewLabel,
+  deleteReviewPlaceholder,
+  deleteReviewHelpText,
+  deleteReviewPromptTitle,
+  deleteReviewPromptDescription,
+  deleteReviewMetadataFields,
   rowActions = []
 }) {
   const ensureTrailingSlash = (path) => `${String(path || '').replace(/\/+$/, '')}/`;
@@ -32,11 +153,45 @@ export default function EntityManager({
   const createPath = ensureTrailingSlash(createEndpoint || endpoint);
   const updatePath = ensureTrailingSlash(updateEndpoint || endpoint);
   const deletePath = (deleteEndpoint || listEndpoint || endpoint).replace(/\/+$/, '');
+  const resolvedFeatureKey = featureKey || getFeatureKeyFromPath(deleteEndpoint, listEndpoint, endpoint);
+  const configuredDeleteGovernance = FEATURE_ACCESS[resolvedFeatureKey]?.deleteGovernance || {};
+  const deleteReviewConfig = useMemo(() => {
+    const merged = {
+      ...DEFAULT_DELETE_REVIEW_CONFIG,
+      ...configuredDeleteGovernance,
+      ...(deleteReviewEnabled ? { enabled: true } : {}),
+      ...(deleteReviewLabel ? { label: deleteReviewLabel } : {}),
+      ...(deleteReviewPlaceholder ? { placeholder: deleteReviewPlaceholder } : {}),
+      ...(deleteReviewHelpText ? { helpText: deleteReviewHelpText } : {}),
+      ...(deleteReviewPromptTitle ? { promptTitle: deleteReviewPromptTitle } : {}),
+      ...(deleteReviewPromptDescription ? { promptDescription: deleteReviewPromptDescription } : {}),
+      ...(deleteReviewMetadataFields ? { metadataFields: deleteReviewMetadataFields } : {})
+    };
+
+    merged.metadataFields = Array.isArray(merged.metadataFields) ? merged.metadataFields : [];
+    merged.enabled = Boolean(merged.enabled);
+    return merged;
+  }, [
+    configuredDeleteGovernance,
+    deleteReviewEnabled,
+    deleteReviewHelpText,
+    deleteReviewLabel,
+    deleteReviewMetadataFields,
+    deleteReviewPlaceholder,
+    deleteReviewPromptDescription,
+    deleteReviewPromptTitle
+  ]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(pageSizeOptions[1] ?? 10);
   const [error, setError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteReviewId, setDeleteReviewId] = useState('');
+  const [deleteReviewMetadata, setDeleteReviewMetadata] = useState(() => buildInitialReviewMetadata(deleteReviewConfig.metadataFields));
+  const [deleteReviewPromptOpen, setDeleteReviewPromptOpen] = useState(false);
+  const [deleteReviewTarget, setDeleteReviewTarget] = useState(null);
+  const [deleteReviewPromptConfig, setDeleteReviewPromptConfig] = useState(deleteReviewConfig);
   const [editingRowId, setEditingRowId] = useState(null);
   const { pushToast } = useToast();
 
@@ -80,6 +235,19 @@ export default function EntityManager({
   useEffect(() => {
     setCreateValues(initialCreateState);
   }, [initialCreateState]);
+
+  useEffect(() => {
+    setDeleteReviewPromptConfig(deleteReviewConfig);
+    setDeleteReviewMetadata((prev) => {
+      const next = buildInitialReviewMetadata(deleteReviewConfig.metadataFields);
+      for (const key of Object.keys(next)) {
+        if (prev[key] !== undefined) {
+          next[key] = prev[key];
+        }
+      }
+      return next;
+    });
+  }, [deleteReviewConfig]);
 
   async function loadData() {
     setLoading(true);
@@ -256,14 +424,75 @@ export default function EntityManager({
     }
   }
 
-  async function onDelete(row) {
+  function closeDeleteReviewPrompt() {
+    setDeleteReviewPromptOpen(false);
+    setDeleteReviewTarget(null);
+    setDeleteReviewPromptConfig(deleteReviewConfig);
+  }
+
+  function buildDeleteConfig(reviewId = deleteReviewId, metadata = deleteReviewMetadata) {
+    const trimmedReviewId = String(reviewId || '').trim();
+    const normalizedMetadata = Object.entries(metadata || {}).reduce((acc, [key, value]) => {
+      if (value !== '' && value !== null && value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+
+    const params = {};
+    if (trimmedReviewId) {
+      params.review_id = trimmedReviewId;
+    }
+    if (Object.keys(normalizedMetadata).length > 0) {
+      params.review_metadata = JSON.stringify(normalizedMetadata);
+    }
+
+    return Object.keys(params).length ? { params } : undefined;
+  }
+
+  async function onDelete(row, options = {}) {
+    const { reviewId = deleteReviewId, metadata = deleteReviewMetadata } = options;
+    const trimmedReviewId = String(reviewId || '').trim();
+    const deleteConfig = buildDeleteConfig(reviewId, metadata);
     try {
-      await apiClient.delete(`${deletePath}/${row.id}`);
+      setDeleteError('');
+      await apiClient.delete(`${deletePath}/${row.id}`, deleteConfig);
+      setDeleteError('');
       pushToast({ title: 'Deleted', description: `${title.slice(0, -1)} removed.`, variant: 'success' });
+      closeDeleteReviewPrompt();
       await loadData();
     } catch (err) {
       const message = formatApiError(err, `Failed to delete ${title.toLowerCase()}`);
-      pushToast({ title: 'Delete failed', description: message, variant: 'error' });
+      const governanceState = extractReviewRequirement(err, message);
+
+      if (governanceState.required) {
+        console.warn(`[EntityManager:${title}] delete blocked by governance approval`, {
+          rowId: row.id,
+          reviewId: trimmedReviewId || null,
+          reviewMetadata: metadata,
+          message,
+        });
+        setDeleteReviewTarget(row);
+        setDeleteReviewPromptConfig((prev) => ({
+          ...prev,
+          ...governanceState.overrides,
+          metadataFields: Array.isArray(governanceState.overrides.metadataFields)
+            ? governanceState.overrides.metadataFields
+            : prev.metadataFields
+        }));
+        setDeleteReviewPromptOpen(true);
+        pushToast({ title: 'Governance approval required', description: message, variant: 'warning' });
+      } else {
+        console.error(`[EntityManager:${title}] delete failed`, {
+          rowId: row.id,
+          reviewId: trimmedReviewId || null,
+          reviewMetadata: metadata,
+          message,
+        });
+        pushToast({ title: 'Delete failed', description: message, variant: 'error' });
+      }
+
+      setDeleteError(message);
     }
   }
 
@@ -435,8 +664,23 @@ export default function EntityManager({
             </div>
           </div>
 
+          {enableDelete && deleteReviewConfig.enabled ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
+                <p>{deleteReviewConfig.helpText}</p>
+                <FormInput
+                  label={deleteReviewConfig.label}
+                  value={deleteReviewId}
+                  placeholder={deleteReviewConfig.placeholder}
+                  onChange={(e) => setDeleteReviewId(e.target.value)}
+                />
+              </div>
+            </div>
+          ) : null}
+
           {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+          {deleteError ? <p className="text-sm text-rose-600">{deleteError}</p> : null}
           <Table
             columns={columns}
             data={rows}
@@ -456,6 +700,65 @@ export default function EntityManager({
           />
         </Card>
       </motion.div>
+
+      <Modal open={deleteReviewPromptOpen} title={deleteReviewPromptConfig.promptTitle} onClose={closeDeleteReviewPrompt}>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-slate-600 dark:text-slate-300">{deleteReviewPromptConfig.promptDescription}</p>
+            {deleteReviewTarget ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                Pending delete target: <span className="font-medium">{deleteReviewTarget.name || deleteReviewTarget.code || deleteReviewTarget.id}</span>
+              </div>
+            ) : null}
+            {deleteError ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {deleteError}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormInput
+              label={deleteReviewPromptConfig.label}
+              value={deleteReviewId}
+              placeholder={deleteReviewPromptConfig.placeholder}
+              onChange={(e) => setDeleteReviewId(e.target.value)}
+            />
+            {deleteReviewPromptConfig.metadataFields.map((field) => (
+              <FormInput
+                key={field.name}
+                label={field.label}
+                type={field.type || 'text'}
+                value={deleteReviewMetadata[field.name] ?? ''}
+                placeholder={field.placeholder}
+                required={field.required}
+                onChange={(e) =>
+                  setDeleteReviewMetadata((prev) => ({
+                    ...prev,
+                    [field.name]: e.target.value
+                  }))
+                }
+              />
+            ))}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={closeDeleteReviewPrompt}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                if (!deleteReviewTarget) return;
+                onDelete(deleteReviewTarget, { reviewId: deleteReviewId, metadata: deleteReviewMetadata });
+              }}
+            >
+              Retry Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

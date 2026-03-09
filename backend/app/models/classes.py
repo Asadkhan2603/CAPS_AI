@@ -17,5 +17,7 @@ def class_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'branch_name': document.get('branch_name'),
         'class_coordinator_user_id': document.get('class_coordinator_user_id'),
         'is_active': document.get('is_active', True),
+        'deleted_at': document.get('deleted_at'),
+        'deleted_by': document.get('deleted_by'),
         'created_at': document.get('created_at'),
     }

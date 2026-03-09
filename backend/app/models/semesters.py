@@ -8,5 +8,7 @@ def semester_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "semester_number": document.get("semester_number"),
         "label": document.get("label", ""),
         "is_active": document.get("is_active", True),
+        "deleted_at": document.get("deleted_at"),
+        "deleted_by": document.get("deleted_by"),
         "created_at": document.get("created_at"),
     }

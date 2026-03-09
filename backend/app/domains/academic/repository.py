@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from app.core.database import db as core_db
+from app.core.soft_delete import build_soft_delete_update
 
 
 class CourseRepository:
@@ -27,18 +28,11 @@ class CourseRepository:
     async def create_course(self, document: dict[str, Any]):
         return await self._db.courses.insert_one(document)
 
-    async def update_course(self, course_obj_id, set_data: dict[str, Any]):
-        return await self._db.courses.update_one({"_id": course_obj_id}, {"$set": set_data})
+    async def update_course(self, course_obj_id, update_data: dict[str, Any]):
+        return await self._db.courses.update_one({"_id": course_obj_id}, update_data)
 
     async def archive_course(self, course_obj_id, *, deleted_by: str, deleted_at: datetime):
         return await self._db.courses.update_one(
             {"_id": course_obj_id, "is_active": True},
-            {
-                "$set": {
-                    "is_active": False,
-                    "is_deleted": True,
-                    "deleted_at": deleted_at,
-                    "deleted_by": deleted_by,
-                }
-            },
+            build_soft_delete_update(deleted_by=deleted_by, deleted_at=deleted_at),
         )

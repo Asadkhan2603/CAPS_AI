@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.years import year_public
 from app.schemas.year import YearCreate, YearOut, YearUpdate
+from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
 
 router = APIRouter()
@@ -23,15 +25,14 @@ async def list_years(
     limit: int = Query(default=20, ge=1, le=100),
     _current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> List[YearOut]:
-    query = {}
+    query: dict[str, Any] = {}
     if course_id:
         query['course_id'] = course_id
     if year_number is not None:
         query['year_number'] = year_number
     if q:
         query['label'] = {'$regex': q, '$options': 'i'}
-    if is_active is not None:
-        query['is_active'] = is_active
+    apply_is_active_filter(query, is_active)
 
     cursor = db.years.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
@@ -52,7 +53,7 @@ async def get_year(
 @router.post('/', response_model=YearOut, status_code=status.HTTP_201_CREATED)
 async def create_year(
     payload: YearCreate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("years.manage")),
 ) -> YearOut:
     course = await db.courses.find_one({'_id': parse_object_id(payload.course_id)})
     if not course:
@@ -74,6 +75,8 @@ async def create_year(
     }
     result = await db.years.insert_one(document)
     created = await db.years.find_one({'_id': result.inserted_id})
+    if not created:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Year creation failed')
     return YearOut(**year_public(created))
 
 
@@ -81,7 +84,7 @@ async def create_year(
 async def update_year(
     year_id: str,
     payload: YearUpdate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("years.manage")),
 ) -> YearOut:
     year_obj_id = parse_object_id(year_id)
     current = await db.years.find_one({'_id': year_obj_id})
@@ -106,10 +109,12 @@ async def update_year(
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
-    result = await db.years.update_one({'_id': year_obj_id}, {'$set': update_data})
+    result = await db.years.update_one({'_id': year_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Year not found')
     updated = await db.years.find_one({'_id': year_obj_id})
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Year not found')
     return YearOut(**year_public(updated))
 
 
@@ -117,19 +122,42 @@ async def update_year(
 async def delete_year(
     year_id: str,
     review_id: str | None = Query(default=None),
-    current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("years.manage")),
 ) -> dict:
-    await enforce_review_approval(
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="years.delete",
+        entity_type="year",
+        entity_id=year_id,
+        stage="requested",
+        detail="Year delete requested",
+        review_id=review_id,
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
+    governance_completed = bool(await enforce_review_approval(
         current_user=current_user,
         review_id=review_id,
         action="years.delete",
         entity_type="year",
         entity_id=year_id,
-    )
+    ))
     result = await db.years.update_one(
         {'_id': parse_object_id(year_id), 'is_active': True},
-        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},
+        build_soft_delete_update(deleted_by=str(current_user.get('_id'))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Year not found')
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="years.delete",
+        entity_type="year",
+        entity_id=year_id,
+        stage="completed",
+        detail="Year archived",
+        review_id=review_id,
+        governance_completed=governance_completed,
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {'message': 'Year archived'}

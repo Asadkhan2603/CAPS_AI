@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.specializations import specialization_public
 from app.schemas.specialization import SpecializationCreate, SpecializationOut, SpecializationUpdate
+from app.services.audit import log_destructive_action_event
 
 router = APIRouter()
 
@@ -21,7 +23,7 @@ async def list_specializations(
     limit: int = Query(default=20, ge=1, le=100),
     _current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> List[SpecializationOut]:
-    query = {}
+    query: dict[str, Any] = {}
     if program_id:
         query["program_id"] = program_id
     if q:
@@ -29,8 +31,7 @@ async def list_specializations(
             {"name": {"$regex": q, "$options": "i"}},
             {"code": {"$regex": q, "$options": "i"}},
         ]
-    if is_active is not None:
-        query["is_active"] = is_active
+    apply_is_active_filter(query, is_active)
     items = await db.specializations.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [SpecializationOut(**specialization_public(item)) for item in items]
 
@@ -49,7 +50,7 @@ async def get_specialization(
 @router.post("/", response_model=SpecializationOut, status_code=status.HTTP_201_CREATED)
 async def create_specialization(
     payload: SpecializationCreate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("specializations.manage")),
 ) -> SpecializationOut:
     program = await db.programs.find_one({"_id": parse_object_id(payload.program_id)})
     if not program:
@@ -75,7 +76,7 @@ async def create_specialization(
 async def update_specialization(
     specialization_id: str,
     payload: SpecializationUpdate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("specializations.manage")),
 ) -> SpecializationOut:
     specialization_obj_id = parse_object_id(specialization_id)
     update_data = payload.model_dump(exclude_none=True)
@@ -92,7 +93,7 @@ async def update_specialization(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program not found for provided program_id")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    result = await db.specializations.update_one({"_id": specialization_obj_id}, {"$set": update_data})
+    result = await db.specializations.update_one({"_id": specialization_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specialization not found")
     updated = await db.specializations.find_one({"_id": specialization_obj_id})
@@ -102,12 +103,32 @@ async def update_specialization(
 @router.delete("/{specialization_id}")
 async def delete_specialization(
     specialization_id: str,
-    _current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("specializations.manage")),
 ) -> dict:
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="specializations.delete",
+        entity_type="specialization",
+        entity_id=specialization_id,
+        stage="requested",
+        detail="Specialization delete requested",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     result = await db.specializations.update_one(
         {"_id": parse_object_id(specialization_id), "is_active": True},
-        {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc)}},
+        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specialization not found")
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="specializations.delete",
+        entity_type="specialization",
+        entity_id=specialization_id,
+        stage="completed",
+        detail="Specialization archived",
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {"message": "Specialization archived"}

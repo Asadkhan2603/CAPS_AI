@@ -1,20 +1,21 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.programs import program_public
 from app.schemas.program import ProgramCreate, ProgramOut, ProgramUpdate
+from app.services.audit import log_destructive_action_event
 
 router = APIRouter()
 
 MIN_DURATION_YEARS = 3
 MAX_DURATION_YEARS = 5
 SEMESTERS_PER_YEAR = 2
-PROGRAM_DURATION_EDITOR_ADMIN_TYPES = {"super_admin", "academic_admin", "department_admin"}
 
 
 def _validate_duration_years(duration_years: int) -> int:
@@ -29,23 +30,6 @@ def _validate_duration_years(duration_years: int) -> int:
             detail="Course duration cannot exceed 5 years.",
         )
     return int(duration_years)
-
-
-def _current_admin_type(current_user: dict) -> str:
-    return current_user.get("admin_type") or "admin"
-
-
-def _ensure_program_duration_editor(current_user: dict) -> None:
-    if current_user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super admin or department admin can configure course duration.",
-        )
-    if _current_admin_type(current_user) not in PROGRAM_DURATION_EDITOR_ADMIN_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super admin or department admin can configure course duration.",
-        )
 
 
 async def _program_has_enrolled_semester_students(program_id: str) -> bool:
@@ -109,7 +93,7 @@ async def list_programs(
     limit: int = Query(default=20, ge=1, le=100),
     _current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> List[ProgramOut]:
-    query = {}
+    query: dict[str, Any] = {}
     if department_id:
         query["department_id"] = department_id
     if q:
@@ -117,8 +101,7 @@ async def list_programs(
             {"name": {"$regex": q, "$options": "i"}},
             {"code": {"$regex": q, "$options": "i"}},
         ]
-    if is_active is not None:
-        query["is_active"] = is_active
+    apply_is_active_filter(query, is_active)
     items = await db.programs.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [ProgramOut(**program_public(item)) for item in items]
 
@@ -137,9 +120,8 @@ async def get_program(
 @router.post("/", response_model=ProgramOut, status_code=status.HTTP_201_CREATED)
 async def create_program(
     payload: ProgramCreate,
-    current_user=Depends(require_roles(["admin"])),
+    _current_user=Depends(require_permission("programs.manage")),
 ) -> ProgramOut:
-    _ensure_program_duration_editor(current_user)
     department = await db.departments.find_one({"_id": parse_object_id(payload.department_id)})
     if not department:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department not found for provided department_id")
@@ -167,9 +149,8 @@ async def create_program(
 async def update_program(
     program_id: str,
     payload: ProgramUpdate,
-    current_user=Depends(require_roles(["admin"])),
+    _current_user=Depends(require_permission("programs.manage")),
 ) -> ProgramOut:
-    _ensure_program_duration_editor(current_user)
     program_obj_id = parse_object_id(program_id)
     current = await db.programs.find_one({"_id": program_obj_id})
     if not current:
@@ -201,7 +182,7 @@ async def update_program(
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    result = await db.programs.update_one({"_id": program_obj_id}, {"$set": update_data})
+    result = await db.programs.update_one({"_id": program_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
     updated = await db.programs.find_one({"_id": program_obj_id})
@@ -213,12 +194,32 @@ async def update_program(
 @router.delete("/{program_id}")
 async def delete_program(
     program_id: str,
-    _current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("programs.manage")),
 ) -> dict:
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="programs.delete",
+        entity_type="program",
+        entity_id=program_id,
+        stage="requested",
+        detail="Program delete requested",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     result = await db.programs.update_one(
         {"_id": parse_object_id(program_id), "is_active": True},
-        {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc)}},
+        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="programs.delete",
+        entity_type="program",
+        entity_id=program_id,
+        stage="completed",
+        detail="Program archived",
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {"message": "Program archived"}

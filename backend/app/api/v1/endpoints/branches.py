@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.branches import branch_public
 from app.schemas.branch import BranchCreate, BranchOut, BranchUpdate
+from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
 
 router = APIRouter()
@@ -22,7 +24,7 @@ async def list_branches(
     limit: int = Query(default=20, ge=1, le=200),
     _current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> List[BranchOut]:
-    query = {}
+    query: dict[str, Any] = {}
     if department_code:
         query['department_code'] = department_code.strip().upper()
     if q:
@@ -31,8 +33,7 @@ async def list_branches(
             {'code': {'$regex': q, '$options': 'i'}},
             {'department_name': {'$regex': q, '$options': 'i'}},
         ]
-    if is_active is not None:
-        query['is_active'] = is_active
+    apply_is_active_filter(query, is_active)
 
     cursor = db.branches.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
@@ -53,7 +54,7 @@ async def get_branch(
 @router.post('/', response_model=BranchOut, status_code=status.HTTP_201_CREATED)
 async def create_branch(
     payload: BranchCreate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("branches.manage")),
 ) -> BranchOut:
     normalized_code = payload.code.strip().upper()
     normalized_department_code = payload.department_code.strip().upper()
@@ -78,6 +79,8 @@ async def create_branch(
     }
     result = await db.branches.insert_one(document)
     created = await db.branches.find_one({'_id': result.inserted_id})
+    if not created:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Branch creation failed')
     return BranchOut(**branch_public(created))
 
 
@@ -85,7 +88,7 @@ async def create_branch(
 async def update_branch(
     branch_id: str,
     payload: BranchUpdate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("branches.manage")),
 ) -> BranchOut:
     branch_obj_id = parse_object_id(branch_id)
     update_data = payload.model_dump(exclude_none=True)
@@ -109,10 +112,12 @@ async def update_branch(
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
-    result = await db.branches.update_one({'_id': branch_obj_id}, {'$set': update_data})
+    result = await db.branches.update_one({'_id': branch_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Branch not found')
     updated = await db.branches.find_one({'_id': branch_obj_id})
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Branch not found')
     return BranchOut(**branch_public(updated))
 
 
@@ -120,19 +125,42 @@ async def update_branch(
 async def delete_branch(
     branch_id: str,
     review_id: str | None = Query(default=None),
-    current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("branches.manage")),
 ) -> dict:
-    await enforce_review_approval(
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="branches.delete",
+        entity_type="branch",
+        entity_id=branch_id,
+        stage="requested",
+        detail="Branch delete requested",
+        review_id=review_id,
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
+    governance_completed = bool(await enforce_review_approval(
         current_user=current_user,
         review_id=review_id,
         action="branches.delete",
         entity_type="branch",
         entity_id=branch_id,
-    )
+    ))
     result = await db.branches.update_one(
         {'_id': parse_object_id(branch_id), 'is_active': True},
-        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},
+        build_soft_delete_update(deleted_by=str(current_user.get('_id'))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Branch not found')
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="branches.delete",
+        entity_type="branch",
+        entity_id=branch_id,
+        stage="completed",
+        detail="Branch archived",
+        review_id=review_id,
+        governance_completed=governance_completed,
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {'message': 'Branch archived'}

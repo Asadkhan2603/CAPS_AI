@@ -65,6 +65,7 @@ export default function BranchesPage() {
       createFields={createFields}
       columns={columns}
       enableDelete
+      deleteReviewEnabled
     />
   );
 }

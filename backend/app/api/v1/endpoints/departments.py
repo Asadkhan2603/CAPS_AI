@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.departments import department_public
 from app.schemas.department import DepartmentCreate, DepartmentOut, DepartmentUpdate
+from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
 
 router = APIRouter()
@@ -22,7 +24,7 @@ async def list_departments(
     limit: int = Query(default=20, ge=1, le=100),
     _current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> List[DepartmentOut]:
-    query = {}
+    query: dict[str, Any] = {}
     if faculty_id:
         query['faculty_id'] = faculty_id
     if q:
@@ -30,8 +32,7 @@ async def list_departments(
             {'name': {'$regex': q, '$options': 'i'}},
             {'code': {'$regex': q, '$options': 'i'}},
         ]
-    if is_active is not None:
-        query['is_active'] = is_active
+    apply_is_active_filter(query, is_active)
 
     cursor = db.departments.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
@@ -52,7 +53,7 @@ async def get_department(
 @router.post('/', response_model=DepartmentOut, status_code=status.HTTP_201_CREATED)
 async def create_department(
     payload: DepartmentCreate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("departments.manage")),
 ) -> DepartmentOut:
     if payload.faculty_id:
         faculty = await db.faculties.find_one({'_id': parse_object_id(payload.faculty_id)})
@@ -74,6 +75,8 @@ async def create_department(
     }
     result = await db.departments.insert_one(document)
     created = await db.departments.find_one({'_id': result.inserted_id})
+    if not created:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Department creation failed')
     return DepartmentOut(**department_public(created))
 
 
@@ -81,7 +84,7 @@ async def create_department(
 async def update_department(
     department_id: str,
     payload: DepartmentUpdate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("departments.manage")),
 ) -> DepartmentOut:
     department_obj_id = parse_object_id(department_id)
     current = await db.departments.find_one({'_id': department_obj_id})
@@ -96,6 +99,10 @@ async def update_department(
         duplicate = await db.departments.find_one({'code': update_data['code']})
         if duplicate and duplicate.get('_id') != department_obj_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Department code already exists')
+    if 'faculty_id' in update_data and update_data['faculty_id']:
+        faculty = await db.faculties.find_one({'_id': parse_object_id(update_data['faculty_id'])})
+        if not faculty:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Faculty not found for provided faculty_id')
     if 'university_name' in update_data and update_data['university_name']:
         update_data['university_name'] = update_data['university_name'].strip()
     if 'university_code' in update_data and update_data['university_code']:
@@ -103,11 +110,13 @@ async def update_department(
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
-    result = await db.departments.update_one({'_id': department_obj_id}, {'$set': update_data})
+    result = await db.departments.update_one({'_id': department_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Department not found')
 
     updated = await db.departments.find_one({'_id': department_obj_id})
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Department not found')
     if updated:
         branch_set = {'department_name': updated['name']}
         if updated.get('code') != current.get('code'):
@@ -123,15 +132,26 @@ async def update_department(
 async def delete_department(
     department_id: str,
     review_id: str | None = Query(default=None),
-    current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("departments.manage")),
 ) -> dict:
-    await enforce_review_approval(
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="departments.delete",
+        entity_type="department",
+        entity_id=department_id,
+        stage="requested",
+        detail="Department delete requested",
+        review_id=review_id,
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
+    governance_completed = bool(await enforce_review_approval(
         current_user=current_user,
         review_id=review_id,
         action="departments.delete",
         entity_type="department",
         entity_id=department_id,
-    )
+    ))
     department_obj_id = parse_object_id(department_id)
     department = await db.departments.find_one({'_id': department_obj_id})
     if not department:
@@ -139,16 +159,24 @@ async def delete_department(
 
     await db.branches.update_many(
         {'department_code': department.get('code')},
-        {'$set': {'is_active': False}},
+        build_soft_delete_update(deleted_by=str(current_user.get('_id'))),
     )
     result = await db.departments.update_one(
         {'_id': department_obj_id, 'is_active': True},
-        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},
+        build_soft_delete_update(deleted_by=str(current_user.get('_id'))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Department not found')
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="departments.delete",
+        entity_type="department",
+        entity_id=department_id,
+        stage="completed",
+        detail="Department archived",
+        review_id=review_id,
+        governance_completed=governance_completed,
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {'message': 'Department archived'}
-    if 'faculty_id' in update_data and update_data['faculty_id']:
-        faculty = await db.faculties.find_one({'_id': parse_object_id(update_data['faculty_id'])})
-        if not faculty:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Faculty not found for provided faculty_id')

@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.classes import class_public
 from app.schemas.class_item import ClassCreate, ClassOut, ClassUpdate
+from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
 
 router = APIRouter()
@@ -31,7 +33,7 @@ async def list_classes(
     limit: int = Query(default=20, ge=1, le=100),
     current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> List[ClassOut]:
-    query = {}
+    query: dict[str, Any] = {}
     if faculty_id:
         query['faculty_id'] = faculty_id
     if department_id:
@@ -54,8 +56,7 @@ async def list_classes(
         query['branch_name'] = branch_name
     if q:
         query['name'] = {'$regex': q, '$options': 'i'}
-    if is_active is not None:
-        query['is_active'] = is_active
+    apply_is_active_filter(query, is_active)
     if current_user.get('role') == 'teacher':
         query['class_coordinator_user_id'] = str(current_user.get('_id'))
         query.setdefault('is_active', True)
@@ -82,7 +83,7 @@ async def get_class(
 @router.post('/', response_model=ClassOut, status_code=status.HTTP_201_CREATED)
 async def create_class(
     payload: ClassCreate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("sections.manage")),
 ) -> ClassOut:
     if payload.faculty_id:
         faculty = await db.faculties.find_one({'_id': parse_object_id(payload.faculty_id)})
@@ -150,6 +151,8 @@ async def create_class(
     }
     result = await db.classes.insert_one(document)
     created = await db.classes.find_one({'_id': result.inserted_id})
+    if not created:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Class creation failed')
     return ClassOut(**class_public(created))
 
 
@@ -157,7 +160,7 @@ async def create_class(
 async def update_class(
     class_id: str,
     payload: ClassUpdate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("sections.manage")),
 ) -> ClassOut:
     class_obj_id = parse_object_id(class_id)
     current = await db.classes.find_one({'_id': class_obj_id})
@@ -234,10 +237,12 @@ async def update_class(
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
-    result = await db.classes.update_one({'_id': class_obj_id}, {'$set': update_data})
+    result = await db.classes.update_one({'_id': class_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
     updated = await db.classes.find_one({'_id': class_obj_id})
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
     return ClassOut(**class_public(updated))
 
 
@@ -245,19 +250,42 @@ async def update_class(
 async def delete_class(
     class_id: str,
     review_id: str | None = Query(default=None),
-    current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("sections.manage")),
 ) -> dict:
-    await enforce_review_approval(
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="classes.delete",
+        entity_type="class",
+        entity_id=class_id,
+        stage="requested",
+        detail="Class delete requested",
+        review_id=review_id,
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
+    governance_completed = bool(await enforce_review_approval(
         current_user=current_user,
         review_id=review_id,
         action="classes.delete",
         entity_type="class",
         entity_id=class_id,
-    )
+    ))
     result = await db.classes.update_one(
         {'_id': parse_object_id(class_id), 'is_active': True},
-        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user.get('_id'))}},
+        build_soft_delete_update(deleted_by=str(current_user.get('_id'))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="classes.delete",
+        entity_type="class",
+        entity_id=class_id,
+        stage="completed",
+        detail="Class archived",
+        review_id=review_id,
+        governance_completed=governance_completed,
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {'message': 'Class archived'}

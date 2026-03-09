@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission, require_roles
+from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.semesters import semester_public
 from app.schemas.semester_item import SemesterCreate, SemesterOut, SemesterUpdate
+from app.services.audit import log_destructive_action_event
 
 router = APIRouter()
 
@@ -22,15 +24,14 @@ async def list_semesters(
     limit: int = Query(default=20, ge=1, le=100),
     _current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> List[SemesterOut]:
-    query = {}
+    query: dict[str, Any] = {}
     if batch_id:
         query["batch_id"] = batch_id
     if semester_number is not None:
         query["semester_number"] = semester_number
     if q:
         query["label"] = {"$regex": q, "$options": "i"}
-    if is_active is not None:
-        query["is_active"] = is_active
+    apply_is_active_filter(query, is_active)
     items = await db.semesters.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [SemesterOut(**semester_public(item)) for item in items]
 
@@ -49,7 +50,7 @@ async def get_semester(
 @router.post("/", response_model=SemesterOut, status_code=status.HTTP_201_CREATED)
 async def create_semester(
     payload: SemesterCreate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("semesters.manage")),
 ) -> SemesterOut:
     batch = await db.batches.find_one({"_id": parse_object_id(payload.batch_id)})
     if not batch:
@@ -73,7 +74,7 @@ async def create_semester(
 async def update_semester(
     semester_id: str,
     payload: SemesterUpdate,
-    _current_user=Depends(require_permission("academic:manage")),
+    _current_user=Depends(require_permission("semesters.manage")),
 ) -> SemesterOut:
     semester_obj_id = parse_object_id(semester_id)
     current = await db.semesters.find_one({"_id": semester_obj_id})
@@ -93,7 +94,7 @@ async def update_semester(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Semester already exists for this batch")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    result = await db.semesters.update_one({"_id": semester_obj_id}, {"$set": update_data})
+    result = await db.semesters.update_one({"_id": semester_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
     updated = await db.semesters.find_one({"_id": semester_obj_id})
@@ -103,12 +104,32 @@ async def update_semester(
 @router.delete("/{semester_id}")
 async def delete_semester(
     semester_id: str,
-    _current_user=Depends(require_permission("academic:manage")),
+    current_user=Depends(require_permission("semesters.manage")),
 ) -> dict:
+    actor_user_id = str(current_user.get("_id") or "") or None
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="semesters.delete",
+        entity_type="semester",
+        entity_id=semester_id,
+        stage="requested",
+        detail="Semester delete requested",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     result = await db.semesters.update_one(
         {"_id": parse_object_id(semester_id), "is_active": True},
-        {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc)}},
+        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+    await log_destructive_action_event(
+        actor_user_id=actor_user_id,
+        action="semesters.delete",
+        entity_type="semester",
+        entity_id=semester_id,
+        stage="completed",
+        detail="Semester archived",
+        outcome="archived",
+        metadata={"admin_type": current_user.get("admin_type")},
+    )
     return {"message": "Semester archived"}

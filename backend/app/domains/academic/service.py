@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 
 from app.core.mongo import parse_object_id
+from app.core.soft_delete import apply_is_active_filter, build_state_update
 from app.models.courses import course_public
 from app.schemas.course import CourseCreate, CourseOut, CourseUpdate
 
@@ -29,8 +30,7 @@ class CourseService:
                 {"name": {"$regex": q, "$options": "i"}},
                 {"code": {"$regex": q, "$options": "i"}},
             ]
-        if is_active is not None:
-            query["is_active"] = is_active
+        apply_is_active_filter(query, is_active)
 
         items = await self.repository.list_courses(query, skip=skip, limit=limit)
         return [CourseOut(**course_public(item)) for item in items]
@@ -56,6 +56,8 @@ class CourseService:
         }
         result = await self.repository.create_course(document)
         created = await self.repository.get_course_by_id(result.inserted_id)
+        if not created:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Course creation failed")
         return CourseOut(**course_public(created))
 
     async def update_course(self, *, course_id: str, payload: CourseUpdate) -> CourseOut:
@@ -71,10 +73,12 @@ class CourseService:
         if not update_data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
-        result = await self.repository.update_course(course_obj_id, update_data)
+        result = await self.repository.update_course(course_obj_id, build_state_update(update_data))
         if result.matched_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
         updated = await self.repository.get_course_by_id(course_obj_id)
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
         return CourseOut(**course_public(updated))
 
     async def delete_course(self, *, course_id: str, deleted_by: str) -> dict[str, str]:

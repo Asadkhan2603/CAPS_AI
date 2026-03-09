@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   BookOpen,
   Building2,
   CalendarDays,
@@ -13,7 +14,7 @@ import {
   Search
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Modal from '../components/ui/Modal';
 import { apiClient } from '../services/apiClient';
@@ -84,6 +85,11 @@ const LEVELS_WITH_ACTIVE_FILTER = new Set([
 const PAGE_SIZE = 100;
 const MAX_PAGES = 20;
 const INDENT_STEP = 22;
+const LEGACY_COMPATIBILITY_LINKS = [
+  { to: '/courses', label: 'Courses' },
+  { to: '/years', label: 'Years' },
+  { to: '/branches', label: 'Branches' }
+];
 
 function createEmptyChildCache() {
   return {
@@ -529,7 +535,7 @@ export default function AcademicStructurePage() {
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Academic Structure</h1>
           <p className="mt-1 text-lg text-slate-500 dark:text-slate-400">
-            Drill down faculty to sections with lazy-loaded hierarchy.
+            Canonical hierarchy: Faculty to Department to Program to Specialization to Batch to Semester to Section.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -547,12 +553,62 @@ export default function AcademicStructurePage() {
         </div>
       </div>
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+        <Card className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              Canonical Model
+            </span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">
+              This tree is the authoritative academic hierarchy used for new setup and maintenance.
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+            {LEVELS.map((item, index) => (
+              <div key={item.key} className="flex items-center gap-2">
+                <span className="rounded-2xl bg-slate-100 px-3 py-1.5 dark:bg-slate-800">{singularizeLabel(item.label)}</span>
+                {index < LEVELS.length - 1 ? <ChevronRight size={14} className="text-slate-400" /> : null}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="space-y-3 border-amber-200/80 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20">
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+              <AlertTriangle size={18} />
+            </div>
+            <div className="space-y-2">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-amber-800 dark:text-amber-200">
+                  Legacy Compatibility Modules
+                </p>
+                <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-100/80">
+                  Courses, Years, and Branches remain available for backward compatibility but are not part of the canonical academic tree.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {LEGACY_COMPATIBILITY_LINKS.map((item) => (
+                  <Link
+                    key={item.to}
+                    className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100 dark:border-amber-800 dark:bg-slate-950/30 dark:text-amber-100 dark:hover:bg-amber-900/30"
+                    to={item.to}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <Card className="space-y-4">
         <label className="relative block max-w-xl">
           <Search size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             className="input !h-12 !rounded-2xl !pl-11"
-            placeholder="Search loaded hierarchy..."
+            placeholder="Search loaded canonical hierarchy..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
