@@ -42,6 +42,7 @@ const ClassSlotsPage = lazy(() => import('../pages/ClassSlotsPage'));
 const AttendanceRecordsPage = lazy(() => import('../pages/AttendanceRecordsPage'));
 const AssignmentsPage = lazy(() => import('../pages/AssignmentsPage'));
 const SubmissionsPage = lazy(() => import('../pages/SubmissionsPage'));
+const AIModulePage = lazy(() => import('../pages/AIModulePage'));
 const ReviewTicketsPage = lazy(() => import('../pages/ReviewTicketsPage'));
 const CommunicationFeedPage = lazy(() => import('../pages/Communication/FeedPage'));
 const CommunicationAnnouncementsPage = lazy(() => import('../pages/Communication/AnnouncementsPage'));
@@ -350,6 +351,14 @@ export function AppRoutes() {
             element={
               <ProtectedRoute {...FEATURE_ACCESS.submissions}>
                 <SubmissionsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ai-operations"
+            element={
+              <ProtectedRoute {...FEATURE_ACCESS.aiModule}>
+                <AIModulePage />
               </ProtectedRoute>
             }
           />

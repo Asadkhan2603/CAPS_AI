@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import hashlib
 from pathlib import Path
 from typing import List
 from uuid import uuid4
@@ -11,9 +12,11 @@ from app.core.mongo import parse_object_id
 from app.core.security import require_roles
 from app.models.submissions import submission_public
 from app.schemas.submission import SubmissionOut, SubmissionUpdate
-from app.services.ai_evaluation import generate_ai_feedback
+from app.services.ai_jobs import AI_JOB_TYPE_BULK_SUBMISSION, queue_ai_job, schedule_ai_job_processing, serialize_ai_job
+from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
 from app.services.file_parser import parse_file_content
+from app.services.submission_ai import evaluate_submission_and_save
 
 router = APIRouter()
 
@@ -67,22 +70,6 @@ async def _teacher_can_access_submission(teacher_user_id: str, submission: dict)
     if not assignment_id:
         return False
     return await _teacher_can_access_assignment(teacher_user_id, assignment_id)
-
-
-async def _evaluate_submission_and_save(submission_obj_id, item: dict) -> dict:
-    extracted_text = item.get('extracted_text', '')
-    feedback = await run_in_threadpool(generate_ai_feedback, extracted_text, max_score=10.0)
-    ai_status = str(feedback.get('status') or 'failed')
-    update_data = {
-        'ai_status': ai_status,
-        'ai_score': feedback.get('score'),
-        'ai_feedback': feedback.get('summary'),
-        'ai_provider': feedback.get('provider'),
-        'ai_error': feedback.get('error'),
-    }
-    await db.submissions.update_one({'_id': submission_obj_id}, {'$set': update_data})
-    updated = await db.submissions.find_one({'_id': submission_obj_id})
-    return updated or item
 
 
 @router.get('/', response_model=List[SubmissionOut])
@@ -219,7 +206,11 @@ async def ai_evaluate_submission(
         return SubmissionOut(**submission_public(item))
 
     await db.submissions.update_one({'_id': submission_obj_id}, {'$set': {'ai_status': 'running'}})
-    updated = await _evaluate_submission_and_save(submission_obj_id, item)
+    updated = await evaluate_submission_and_save(
+        submission_obj_id,
+        item,
+        runtime_settings=await get_ai_runtime_settings(),
+    )
     await log_audit_event(
         actor_user_id=str(current_user['_id']),
         action='ai_evaluate',
@@ -241,36 +232,51 @@ async def ai_evaluate_pending_submissions(
         query['assignment_id'] = assignment_id
 
     items = await db.submissions.find(query).limit(limit).to_list(length=limit)
-    evaluated = []
     teacher_user_id = str(current_user['_id'])
+    candidate_ids: list[str] = []
 
     for item in items:
         if current_user.get('role') == 'teacher':
             allowed = await _teacher_can_access_submission(teacher_user_id, item)
             if not allowed:
                 continue
-        submission_id = str(item.get('_id'))
-        submission_obj_id = parse_object_id(submission_id)
-        await db.submissions.update_one({'_id': submission_obj_id}, {'$set': {'ai_status': 'running'}})
-        updated = await _evaluate_submission_and_save(submission_obj_id, item)
-        await log_audit_event(
-            actor_user_id=str(current_user['_id']),
-            action='ai_evaluate',
-            entity_type='submission',
-            entity_id=submission_id,
-            detail=f"Bulk AI evaluation status={updated.get('ai_status')}",
-        )
-        evaluated.append(
-            {
-                'submission_id': submission_id,
-                'ai_status': updated.get('ai_status'),
-                'ai_score': updated.get('ai_score'),
-            }
-        )
+        if item.get('_id'):
+            candidate_ids.append(str(item.get('_id')))
+
+    if not candidate_ids:
+        return {
+            'queued': False,
+            'submission_count': 0,
+            'job': None,
+        }
+
+    ids_fingerprint = hashlib.sha1(','.join(candidate_ids).encode('utf-8')).hexdigest()[:16]
+    idempotency_key = f"{current_user.get('role')}:{teacher_user_id}:bulk_submission_ai:{assignment_id or 'all'}:{ids_fingerprint}:{limit}"
+    job, created = await queue_ai_job(
+        job_type=AI_JOB_TYPE_BULK_SUBMISSION,
+        requested_by_user_id=teacher_user_id,
+        requested_by_role=str(current_user.get('role') or ''),
+        params={
+            'assignment_id': assignment_id,
+            'submission_ids': candidate_ids,
+            'force': False,
+            'limit': limit,
+        },
+        idempotency_key=idempotency_key,
+    )
+    schedule_ai_job_processing(max_jobs=1)
+    await log_audit_event(
+        actor_user_id=str(current_user['_id']),
+        action='ai_bulk_queue',
+        entity_type='ai_job',
+        entity_id=str(job.get('_id')),
+        detail=f"Queued bulk submission AI for {len(candidate_ids)} submissions",
+    )
 
     return {
-        'count': len(evaluated),
-        'items': evaluated,
+        'queued': created,
+        'submission_count': len(candidate_ids),
+        'job': serialize_ai_job(job),
     }
 
 

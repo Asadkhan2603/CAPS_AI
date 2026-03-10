@@ -357,6 +357,7 @@ The page uses shared `EntityManager` CRUD scaffolding.
 Lookups loaded:
 
 - active offerings from `/course-offerings/`
+- sections for human-readable labels and direct filtering
 
 Student behavior:
 
@@ -374,13 +375,12 @@ Admin/teacher behavior:
 
 ### 6.2 Filters exposed in UI
 
+- section
 - offering
 - day
 - active
 
-Backend supports one additional useful filter not exposed prominently:
-
-- `section_id`
+This now matches the main backend list filters used by operators.
 
 ### 6.3 Create UI fields
 
@@ -400,17 +400,11 @@ Backend supports one additional useful filter not exposed prominently:
 
 ### 6.5 Label quality issue
 
-Offering labels in the UI are currently built as:
+Offering labels in the UI are now built from section-aware labels such as:
 
-- `section_id | academic_year | offering_type`
+- `section name | academic_year | offering_type`
 
-This is technically functional but weak for operators.
-
-It should ideally use:
-
-- section name
-- subject name
-- teacher name
+This is better than raw ids, although the UI still does not surface subject name and teacher name in the offering label.
 
 ## 7. Downstream Dependencies
 
@@ -492,21 +486,17 @@ This means:
 
 ## 9. Frontend vs Backend Gaps
 
-### 9.1 UI does not expose section filter
+### 9.1 UI labels still underuse enriched offering metadata
 
-Backend supports `section_id` filtering, but the main UI does not expose it directly.
+Offering labels no longer rely on raw section ids, but they still do not use the full enriched offering payload such as subject and teacher names.
 
-### 9.2 UI labels are too technical
-
-Offering labels use ids and offering type rather than enriched names.
-
-### 9.3 No shift-template awareness
+### 9.2 No shift-template awareness
 
 The slot module currently accepts freeform start/end times and does not enforce the shift-template timetable model described elsewhere.
 
 This is a significant gap if the institutional timetable is supposed to be shift-driven.
 
-### 9.4 Delete safety is weak
+### 9.3 Delete safety is weak
 
 Delete is available in UI and backend, but there is:
 
@@ -596,7 +586,7 @@ Use offering-derived labels like:
 - subject code/name
 - teacher name
 
-instead of raw ids.
+instead of partial section-only labels.
 
 ### 12.4 Add safer archive rules
 

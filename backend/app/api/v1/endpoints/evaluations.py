@@ -17,6 +17,7 @@ from app.schemas.evaluation import (
 )
 from app.schemas.review_ticket import ReviewTicketDecision
 from app.services.audit import log_audit_event
+from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.evaluation_ai_module import build_ai_insight
 from app.services.grading import grade_from_total, grand_total, internal_total
 
@@ -67,6 +68,7 @@ async def _build_ai_insight_async(
     internal_total: float,
     grand_total: float,
     grade: str,
+    runtime_settings: dict | None = None,
 ) -> dict:
     return await run_in_threadpool(
         build_ai_insight,
@@ -75,6 +77,7 @@ async def _build_ai_insight_async(
         internal_total=internal_total,
         grand_total=grand_total,
         grade=grade,
+        runtime_settings=runtime_settings,
     )
 
 
@@ -110,6 +113,8 @@ async def _persist_ai_trace(
         "ai_feedback": ai_payload.get("ai_feedback"),
         "ai_status": ai_payload.get("ai_status"),
         "ai_provider": ai_payload.get("ai_provider"),
+        "ai_prompt_version": ai_payload.get("ai_prompt_version"),
+        "ai_runtime_snapshot": ai_payload.get("ai_runtime_snapshot"),
         "ai_confidence": ai_payload.get("ai_confidence"),
         "ai_strengths": ai_payload.get("ai_strengths") or [],
         "ai_gaps": ai_payload.get("ai_gaps") or [],
@@ -189,6 +194,8 @@ async def get_evaluation_trace(
                 "ai_score": row.get("ai_score"),
                 "ai_status": row.get("ai_status"),
                 "ai_provider": row.get("ai_provider"),
+                "ai_prompt_version": row.get("ai_prompt_version"),
+                "ai_runtime_snapshot": row.get("ai_runtime_snapshot"),
                 "ai_confidence": row.get("ai_confidence"),
                 "ai_risk_flags": row.get("ai_risk_flags") or [],
                 "grade": row.get("grade"),
@@ -213,6 +220,7 @@ async def preview_evaluation_ai(
 
     payload_data = payload.model_dump()
     internal, total, grade = _compute_totals(payload_data)
+    runtime_settings = await get_ai_runtime_settings()
     # Reuse submission-level AI output when available to keep evaluation traces deterministic.
     if submission.get("ai_score") is not None and submission.get("ai_feedback"):
         ai_payload = {
@@ -220,6 +228,8 @@ async def preview_evaluation_ai(
             "ai_feedback": submission.get("ai_feedback"),
             "ai_status": submission.get("ai_status"),
             "ai_provider": submission.get("ai_provider"),
+            "ai_prompt_version": submission.get("ai_prompt_version"),
+            "ai_runtime_snapshot": submission.get("ai_runtime_snapshot"),
             "ai_confidence": None,
             "ai_risk_flags": [],
             "ai_strengths": [],
@@ -233,6 +243,7 @@ async def preview_evaluation_ai(
             internal_total=internal,
             grand_total=total,
             grade=grade,
+            runtime_settings=runtime_settings,
         )
 
     return EvaluationAIPreviewOut(
@@ -262,12 +273,15 @@ async def create_evaluation(
 
     payload_data = payload.model_dump()
     internal, total, grade = _compute_totals(payload_data)
+    runtime_settings = await get_ai_runtime_settings()
     if submission.get("ai_score") is not None and submission.get("ai_feedback"):
         ai_payload = {
             "ai_score": submission.get("ai_score"),
             "ai_feedback": submission.get("ai_feedback"),
             "ai_status": submission.get("ai_status"),
             "ai_provider": submission.get("ai_provider"),
+            "ai_prompt_version": submission.get("ai_prompt_version"),
+            "ai_runtime_snapshot": submission.get("ai_runtime_snapshot"),
             "ai_confidence": None,
             "ai_risk_flags": [],
             "ai_strengths": [],
@@ -281,6 +295,7 @@ async def create_evaluation(
             internal_total=internal,
             grand_total=total,
             grade=grade,
+            runtime_settings=runtime_settings,
         )
     now = datetime.now(timezone.utc)
 
@@ -301,6 +316,8 @@ async def create_evaluation(
         "ai_feedback": ai_payload.get("ai_feedback"),
         "ai_status": ai_payload.get("ai_status"),
         "ai_provider": ai_payload.get("ai_provider"),
+        "ai_prompt_version": ai_payload.get("ai_prompt_version"),
+        "ai_runtime_snapshot": ai_payload.get("ai_runtime_snapshot"),
         "ai_confidence": ai_payload.get("ai_confidence"),
         "ai_risk_flags": ai_payload.get("ai_risk_flags") or [],
         "ai_strengths": ai_payload.get("ai_strengths") or [],
@@ -357,6 +374,7 @@ async def refresh_evaluation_ai(
         internal_total=float(item.get("internal_total") or 0),
         grand_total=float(item.get("grand_total") or 0),
         grade=str(item.get("grade") or "Needs Improvement"),
+        runtime_settings=await get_ai_runtime_settings(),
     )
 
     await db.evaluations.update_one(
@@ -367,6 +385,8 @@ async def refresh_evaluation_ai(
                 "ai_feedback": ai_payload.get("ai_feedback"),
                 "ai_status": ai_payload.get("ai_status"),
                 "ai_provider": ai_payload.get("ai_provider"),
+                "ai_prompt_version": ai_payload.get("ai_prompt_version"),
+                "ai_runtime_snapshot": ai_payload.get("ai_runtime_snapshot"),
                 "ai_confidence": ai_payload.get("ai_confidence"),
                 "ai_risk_flags": ai_payload.get("ai_risk_flags") or [],
                 "ai_strengths": ai_payload.get("ai_strengths") or [],
@@ -445,6 +465,7 @@ async def update_evaluation(
             internal_total=internal,
             grand_total=total,
             grade=grade,
+            runtime_settings=await get_ai_runtime_settings(),
         )
         update_data.update(
             {
@@ -452,6 +473,8 @@ async def update_evaluation(
                 "ai_feedback": ai_payload.get("ai_feedback"),
                 "ai_status": ai_payload.get("ai_status"),
                 "ai_provider": ai_payload.get("ai_provider"),
+                "ai_prompt_version": ai_payload.get("ai_prompt_version"),
+                "ai_runtime_snapshot": ai_payload.get("ai_runtime_snapshot"),
                 "ai_confidence": ai_payload.get("ai_confidence"),
                 "ai_risk_flags": ai_payload.get("ai_risk_flags") or [],
                 "ai_strengths": ai_payload.get("ai_strengths") or [],

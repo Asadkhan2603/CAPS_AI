@@ -132,8 +132,8 @@ The setup UI is split into two patterns:
 
 The generic `EntityManager` provides:
 
-- filters
-- create form
+- header-level search action that opens a filter overlay
+- header-level create action that opens a create or edit overlay
 - list table
 - optional edit support
 - optional delete support
@@ -336,28 +336,33 @@ Backend:
 - validates `program_id`
 - validates `specialization_id`
 - checks that specialization belongs to the selected program
-- auto-derives academic years from program duration
+- auto-derives batch join/pass-out years from program duration
 - auto-creates semesters for the new batch
+- scopes batch code uniqueness to `program_id + specialization_id + code`
 
 Frontend:
 
 - page: `frontend/src/pages/BatchesPage.jsx`
 - create enabled
+- edit enabled
 - delete enabled
-- edit not enabled in UI
 - searchable program and specialization selection
 - specialization selection is filtered by chosen program
+- page exposes sync for program-generated base batches
 
 Implemented logic:
 
-- if only `start_year` is supplied, `end_year` is derived
-- if only `end_year` is supplied, `start_year` is derived
+- if only `start_year` is supplied, `end_year` is derived as the pass-out year
+- if only `end_year` is supplied, `start_year` is derived from the pass-out year
 - if both are supplied, they must match expected duration
+- for a 4-year program, `2022 -> 2026` is valid
 - batch semester rows are created automatically based on program duration
+- program create auto-seeds base batches from `2022` through the current year
+- `POST /programs/seed-batches` backfills missing base batches for existing active programs
 
 Not fully used:
 
-- backend update exists but UI edit is not exposed
+- specialization clearing on update is still constrained by the backend update schema's `exclude_none` behavior
 
 ### 6. Semesters
 
@@ -551,6 +556,8 @@ When a batch is created:
 - semesters are generated automatically based on the program's duration and total semesters
 
 This makes `batch` a derived operational entity, not a free-form record.
+
+Program create now also seeds baseline non-specialization batches from `2022` through the current year, each with generated semester rows.
 
 ### Semester Synchronization Logic
 
@@ -799,10 +806,14 @@ This means permission naming is now coherent, but administrative scope is still 
 - course create, update, and archive exist in backend, but `CoursesPage.jsx` is read-only
 - department update exists, but `DepartmentsPage.jsx` does not enable edit
 - specialization update exists, but `SpecializationsPage.jsx` does not enable edit
-- batch update exists, but `BatchesPage.jsx` does not enable edit
 - semester update exists, but `SemestersPage.jsx` does not enable edit
 - year update exists, but `YearsPage.jsx` does not enable edit
 - branch update exists, but `BranchesPage.jsx` does not enable edit
+
+### Automation Exists, UI Keeps Manual Override Paths
+
+- program creation now auto-seeds baseline batches
+- `BatchesPage.jsx` still keeps manual create for exceptional and specialization-specific cohorts
 
 ### Backend Fields Exist, UI Uses Only Part Of Them
 

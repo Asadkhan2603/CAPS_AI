@@ -7,6 +7,7 @@ from typing import Dict
 from openai import OpenAI
 
 from app.core.config import settings
+from app.services.ai_runtime import AI_EVALUATION_PROMPT_VERSION, build_runtime_snapshot
 
 
 ACADEMIC_TERMS = {
@@ -102,21 +103,34 @@ def _heuristic_summary(metrics: dict[str, float | int], *, provider_state: str) 
     )
 
 
-def generate_ai_feedback(text: str, *, max_score: float = 10.0) -> Dict[str, str | float | None]:
+def generate_ai_feedback(
+    text: str,
+    *,
+    max_score: float = 10.0,
+    runtime_settings: dict | None = None,
+) -> Dict[str, str | float | None | dict]:
     """AI evaluation with OpenAI response parsing + deterministic local fallback."""
     metrics = _heuristic_evaluation(text, max_score)
     fallback_score = float(metrics["score"])
+    runtime_settings = runtime_settings or {}
+    provider_enabled = bool(runtime_settings.get("effective_provider_enabled", bool(settings.openai_api_key)))
+    model_name = str(runtime_settings.get("openai_model") or settings.openai_model)
+    timeout_seconds = float(runtime_settings.get("openai_timeout_seconds") or settings.openai_timeout_seconds)
+    max_output_tokens = int(runtime_settings.get("openai_max_output_tokens") or settings.openai_max_output_tokens)
+    runtime_snapshot = build_runtime_snapshot(runtime_settings)
     try:
-        if not settings.openai_api_key:
+        if not provider_enabled:
             return {
                 "score": fallback_score,
                 "summary": _heuristic_summary(metrics, provider_state="Fallback evaluation generated (OpenAI key not configured)"),
                 "status": "fallback",
                 "provider": "local",
                 "error": None,
+                "prompt_version": AI_EVALUATION_PROMPT_VERSION,
+                "runtime_snapshot": runtime_snapshot,
             }
 
-        client = OpenAI(api_key=settings.openai_api_key, timeout=float(settings.openai_timeout_seconds))
+        client = OpenAI(api_key=settings.openai_api_key, timeout=timeout_seconds)
         system_prompt = (
             "You evaluate student submissions. Return strict JSON only with keys "
             "`score` (number), `summary` (string), `strengths` (array of strings), "
@@ -132,8 +146,8 @@ def generate_ai_feedback(text: str, *, max_score: float = 10.0) -> Dict[str, str
         raw = ""
         if hasattr(client, "responses"):
             response = client.responses.create(
-                model=settings.openai_model,
-                max_output_tokens=settings.openai_max_output_tokens,
+                model=model_name,
+                max_output_tokens=max_output_tokens,
                 temperature=0.2,
                 input=[
                     {"role": "system", "content": system_prompt},
@@ -143,9 +157,9 @@ def generate_ai_feedback(text: str, *, max_score: float = 10.0) -> Dict[str, str
             raw = (getattr(response, "output_text", "") or "").strip()
         else:
             response = client.chat.completions.create(
-                model=settings.openai_model,
+                model=model_name,
                 temperature=0.2,
-                max_tokens=settings.openai_max_output_tokens,
+                max_tokens=max_output_tokens,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -182,8 +196,10 @@ def generate_ai_feedback(text: str, *, max_score: float = 10.0) -> Dict[str, str
             "score": ai_score,
             "summary": (summary + explainability_tail)[:1200],
             "status": "completed",
-            "provider": settings.openai_model,
+            "provider": model_name,
             "error": None,
+            "prompt_version": AI_EVALUATION_PROMPT_VERSION,
+            "runtime_snapshot": runtime_snapshot,
         }
     except Exception as exc:
         return {
@@ -192,4 +208,6 @@ def generate_ai_feedback(text: str, *, max_score: float = 10.0) -> Dict[str, str
             "status": "fallback",
             "provider": "local",
             "error": str(exc)[:300],
+            "prompt_version": AI_EVALUATION_PROMPT_VERSION,
+            "runtime_snapshot": runtime_snapshot,
         }

@@ -493,6 +493,8 @@ Observed producers include:
   - archive actions
 - submissions:
   - AI evaluation actions
+- AI jobs:
+  - queue and completion actions
 - evaluations:
   - create, update, finalize, AI refresh
 - notices and notifications

@@ -45,16 +45,26 @@ Primary backend files:
 - [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
 - [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
 - [similarity.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
+- [ai_runtime.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_runtime.py)
+- [ai_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_jobs.py)
 - [ai_chat_service.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_chat_service.py)
 - [ai_evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_evaluation.py)
 - [evaluation_ai_module.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\evaluation_ai_module.py)
+- [submission_ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\submission_ai.py)
+- [similarity_pipeline.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\similarity_pipeline.py)
 - [similarity_engine.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\similarity_engine.py)
 
 Primary frontend consumers:
 
 - [SubmissionsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\SubmissionsPage.jsx)
+- [AIModulePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
 - [EvaluateSubmission.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
 - [aiService.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\services\aiService.js)
+
+Companion planning document:
+
+- [AI_MODULE_ACTION_PLAN.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\AI_MODULE_ACTION_PLAN.md)
+- [AI_MODULE_CONTRACTS.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\AI_MODULE_CONTRACTS.md)
 
 Important implementation reality:
 
@@ -78,6 +88,11 @@ Submission text is extracted and then passed through AI scoring logic to produce
 
 These fields are stored on `submissions`.
 
+Submission AI records now also persist:
+
+- `ai_prompt_version`
+- `ai_runtime_snapshot`
+
 ## 2.2 Evaluation AI insight
 
 Evaluation workflows use AI-generated insight to enrich teacher grading with:
@@ -91,6 +106,11 @@ Evaluation workflows use AI-generated insight to enrich teacher grading with:
 - risk flags
 
 These fields are stored on `evaluations`.
+
+Evaluation AI records now also persist:
+
+- `ai_prompt_version`
+- `ai_runtime_snapshot`
 
 ## 2.3 Teacher AI evaluation chat
 
@@ -166,6 +186,8 @@ Stored fields include:
 - submission id
 - actor user id
 - AI provider/status/score
+- prompt version
+- runtime snapshot
 - confidence
 - strengths
 - gaps
@@ -190,6 +212,13 @@ Stored fields:
 - `messages`
 - `created_at`
 - `updated_at`
+
+AI messages inside `messages` now also capture:
+
+- `provider`
+- `provider_error`
+- `prompt_version`
+- `runtime_snapshot`
 
 Purpose:
 
@@ -220,11 +249,35 @@ Stored fields:
 - `score`
 - `threshold`
 - `is_flagged`
+- `engine_version`
 - `created_at`
 
 Purpose:
 
 - persist pairwise similarity checks and flagging decisions
+
+## 3.6 `ai_jobs`
+
+Stored fields:
+
+- `job_type`
+- `status`
+- `requested_by_user_id`
+- `requested_by_role`
+- `idempotency_key`
+- `params`
+- `progress`
+- `summary`
+- `error`
+- `requested_at`
+- `started_at`
+- `completed_at`
+- `worker_id`
+
+Purpose:
+
+- persist durable AI and similarity job state outside the request lifecycle
+- support queued, running, completed, and failed operator-visible execution
 
 ## 4. Backend Logic Implemented
 
@@ -250,8 +303,26 @@ Return contract includes:
 - status
 - provider
 - error
+- prompt version
+- runtime snapshot
 
 This fallback design is important because it keeps academic flows working even without external AI availability.
+
+## 4.5 Runtime configuration and durable AI jobs
+
+Files:
+
+- [ai_runtime.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_runtime.py)
+- [ai_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_jobs.py)
+- [scheduler.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\scheduler.py)
+
+Behavior:
+
+- stores effective runtime overrides in `settings`
+- exposes prompt version and runtime snapshots across AI-producing workflows
+- queues bulk submission AI and async similarity work into persisted `ai_jobs`
+- processes queued jobs through opportunistic kickoff plus scheduler polling
+- tracks `queued`, `running`, `completed`, and `failed` lifecycle state
 
 ## 4.2 AI insight builder for evaluations
 
@@ -313,11 +384,54 @@ This is not LLM-based similarity. It is a classical vector-space similarity engi
 
 ## 5. AI API Endpoints
 
-## 5.1 Dedicated AI chat endpoints
+## 5.1 Dedicated AI operations and chat endpoints
 
 File:
 
 - [ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py)
+
+### `GET /ai/admin/runtime-config`
+
+Purpose:
+
+- return effective runtime configuration and provider mode
+
+Access:
+
+- `admin`
+
+### `PUT /ai/admin/runtime-config`
+
+Purpose:
+
+- persist runtime overrides for provider enablement, model, timeout, token limit, and similarity threshold
+
+Access:
+
+- `admin`
+
+### `GET /ai/ops/overview`
+
+Purpose:
+
+- return scoped AI operational summary including provider mode, runtime config, recent evaluation runs, recent jobs, similarity flags, and chat threads
+
+Access:
+
+- `teacher`
+- `admin`
+
+### `GET /ai/jobs`
+
+Purpose:
+
+- list durable AI jobs for the current operator scope
+
+### `GET /ai/jobs/{job_id}`
+
+Purpose:
+
+- inspect one durable AI job
 
 ### `POST /ai/evaluate`
 
@@ -372,6 +486,7 @@ Behavior:
 - checks teacher access to the submission
 - respects `force` for rerun
 - writes AI result back to the submission record
+- stores prompt/runtime metadata on the submission
 - audits the action
 
 ### `POST /submissions/ai-evaluate/pending`
@@ -389,8 +504,8 @@ Behavior:
 
 - filters by `ai_status in ['pending', 'failed', None]`
 - optional assignment filter
-- evaluates rows one by one
-- audits each result
+- queues a durable `ai_jobs` record instead of doing the full bulk run inside the request
+- returns queued job metadata for operator tracking
 
 ## 5.3 Evaluation AI endpoints
 
@@ -460,14 +575,14 @@ Purpose:
 
 Purpose:
 
-- queue asynchronous similarity analysis in background tasks
+- queue asynchronous similarity analysis as a durable AI job
 
 Behavior:
 
 - requires plagiarism to be enabled for the assignment
-- updates submission `similarity_score`
-- persists similarity logs
-- notifies relevant actors when a flag crosses threshold
+- persists a `similarity_check` job in `ai_jobs`
+- similarity writes are idempotent by source/match/threshold/engine version
+- notifies relevant actors only when a flag transitions into the flagged state
 
 ## 6. Frontend Implementation
 
@@ -497,6 +612,9 @@ Capabilities:
 
 - load submission and assignment context
 - preview AI insight before saving marks
+- show persisted evaluation AI state after save
+- refresh stored evaluation AI through `/evaluations/{evaluation_id}/ai-refresh`
+- load historical AI trace via `/evaluations/{evaluation_id}/trace`
 - open teacher-AI chat panel
 - send evaluation guidance prompts through `/ai/evaluate`
 - load historical chat via `/ai/history/...`
@@ -513,10 +631,35 @@ Current wrappers:
 
 - `sendEvaluationChatMessage(...)`
 - `getEvaluationChatHistory(...)`
+- `getAiOperationsOverview(...)`
+- `getEvaluationTrace(...)`
+- `refreshEvaluationAi(...)`
+- `getAiRuntimeConfig(...)`
+- `updateAiRuntimeConfig(...)`
+- `listAiJobs(...)`
+- `getAiJob(...)`
 
 This is a narrow wrapper layer, not a broader typed AI SDK.
 
-## 6.4 Analytics and dashboard consumption
+## 6.4 Dedicated AI operations page
+
+Frontend file:
+
+- [AIModulePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
+
+Capabilities:
+
+- show provider/runtime mode and key AI settings
+- let admins update effective runtime AI settings
+- show submission AI pipeline counts
+- show durable AI job queue state
+- show recent evaluation AI runs with direct evaluation-console handoff
+- show recent similarity flags
+- show recent AI chat thread activity
+
+This page gives the module a first-class standalone operational UI for teacher/admin roles.
+
+## 6.5 Analytics and dashboard consumption
 
 AI signals also appear indirectly in:
 
@@ -579,86 +722,97 @@ The AI module is not isolated. It is integrated into:
 
 Flagged similarity results can notify assignment creators, class coordinators, and year heads.
 
-## 9. Frontend vs Backend Gaps
+## 9. Remaining Gaps
 
-### Gap 1: No dedicated AI module page
+The original AI module gaps are now largely closed. The remaining work is mostly depth, not missing foundation.
 
-The AI module is powerful, but it has no first-class standalone UI. It is distributed across submissions and evaluation screens.
+### Gap 1: Cross-module AI exploration is still shallow
 
-### Gap 2: AI traces are backend-visible but not fully surfaced
+The module now has:
 
-The evaluation trace endpoint exists, but current frontend exposure is limited.
+- a dedicated AI operations page
+- admin runtime controls
+- a durable AI job queue surface
+- per-evaluation trace history
 
-### Gap 3: No administrative AI configuration UI
+The remaining gap is deeper historical exploration:
 
-There is no frontend control for:
+- no global AI trace search across time/provider/actor
+- no dedicated submission-plus-evaluation unified run explorer
+- no richer filtering beyond the overview slices
 
-- OpenAI provider state
-- model name
-- timeout
-- output token limits
-- similarity threshold
+### Gap 2: Governance is visible, but still not policy-driven
 
-### Gap 4: No job orchestration UI for async similarity
+The system now persists:
 
-The async endpoint exists, but there is no dedicated operator workflow or progress UI for queued similarity jobs.
+- prompt versions
+- runtime snapshots
+- similarity engine version
+- durable job state
+
+What is still missing:
+
+- explicit AI usage policy reporting
+- provider cost visibility
+- teacher override analytics
+- stronger model change governance workflows
 
 ## 10. Risks and Architectural Issues
 
-### Risk 1: Blocking CPU and network work still occurs in request paths
+### Risk 1: Single-item AI flows still execute in request time
 
-The current AI implementation still does synchronous heavy work in request-time flows, including:
+Bulk submission AI and async similarity are now durable jobs, but some work still happens directly in request flows:
 
-- OpenAI calls
-- file parsing prior to AI scoring
-- similarity vectorization and cosine similarity
+- single submission AI evaluation
+- synchronous similarity check endpoint
+- teacher AI chat generation
+- submission upload text extraction
 
-Some operations are moved into `run_in_threadpool`, but that does not make them a durable queue-based background system.
+### Risk 2: AI state is intentionally distributed
 
-### Risk 2: AI state is spread across multiple domain records
+This keeps AI close to the academic records it augments, but it still means retention, reporting, and governance have to aggregate across:
 
-This is practical, but it makes centralized governance and retention harder.
+- `submissions`
+- `evaluations`
+- `ai_evaluation_runs`
+- `ai_evaluation_chats`
+- `similarity_logs`
+- `ai_jobs`
 
-### Risk 3: Similarity engine is memory-bound
+### Risk 3: Similarity engine remains in-process and memory-bound
 
-The current similarity implementation builds TF-IDF vectors in process. This can become expensive for larger candidate sets.
+The job queue makes similarity execution more durable, but the underlying TF-IDF computation still runs inside the application process.
 
-### Risk 4: AI quality is partly heuristic and partly provider-based
+### Risk 4: Governance metadata exists, but operator analytics remain limited
 
-That is acceptable, but it means consistency varies by configuration and failure mode.
+Prompt versions and runtime snapshots are now stored, but the module still lacks:
 
-### Risk 5: No full model governance layer
-
-There is no current UI or policy layer for:
-
-- model selection governance
-- prompt versioning
-- provider cost visibility
-- AI output review policy
+- fallback-rate dashboards
+- queue latency tracking
+- cost or token monitoring
+- model change reporting
 
 ## 11. Recommended Cleanup Strategy
 
 ### Short-term
 
-- document the AI response contracts centrally
-- expose evaluation AI trace more clearly in UI
-- surface configuration state such as provider and fallback mode in admin diagnostics
+- build richer AI trace and job filtering on top of the new operations surface
+- add module-level metrics for queue latency, failure rate, and fallback rate
+- add tests around job idempotency and runtime-config persistence
 
 ### Medium-term
 
-- move heavy AI and similarity processing to a durable worker queue
-- add idempotency and job-state tracking for bulk AI runs
-- centralize AI run metadata for easier auditing
+- decide whether synchronous similarity should remain exposed or become queue-first
+- add operational dashboards or admin analytics tiles for AI job health
+- expand governance reporting around teacher overrides and AI usage trends
 
 ### Long-term
 
 Adopt a more deliberate AI platform layer:
 
-- queue-backed asynchronous evaluation and similarity jobs
-- stronger model governance
-- prompt/version tracking
-- clearer AI observability and cost monitoring
-- explicit teacher override and review analytics
+- stronger observability and cost monitoring
+- more explicit governance and review policy tooling
+- broader AI analytics for trust, usage, and quality drift
 
 ## 12. Testing Requirements
 
@@ -670,44 +824,45 @@ Minimum automated coverage should include:
 - heuristic score bounds in `generate_ai_feedback(...)`
 - risk flag generation in `build_ai_insight(...)`
 - similarity score normalization bounds
+- runtime override normalization in `ai_runtime.py`
 
 ### API tests
 
 - teacher can run AI only on owned/accessible assignments
-- admin can audit AI chat and evaluation preview flows
-- plagiarism-disabled assignments reject similarity runs
-- evaluation trace endpoint returns persisted AI runs
-- AI rerun behavior respects `force`
+- admin can update runtime config and view provider mode
+- bulk submission AI returns durable job metadata
+- async similarity returns durable job metadata
+- evaluation trace endpoint returns prompt/runtime metadata
 
 ### Integration tests
 
 - submission upload -> AI evaluation -> evaluation preview reuse path
 - teacher evaluation chat history persistence across multiple messages
-- similarity flag -> notification creation path
+- bulk AI job queue -> submission update completion path
+- similarity job retry does not create duplicate flag records
 
 ### Performance tests to add
 
-- bulk pending AI evaluation throughput
-- similarity run latency with increasing submission volume
+- bulk AI queue throughput under multiple pending jobs
+- similarity queue latency with increasing submission volume
 - fallback behavior under provider outage
 
 ## 13. Final Summary
 
-The AI module in CAPS AI is already a meaningful subsystem. It is not a toy chatbot integration. It provides:
+The AI module in CAPS AI is now a materially stronger subsystem than the earlier audit described. It provides:
 
 - submission scoring assistance
-- evaluation insight generation
-- teacher AI chat
-- plagiarism and similarity detection
-- alert fanout for risky cases
+- evaluation insight generation with trace persistence
+- teacher AI chat with prompt/runtime metadata
+- similarity detection with idempotent logging
+- durable AI job orchestration
+- admin runtime controls and operational visibility
 
-Its strongest quality is resilience through deterministic fallback.
+Its strongest quality is still resilience through deterministic fallback, but it now also has the beginnings of real operational governance.
 
-Its main architectural weakness is that expensive AI and similarity work still runs too close to request-time workflows and is spread across multiple domain records without a stronger centralized AI operations layer.
-
-The correct direction is:
+The correct direction remains:
 
 - keep AI embedded in academic workflows
 - preserve the fallback-first design
-- move expensive jobs to durable asynchronous execution
-- improve observability, governance, and frontend visibility of AI traces and system state
+- use durable jobs for heavier workloads
+- deepen observability and governance on top of the new runtime and job foundations

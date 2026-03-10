@@ -342,7 +342,7 @@ Relations:
 
 Unique constraints:
 
-- batch `code` must be unique
+- batch `code` is currently enforced within the same `program_id` + `specialization_id` scope
 
 ### `semesters`
 
@@ -529,6 +529,7 @@ The backend performs:
 - specialization ownership validation against program
 - year range derivation or validation
 - semester generation based on program duration
+- program creation also auto-seeds base program batches from `2022` through the current year
 
 This means batch creation operationalizes academic structure rather than only saving a row.
 
@@ -627,9 +628,10 @@ Examples:
 
 - batch must belong to a valid program
 - specialization, if supplied, must belong to the selected program
-- if only `start_year` is given, `end_year` is auto-derived
-- if only `end_year` is given, `start_year` is auto-derived
+- if only `start_year` is given, `end_year` is auto-derived as the pass-out year
+- if only `end_year` is given, `start_year` is auto-derived from the pass-out year
 - if both are given, the span must match program duration
+- for a 4-year program, `2022 -> 2026` is valid batch notation
 
 ### Semester Rules
 
@@ -686,6 +688,11 @@ Operations:
 - `POST /programs`
 - `PUT /programs/{program_id}`
 - `DELETE /programs/{program_id}`
+
+Important behavior:
+
+- `POST /programs` now auto-creates base batches from `2022` through the current year for that program
+- `POST /programs/seed-batches` backfills missing base batches for existing active programs
 
 #### `/specializations`
 
@@ -783,7 +790,7 @@ Operations:
 
 The frontend uses two major patterns:
 
-- generic CRUD pages built on `EntityManager`
+- generic CRUD pages built on `EntityManager`, now using header icons plus overlay-based search and create or edit flows
 - custom academic hierarchy and class pages
 
 ### Page Coverage
@@ -792,9 +799,9 @@ The frontend uses two major patterns:
 |---|---|---|---|---|
 | `FacultiesPage.jsx` | Yes | Yes | Yes | one of the most complete pages |
 | `DepartmentsPage.jsx` | Yes | Yes | Yes | exposes university metadata |
-| `ProgramsPage.jsx` | Yes | Yes | Yes | includes duration logic awareness |
+| `ProgramsPage.jsx` | Yes | Yes | Yes | includes duration logic awareness and base batch auto-seeding |
 | `SpecializationsPage.jsx` | Yes | No | Yes | backend update exists, UI edit missing |
-| `BatchesPage.jsx` | Yes | No | Yes | specialization filtered by program |
+| `BatchesPage.jsx` | Yes | Yes | Yes | specialization filtered by program; base batches are auto-seeded from program create, can be backfilled from the page, and now support active-state edit |
 | `SemestersPage.jsx` | Yes | No | Yes | backend update exists |
 | `ClassesPage.jsx` | Yes | Partial/custom | Partial/custom | custom cascading form, not a standard EntityManager page |
 | `CoursesPage.jsx` | No | No | No | effectively read-only despite backend CRUD |
@@ -850,7 +857,6 @@ Several capabilities already exist in backend but are not fully exposed in front
 ### Backend Supports Update, UI Does Not
 
 - `specializations` update exists, but page edit is missing
-- `batches` update exists, but page edit is missing
 - `semesters` update exists, but page edit is missing
 - `years` update exists, but page edit is missing
 - `branches` update exists, but page edit is missing
@@ -860,6 +866,7 @@ Several capabilities already exist in backend but are not fully exposed in front
 
 - sections support `course_id` and `year_id`, but the canonical setup UI does not expose them
 - sections support `faculty_name` and `branch_name`, but naming usage is inconsistent
+- batches are auto-seeded by program, but the batch page still keeps a manual create form for exceptional cases
 
 ### Governance UI Coverage Is Partial
 

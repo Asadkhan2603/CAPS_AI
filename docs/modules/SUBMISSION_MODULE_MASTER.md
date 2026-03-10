@@ -45,6 +45,7 @@ Primary frontend files:
 
 - [SubmissionsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\SubmissionsPage.jsx)
 - [EvaluateSubmission.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
+- [AIModulePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
 
 ## 2. Core Domain Model
 
@@ -378,6 +379,7 @@ Teacher/admin behavior:
 - run AI for one submission
 - bulk-run AI for pending submissions
 - open evaluation console
+- use the dedicated AI operations page for cross-submission AI visibility
 
 Important implementation note:
 
@@ -425,6 +427,23 @@ It also uses:
 as input to the AI-assisted evaluation conversation and preview flows.
 
 This means submission records are foundational to the teacher evaluation workspace.
+
+### 5.5 `AIModulePage.jsx`
+
+This page is not a submission CRUD surface, but it now consumes submission-linked AI signals operationally.
+
+Current usage includes:
+
+- submission AI completion counts
+- submission pending/running/failed AI pipeline counts
+- submission AI fallback counts and durable job queue visibility
+- recent evaluation AI runs linked back to source `submission_id`
+- similarity flags linked to submission pairs
+
+This means submission records now feed both:
+
+- direct review UI in `SubmissionsPage.jsx`
+- module-level AI operations visibility in `AIModulePage.jsx`
 
 ## 6. Business Rules
 
@@ -488,6 +507,15 @@ The page shows filenames, but not a dedicated download or file preview workflow 
 
 The teacher/admin UI is functional, but still fairly technical. It lacks richer assignment, student, and course context.
 
+### 7.5 AI activity visibility is now split across two pages
+
+Operationally this is better than before, because there is now a dedicated AI operations page.
+
+The remaining UX tradeoff is that submission-related AI visibility now lives in:
+
+- `SubmissionsPage.jsx` for row-level action and state
+- `AIModulePage.jsx` for cross-submission operational overview
+
 ## 8. Architectural Issues
 
 ### 8.1 Hard delete conflicts with recovery assumptions
@@ -496,15 +524,20 @@ The submission endpoint hard deletes rows, but submissions are included in gener
 
 This is an architectural inconsistency.
 
-### 8.2 AI execution is still request-path heavy
+### 8.2 AI execution is partly request-path heavy
 
-Single and bulk AI evaluation both execute synchronously from request handlers.
+The module no longer does all AI work inline.
 
-This creates:
+Current shape:
 
-- throughput risk
-- timeout risk
-- user-facing latency
+- `POST /submissions/{submission_id}/ai-evaluate` still runs in the request path
+- `POST /submissions/ai-evaluate/pending` now queues durable `ai_jobs`
+- queued bulk work is processed through the scheduler-backed AI job loop
+
+Remaining risk:
+
+- single-item AI evaluation still carries request-path latency
+- durable jobs still execute in the application process, not a separate worker tier
 
 ### 8.3 Local disk storage is not durable
 
@@ -523,6 +556,7 @@ The record holds:
 - file metadata
 - extracted text
 - AI execution state
+- AI prompt/runtime metadata
 - similarity score
 
 This is pragmatic, but it mixes storage, processing, and review state in one aggregate.
@@ -553,9 +587,11 @@ This is useful for AI and evaluation, but it increases:
 - document size
 - sensitivity of the record
 
-### 9.4 Bulk AI is operationally heavy
+### 9.4 Bulk AI is now durable, but still in-process
 
-The bulk AI endpoint loops synchronously and runs AI work inline.
+Bulk AI no longer runs fully inline. It now returns queued AI job metadata and relies on persisted `ai_jobs`.
+
+The remaining limitation is that job execution still happens in the web application runtime.
 
 ## 10. Downstream Dependencies
 
@@ -570,8 +606,10 @@ Submissions feed directly into:
 Observed frontend/backend dependencies:
 
 - [EvaluateSubmission.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
+- [AIModulePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
 - [evaluations.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
 - [similarity.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
+- [ai.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py)
 - [HistoryPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\HistoryPage.jsx)
 
 ## 11. Cleanup Strategy
@@ -638,6 +676,7 @@ Strengths:
 - strong teacher scope logic
 - practical AI state model
 - direct integration into evaluation tooling
+- direct contribution to module-level AI operations reporting
 
 Weaknesses:
 

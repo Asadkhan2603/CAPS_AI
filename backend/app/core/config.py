@@ -117,6 +117,9 @@ class Settings:
     scheduled_notice_poll_seconds: int = field(
         default_factory=lambda: _as_int(os.getenv("SCHEDULED_NOTICE_POLL_SECONDS", "60"), 60)
     )
+    ai_job_poll_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("AI_JOB_POLL_SECONDS", "10"), 10)
+    )
     analytics_snapshot_hour_utc: int = field(
         default_factory=lambda: _as_int(os.getenv("ANALYTICS_SNAPSHOT_HOUR_UTC", "0"), 0)
     )

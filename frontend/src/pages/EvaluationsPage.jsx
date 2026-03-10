@@ -6,18 +6,38 @@ import Card from '../components/ui/Card';
 import Table from '../components/ui/Table';
 import Badge from '../components/ui/Badge';
 import FormInput from '../components/ui/FormInput';
+import Modal from '../components/ui/Modal';
 import { apiClient } from '../services/apiClient';
+import { getEvaluationTrace, refreshEvaluationAi } from '../services/aiService';
 import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
+import { formatApiError } from '../utils/apiError';
+
+function formatTraceTimestamp(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString();
+}
 
 export default function EvaluationsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { pushToast } = useToast();
   const isStudent = user?.role === 'student';
   const [submissions, setSubmissions] = useState([]);
   const [users, setUsers] = useState([]);
   const [studentRows, setStudentRows] = useState([]);
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentFilter, setStudentFilter] = useState({ finalized: '', query: '' });
+  const [traceModalOpen, setTraceModalOpen] = useState(false);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceMeta, setTraceMeta] = useState(null);
+  const [traceItems, setTraceItems] = useState([]);
+  const [unfinalizeModalOpen, setUnfinalizeModalOpen] = useState(false);
+  const [unfinalizeReason, setUnfinalizeReason] = useState('');
+  const [unfinalizeContext, setUnfinalizeContext] = useState(null);
+  const [unfinalizeSubmitting, setUnfinalizeSubmitting] = useState(false);
 
   useEffect(() => {
     async function loadLookups() {
@@ -101,7 +121,7 @@ export default function EvaluationsPage() {
     [studentOptions, submissionOptions, teacherOptions]
   );
 
-  const createFields = useMemo(
+  const scoringFields = useMemo(
     () => [
       { name: 'submission_id', label: 'Submission', type: 'select', options: submissionOptions, required: true },
       { name: 'attendance_percent', label: 'Attendance %', type: 'number', min: 0, max: 100, required: true, defaultValue: 85 },
@@ -110,10 +130,20 @@ export default function EvaluationsPage() {
       { name: 'report', label: 'Report (0-10)', type: 'number', min: 0, max: 10, required: true, defaultValue: 8 },
       { name: 'viva', label: 'Viva (0-20)', type: 'number', min: 0, max: 20, required: true, defaultValue: 15 },
       { name: 'final_exam', label: 'Final Exam (0-60)', type: 'number', min: 0, max: 60, required: true, defaultValue: 40 },
-      { name: 'remarks', label: 'Remarks', nullable: true },
-      { name: 'is_finalized', label: 'Finalize Now', type: 'switch', defaultValue: false }
+      { name: 'remarks', label: 'Remarks', nullable: true }
     ],
     [submissionOptions]
+  );
+  const createFields = useMemo(
+    () => [...scoringFields, { name: 'is_finalized', label: 'Finalize Now', type: 'switch', defaultValue: false }],
+    [scoringFields]
+  );
+  const editFields = useMemo(
+    () => [
+      ...scoringFields,
+      { name: 'is_finalized', label: 'Finalized', type: 'switch', defaultValue: false }
+    ],
+    [scoringFields]
   );
 
   const columns = useMemo(
@@ -121,7 +151,26 @@ export default function EvaluationsPage() {
       { key: 'submission_id', label: 'Submission', render: (row) => submissionLabelById[row.submission_id] || row.submission_id },
       { key: 'student_user_id', label: 'Student', render: (row) => studentLabelById[row.student_user_id] || row.student_user_id },
       { key: 'teacher_user_id', label: 'Teacher', render: (row) => teacherLabelById[row.teacher_user_id] || row.teacher_user_id },
+      {
+        key: 'ai_status',
+        label: 'AI Status',
+        render: (row) => (
+          <Badge variant={row.ai_status === 'success' ? 'success' : row.ai_status === 'fallback' ? 'warning' : 'default'}>
+            {row.ai_status || 'pending'}
+          </Badge>
+        )
+      },
       { key: 'ai_score', label: 'AI Score', render: (row) => (row.ai_score ?? '-') },
+      {
+        key: 'ai_confidence',
+        label: 'Confidence',
+        render: (row) => (row.ai_confidence != null ? `${Math.round(row.ai_confidence * 100)}%` : '-')
+      },
+      {
+        key: 'ai_risk_flags',
+        label: 'Risk Flags',
+        render: (row) => ((row.ai_risk_flags || []).length ? row.ai_risk_flags.join(', ') : '-')
+      },
       {
         key: 'ai_feedback',
         label: 'AI Feedback',
@@ -140,6 +189,59 @@ export default function EvaluationsPage() {
     [studentLabelById, submissionLabelById, teacherLabelById]
   );
 
+  async function openTraceViewer(row) {
+    setTraceMeta({
+      evaluationId: row.id,
+      submissionLabel: submissionLabelById[row.submission_id] || row.submission_id
+    });
+    setTraceItems([]);
+    setTraceModalOpen(true);
+    setTraceLoading(true);
+    try {
+      const response = await getEvaluationTrace(row.id, { limit: 10 });
+      setTraceItems(response?.items || []);
+    } catch (err) {
+      pushToast({
+        title: 'Trace failed',
+        description: formatApiError(err, 'Unable to load evaluation AI trace'),
+        variant: 'error'
+      });
+    } finally {
+      setTraceLoading(false);
+    }
+  }
+
+  function openUnfinalizeModal(row, reload) {
+    setUnfinalizeContext({ row, reload });
+    setUnfinalizeReason('');
+    setUnfinalizeModalOpen(true);
+  }
+
+  async function onConfirmUnfinalize() {
+    if (!unfinalizeContext?.row) return;
+    const reason = unfinalizeReason.trim();
+    if (reason.length < 5) {
+      pushToast({ title: 'Reason required', description: 'Please enter at least 5 characters.', variant: 'error' });
+      return;
+    }
+    setUnfinalizeSubmitting(true);
+    try {
+      await apiClient.patch(`/evaluations/${unfinalizeContext.row.id}/override-unfinalize`, { reason });
+      pushToast({ title: 'Unlocked', description: 'Evaluation unfinalized by admin override.', variant: 'success' });
+      setUnfinalizeModalOpen(false);
+      setUnfinalizeContext(null);
+      await unfinalizeContext.reload?.();
+    } catch (err) {
+      pushToast({
+        title: 'Unfinalize failed',
+        description: formatApiError(err, 'Failed to unfinalize evaluation'),
+        variant: 'error'
+      });
+    } finally {
+      setUnfinalizeSubmitting(false);
+    }
+  }
+
   const rowActions = useMemo(() => {
     if (!['admin', 'teacher'].includes(user?.role || '')) {
       return [];
@@ -151,6 +253,25 @@ export default function EvaluationsPage() {
         label: 'Open AI Console',
         onClick: async (row) => {
           navigate(`/submissions/${row.submission_id}/evaluate`);
+        }
+      },
+      {
+        key: 'view-trace',
+        label: 'View Trace',
+        onClick: async (row) => {
+          await openTraceViewer(row);
+        }
+      },
+      {
+        key: 'refresh-ai',
+        label: 'Refresh AI',
+        onClick: async (row, { reload, pushToast: rowToast }) => {
+          await refreshEvaluationAi(row.id);
+          rowToast({ title: 'AI refreshed', description: 'Stored AI insight was refreshed.', variant: 'success' });
+          await reload();
+          if (traceModalOpen && traceMeta?.evaluationId === row.id) {
+            await openTraceViewer(row);
+          }
         }
       },
       {
@@ -173,20 +294,18 @@ export default function EvaluationsPage() {
         key: 'override-unfinalize',
         label: 'Unfinalize',
         onClick: async (row, { reload, pushToast }) => {
-          const reason = window.prompt('Enter reason for admin override unfinalize:');
-          if (!reason || reason.trim().length < 5) {
-            pushToast({ title: 'Reason required', description: 'Please enter at least 5 characters.', variant: 'error' });
-            return;
-          }
-          await apiClient.patch(`/evaluations/${row.id}/override-unfinalize`, { reason: reason.trim() });
-          pushToast({ title: 'Unlocked', description: 'Evaluation unfinalized by admin override.', variant: 'success' });
-          await reload();
+          openUnfinalizeModal(row, reload);
+          pushToast({
+            title: 'Override requested',
+            description: 'Provide a reason to reopen this finalized evaluation.',
+            variant: 'info'
+          });
         }
       });
     }
 
     return actions;
-  }, [user?.role]);
+  }, [navigate, submissionLabelById, traceMeta?.evaluationId, traceModalOpen, user?.role]);
 
   const studentSubmissionLabelById = useMemo(
     () => Object.fromEntries(submissions.map((item) => [item.id, item.title || item.original_filename || item.id])),
@@ -293,19 +412,117 @@ export default function EvaluationsPage() {
   }
 
   return (
-    <EntityManager
-      title="Evaluations"
-      endpoint="/evaluations/"
-      filters={filters}
-      createFields={createFields}
-      columns={columns}
-      rowActions={rowActions}
-      hideCreate={!['admin', 'teacher'].includes(user?.role || '')}
-      createTransform={(payload) => ({
-        ...payload,
-        is_finalized: Boolean(payload.is_finalized),
-        remarks: payload.remarks || null
-      })}
-    />
+    <>
+      <EntityManager
+        title="Evaluations"
+        endpoint="/evaluations/"
+        filters={filters}
+        createFields={createFields}
+        editFields={editFields}
+        columns={columns}
+        rowActions={rowActions}
+        enableEdit
+        hideCreate={!['admin', 'teacher'].includes(user?.role || '')}
+        createTransform={(payload) => ({
+          ...payload,
+          is_finalized: Boolean(payload.is_finalized),
+          remarks: payload.remarks || null
+        })}
+        updateTransform={(payload) => ({
+          ...payload,
+          is_finalized: Boolean(payload.is_finalized),
+          remarks: payload.remarks || null
+        })}
+      />
+
+      <Modal
+        open={traceModalOpen}
+        title={traceMeta ? `Evaluation AI Trace: ${traceMeta.submissionLabel}` : 'Evaluation AI Trace'}
+        onClose={() => setTraceModalOpen(false)}
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Stored AI run history for evaluation {traceMeta?.evaluationId || '-'}.
+          </p>
+          {traceLoading ? <p className="text-sm text-slate-500">Loading trace...</p> : null}
+          {!traceLoading && traceItems.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No AI trace records found yet.</p>
+          ) : null}
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+            {traceItems.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    {formatTraceTimestamp(item.created_at)}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Status: {item.ai_status || '-'} | Provider: {item.ai_provider || '-'}
+                  </p>
+                </div>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  Grade: {item.grade || '-'} | Total: {item.grand_total ?? '-'} | Internal: {item.internal_total ?? '-'} | AI Score:{' '}
+                  {item.ai_score ?? '-'} | Confidence:{' '}
+                  {item.ai_confidence != null ? `${Math.round(item.ai_confidence * 100)}%` : '-'}
+                </p>
+                {(item.ai_risk_flags || []).length ? (
+                  <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">
+                    Risk Flags: {(item.ai_risk_flags || []).join(' | ')}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={unfinalizeModalOpen}
+        title="Admin Override Unfinalize"
+        onClose={() => {
+          if (unfinalizeSubmitting) return;
+          setUnfinalizeModalOpen(false);
+          setUnfinalizeContext(null);
+          setUnfinalizeReason('');
+        }}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Reopening a finalized evaluation is an administrative override. Capture the reason before proceeding.
+          </p>
+          {unfinalizeContext?.row ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              Evaluation: {submissionLabelById[unfinalizeContext.row.submission_id] || unfinalizeContext.row.submission_id}
+            </div>
+          ) : null}
+          <FormInput
+            as="textarea"
+            label="Reason"
+            value={unfinalizeReason}
+            onChange={(event) => setUnfinalizeReason(event.target.value)}
+            placeholder="Enter the reason for reopening this evaluation"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setUnfinalizeModalOpen(false);
+                setUnfinalizeContext(null);
+                setUnfinalizeReason('');
+              }}
+              disabled={unfinalizeSubmitting}
+            >
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={onConfirmUnfinalize} disabled={unfinalizeSubmitting}>
+              {unfinalizeSubmitting ? 'Submitting...' : 'Confirm'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

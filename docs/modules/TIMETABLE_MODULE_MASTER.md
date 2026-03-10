@@ -687,9 +687,11 @@ Behavior:
 - admin and teacher see CRUD page
 - student sees read-only self slots via `/class-slots/my`
 - filters:
+  - section
   - offering
   - day
   - active
+- edit is enabled for admin/teacher
 - create fields:
   - offering
   - day
@@ -699,8 +701,8 @@ Behavior:
 
 Current limitations:
 
-- edit is not enabled in the page config even though backend update exists
 - student view is simplified and not a timetable grid
+- offering labels are improved to section-aware labels, but they still do not use subject and teacher names
 
 ### Frontend Feature Access
 
@@ -828,15 +830,11 @@ Current code label is:
 
 This is a documentation and UX inconsistency.
 
-### Class Slot Edit Capability Exists but UI Does Not Expose It
+### Class Slot UI Still Underuses Enriched Offering Labels
 
-Backend:
+Backend offering responses can provide richer display metadata than the current class-slot page uses.
 
-- supports `PUT /class-slots/{slot_id}`
-
-Frontend:
-
-- `ClassSlotsPage.jsx` does not enable edit
+Frontend currently improves labels with section names, but still does not show subject and teacher names in the slot offering selector.
 
 ### No Governance Workflow on Timetable Destructive Actions
 

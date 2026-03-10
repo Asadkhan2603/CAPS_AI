@@ -14,5 +14,6 @@ def similarity_log_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "score": document.get("score", 0.0),
         "threshold": document.get("threshold", 0.0),
         "is_flagged": document.get("is_flagged", False),
+        "engine_version": document.get("engine_version"),
         "created_at": document.get("created_at"),
     }

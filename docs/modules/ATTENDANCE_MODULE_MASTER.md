@@ -553,9 +553,11 @@ UI characteristics:
 
 - built on shared `EntityManager`
 - filters:
+  - section
   - offering
   - day
   - active
+- edit is enabled for admin/teacher
 - create fields:
   - offering
   - day
@@ -565,8 +567,9 @@ UI characteristics:
 
 Important limitation:
 
-- offering labels are weak and mostly technical:
-  - `section_id | academic_year | offering_type`
+- offering labels are improved to section-aware labels such as:
+  - `section name | academic_year | offering_type`
+- the page still does not use full enriched offering labels such as subject name and teacher name
 - page does not expose conflict visualization before submission
 
 ### Dashboard Student Attendance Surface

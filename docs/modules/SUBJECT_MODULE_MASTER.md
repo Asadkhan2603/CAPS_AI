@@ -337,21 +337,15 @@ The page is implemented with `EntityManager` and currently exposes:
 
 - list
 - create
-- delete
-
-It does not currently expose:
-
 - edit
-
-This is important because the backend does support update, but the page does not pass `enableEdit`.
+- delete
 
 ### 8.2 Filters
 
-Current frontend filter:
+Current frontend filters:
 
 - `q` for name/code search
-
-The backend also supports `is_active`, but the current page does not expose an active-state filter.
+- `is_active`
 
 ### 8.3 Create form
 
@@ -371,8 +365,10 @@ Current visible columns:
 
 The page does not currently display:
 
-- `is_active`
 - `created_at`
+The page now also displays:
+
+- `is_active`
 
 ## 9. Frontend vs Backend Gaps
 
@@ -391,15 +387,11 @@ If a teacher lacks that permission, the UI still presents create/delete controls
 
 This is a clear UI-backend contract mismatch.
 
-### Gap 2: Backend supports update, frontend does not expose edit
+### Gap 2: Teachers can open the page, but cannot reliably write
 
-The update endpoint exists, but the page does not enable edit controls.
+The edit and active-filter gaps are now closed in the page itself, but the role/permission mismatch remains.
 
-### Gap 3: Backend supports active filtering, frontend does not expose it
-
-Operators cannot intentionally filter active/inactive subjects from the standard page even though the API supports it.
-
-### Gap 4: Delete is exposed without governance
+### Gap 3: Delete is exposed without governance
 
 The page enables delete, but there is:
 
@@ -479,7 +471,6 @@ Because subject is used across multiple academic delivery modules, delete should
 
 - keep subject reads global for admin/teacher
 - hide write controls for users who do not have actual write capability
-- enable edit in the frontend if update is intended to be operator-facing
 - prefer `is_active = false` over hard delete for routine retirement
 
 ### Medium-term
@@ -555,7 +546,6 @@ Current strengths:
 Current weaknesses:
 
 - teachers can access the page but may not be allowed to write
-- frontend does not expose edit although backend supports it
 - delete is hard delete with no governance or dependency protection
 - the module still uses the older blanket `academic:manage` permission style
 

@@ -306,7 +306,7 @@ Manual checks:
 
 The strongest recent backend coverage is in:
 - academic setup policy enforcement
-- program duration and semester generation rules
+- program duration, batch seeding, and semester generation rules
 - governance-protected delete behavior
 - destructive action telemetry
 - soft-delete semantics

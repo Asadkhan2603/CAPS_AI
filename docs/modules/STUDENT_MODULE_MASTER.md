@@ -222,6 +222,8 @@ Key fields:
 - `ai_score`
 - `ai_feedback`
 - `ai_provider`
+- `ai_prompt_version`
+- `ai_runtime_snapshot`
 - `ai_error`
 - `similarity_score`
 - `extracted_text`
@@ -256,6 +258,9 @@ Key fields:
 - `ai_score`
 - `ai_feedback`
 - `ai_status`
+- `ai_provider`
+- `ai_prompt_version`
+- `ai_runtime_snapshot`
 - `remarks`
 - `is_finalized`
 - `finalized_at`
@@ -608,6 +613,10 @@ Access:
 - `admin`
 - `teacher`
 
+Behavior:
+
+- queues durable bulk AI work and returns AI job metadata instead of finishing the batch inline
+
 ### Evaluation Endpoints
 
 Base route: `/evaluations`
@@ -673,13 +682,13 @@ Features:
 
 - search by name, roll number, email
 - filter by section
+- filter by active state
 - create student
 - edit student through shared entity manager
+- assign optional group when section is selected
 - delete student enabled
 
-Current frontend gap:
-
-- UI does not expose `group_id` even though backend supports it
+The page now exposes both section and group assignment in line with the backend contract.
 
 ### `EnrollmentsPage.jsx`
 
@@ -713,6 +722,7 @@ Admin/teacher mode:
 
 - view all accessible submissions
 - run AI evaluation
+- queue bulk AI for pending submissions
 - open evaluation console
 - admin can see teacher marks merged from evaluations
 
@@ -727,6 +737,8 @@ Student mode:
 Admin/teacher mode:
 
 - shared entity manager for evaluation CRUD
+- trace viewer
+- direct AI refresh
 - finalize action
 - admin override unfinalize action
 - AI console handoff to submission evaluation page
@@ -802,9 +814,9 @@ Student-to-section relation currently exists in:
 
 These can drift if not managed carefully.
 
-### Student Master Does Not Expose Group In UI
+### Student Master And Enrollment State Are Still Split
 
-Backend supports `group_id`, but `StudentsPage.jsx` does not expose it in the form. That means UI and API are not fully aligned.
+The student page now exposes `group_id`, but the broader duplication between `students.class_id` and `enrollments.class_id` still exists.
 
 ### Student Lookup Depends On Email In Several Places
 
@@ -889,7 +901,6 @@ That reflects real business flow, but it makes a single “student module” har
 
 ### Phase 3
 
-- expose `group_id` intentionally in `StudentsPage.jsx` or explicitly hide and document why
 - normalize `class_id` naming toward canonical section terminology at API boundary
 
 ### Phase 4

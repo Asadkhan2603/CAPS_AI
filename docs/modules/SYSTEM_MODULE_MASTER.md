@@ -184,6 +184,7 @@ Major configuration groups:
 - `openai_timeout_seconds`
 - `openai_max_output_tokens`
 - `similarity_threshold`
+- `ai_job_poll_seconds`
 - `analytics_cache_ttl_seconds`
 
 ### Scheduler controls
@@ -314,6 +315,8 @@ It creates indexes for:
 - attendance collections
 - internship sessions
 - AI evaluation run storage
+- AI job storage
+- idempotent similarity log storage
 
 ## 5.2 Index creation behavior
 
@@ -396,7 +399,8 @@ The scheduler is the operational orchestrator for recurring background jobs.
 Current scheduled jobs:
 
 1. scheduled notice dispatch polling
-2. daily analytics snapshot generation
+2. durable AI job polling and execution
+3. daily analytics snapshot generation
 
 ## 7.2 Leadership model
 
@@ -431,6 +435,7 @@ This is a substantial improvement over naive multi-replica scheduling.
 - `lock_ttl_seconds`
 - `lock_renew_seconds`
 - `scheduled_notice_poll_seconds`
+- `ai_job_poll_seconds`
 - `snapshot_time_utc`
 - `last_notice_dispatch_at`
 - `last_notice_dispatch_count`
@@ -446,7 +451,7 @@ The leader-election model is pragmatic, but remaining risks include:
 - no separate worker deployment boundary
 - background work still lives in the web process
 
-This is acceptable for moderate load, but it is not a full job-queue architecture.
+This is acceptable for moderate load, but it is still a web-process-hosted queue/worker model rather than a separately deployed worker tier.
 
 ## 8. Operational APIs
 

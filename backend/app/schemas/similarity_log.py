@@ -15,4 +15,5 @@ class SimilarityLogOut(BaseModel):
     score: float = Field(ge=0, le=1)
     threshold: float = Field(ge=0, le=1)
     is_flagged: bool = False
+    engine_version: str | None = None
     created_at: datetime | None = None

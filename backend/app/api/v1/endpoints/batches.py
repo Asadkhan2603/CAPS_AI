@@ -36,6 +36,25 @@ def _normalize_program_duration(program: dict[str, Any]) -> tuple[int, int]:
     return duration_years, total_semesters
 
 
+def _resolve_batch_years(*, start_year: int | None, end_year: int | None, duration_years: int) -> tuple[int | None, int | None]:
+    if start_year is not None and end_year is None:
+        end_year = start_year + duration_years
+    elif end_year is not None and start_year is None:
+        start_year = end_year - duration_years
+
+    if start_year is not None and end_year is not None:
+        if end_year < start_year:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End year cannot be earlier than start year")
+        expected_end_year = start_year + duration_years
+        if end_year != expected_end_year:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Batch span must match program duration of {duration_years} years.",
+            )
+
+    return start_year, end_year
+
+
 @router.get("/", response_model=List[BatchOut])
 async def list_batches(
     program_id: str | None = Query(default=None),
@@ -88,25 +107,20 @@ async def create_batch(
         if specialization.get("program_id") != payload.program_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="specialization_id does not belong to program_id")
 
-    start_year = payload.start_year
-    end_year = payload.end_year
-    if start_year is not None and end_year is None:
-        end_year = start_year + duration_years - 1
-    elif end_year is not None and start_year is None:
-        start_year = end_year - duration_years + 1
-
-    if start_year is not None and end_year is not None:
-        if end_year < start_year:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End year cannot be earlier than start year")
-        expected_end_year = start_year + duration_years - 1
-        if end_year != expected_end_year:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Batch span must match program duration of {duration_years} years.",
-            )
+    start_year, end_year = _resolve_batch_years(
+        start_year=payload.start_year,
+        end_year=payload.end_year,
+        duration_years=duration_years,
+    )
 
     normalized_code = payload.code.strip().upper()
-    existing = await db.batches.find_one({"code": normalized_code})
+    existing = await db.batches.find_one(
+        {
+            "program_id": payload.program_id,
+            "specialization_id": payload.specialization_id,
+            "code": normalized_code,
+        }
+    )
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch code already exists")
     document = {
@@ -150,22 +164,43 @@ async def update_batch(
     if not current:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
     update_data = payload.model_dump(exclude_none=True)
+    target_program_id = update_data.get("program_id", current.get("program_id"))
+    target_specialization_id = update_data.get("specialization_id", current.get("specialization_id"))
     if "name" in update_data and update_data["name"]:
         update_data["name"] = update_data["name"].strip()
     if "code" in update_data and update_data["code"]:
         update_data["code"] = update_data["code"].strip().upper()
-        duplicate = await db.batches.find_one({"code": update_data["code"]})
+        duplicate = await db.batches.find_one(
+            {
+                "program_id": target_program_id,
+                "specialization_id": target_specialization_id,
+                "code": update_data["code"],
+            }
+        )
         if duplicate and duplicate.get("_id") != batch_obj_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch code already exists")
-    target_program_id = update_data.get("program_id", current.get("program_id"))
     if target_program_id:
         program = await db.programs.find_one({"_id": parse_object_id(target_program_id)})
         if not program:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program not found for provided program_id")
-    if "specialization_id" in update_data and update_data["specialization_id"]:
-        specialization = await db.specializations.find_one({"_id": parse_object_id(update_data["specialization_id"])})
+        duration_years, _ = _normalize_program_duration(program)
+    else:
+        duration_years = 4
+    if target_specialization_id:
+        specialization = await db.specializations.find_one({"_id": parse_object_id(target_specialization_id)})
         if not specialization:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Specialization not found for provided specialization_id")
+        if specialization.get("program_id") != target_program_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="specialization_id does not belong to program_id")
+
+    resolved_start_year, resolved_end_year = _resolve_batch_years(
+        start_year=update_data.get("start_year", current.get("start_year")),
+        end_year=update_data.get("end_year", current.get("end_year")),
+        duration_years=duration_years,
+    )
+    if "start_year" in update_data or "end_year" in update_data or "program_id" in update_data:
+        update_data["start_year"] = resolved_start_year
+        update_data["end_year"] = resolved_end_year
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
     result = await db.batches.update_one({"_id": batch_obj_id}, build_state_update(update_data))

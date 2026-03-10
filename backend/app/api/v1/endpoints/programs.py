@@ -16,6 +16,7 @@ router = APIRouter()
 MIN_DURATION_YEARS = 3
 MAX_DURATION_YEARS = 5
 SEMESTERS_PER_YEAR = 2
+AUTO_BATCH_START_YEAR = 2022
 
 
 def _validate_duration_years(duration_years: int) -> int:
@@ -84,6 +85,105 @@ async def _sync_program_semesters(program_id: str, total_semesters: int) -> None
         )
 
 
+def _build_auto_batch_identity(start_year: int, duration_years: int) -> tuple[str, str, int]:
+    end_year = start_year + duration_years
+    start_short = str(start_year)[-2:]
+    end_short = str(end_year)[-2:]
+    return f"B{start_year}", f"B{start_short}-{end_short}", end_year
+
+
+async def _seed_program_batches(program_id: str, duration_years: int) -> int:
+    now = datetime.now(timezone.utc)
+    current_year = now.year
+    existing = await db.batches.find(
+        {"program_id": program_id, "specialization_id": None},
+        {"_id": 1, "start_year": 1},
+    ).to_list(length=1000)
+    existing_start_years = {int(item.get("start_year")) for item in existing if item.get("start_year") is not None}
+
+    batch_docs: list[dict[str, Any]] = []
+    for start_year in range(AUTO_BATCH_START_YEAR, current_year + 1):
+        if start_year in existing_start_years:
+            continue
+        name, code, end_year = _build_auto_batch_identity(start_year, duration_years)
+        batch_docs.append(
+            {
+                "program_id": program_id,
+                "specialization_id": None,
+                "name": name,
+                "code": code,
+                "start_year": start_year,
+                "end_year": end_year,
+                "is_active": True,
+                "auto_generated": True,
+                "created_at": now,
+            }
+        )
+
+    if not batch_docs:
+        return 0
+
+    result = await db.batches.insert_many(batch_docs)
+    semester_docs: list[dict[str, Any]] = []
+    for batch_id in result.inserted_ids:
+        batch_id_str = str(batch_id)
+        for semester_number in range(1, duration_years * SEMESTERS_PER_YEAR + 1):
+            semester_docs.append(
+                {
+                    "batch_id": batch_id_str,
+                    "semester_number": semester_number,
+                    "label": f"Semester {semester_number}",
+                    "is_active": True,
+                    "created_at": now,
+                }
+            )
+    if semester_docs:
+        await db.semesters.insert_many(semester_docs)
+    return len(batch_docs)
+
+
+async def _sync_auto_generated_batches(program_id: str, duration_years: int) -> None:
+    now = datetime.now(timezone.utc)
+    rows = await db.batches.find(
+        {"program_id": program_id, "specialization_id": None, "auto_generated": True},
+        {"_id": 1, "start_year": 1},
+    ).to_list(length=1000)
+
+    for row in rows:
+        start_year = row.get("start_year")
+        if start_year is None:
+            continue
+        name, code, end_year = _build_auto_batch_identity(int(start_year), duration_years)
+        await db.batches.update_one(
+            {"_id": row["_id"]},
+            {
+                "$set": {
+                    "name": name,
+                    "code": code,
+                    "end_year": end_year,
+                    "updated_at": now,
+                }
+            },
+        )
+
+    await _seed_program_batches(program_id, duration_years)
+    await _sync_program_semesters(program_id, duration_years * SEMESTERS_PER_YEAR)
+
+
+async def _seed_all_program_batches() -> dict[str, int]:
+    programs = await db.programs.find({"is_active": True}, {"_id": 1, "duration_years": 1}).to_list(length=1000)
+    program_count = 0
+    batch_count = 0
+    for program in programs:
+        if not program.get("_id"):
+            continue
+        duration_years = _validate_duration_years(int(program.get("duration_years") or 4))
+        created = await _seed_program_batches(str(program["_id"]), duration_years)
+        program_count += 1
+        batch_count += created
+    return {"program_count": program_count, "batch_count": batch_count}
+
+
 @router.get("/", response_model=List[ProgramOut])
 async def list_programs(
     department_id: str | None = Query(default=None),
@@ -141,8 +241,20 @@ async def create_program(
         "created_at": datetime.now(timezone.utc),
     }
     result = await db.programs.insert_one(document)
+    await _seed_program_batches(str(result.inserted_id), duration_years)
     created = await db.programs.find_one({"_id": result.inserted_id})
     return ProgramOut(**program_public(created))
+
+
+@router.post("/seed-batches")
+async def seed_program_batches(
+    _current_user=Depends(require_permission("programs.manage")),
+) -> dict[str, int | str]:
+    summary = await _seed_all_program_batches()
+    return {
+        "message": "Program batches seeded successfully",
+        **summary,
+    }
 
 
 @router.put("/{program_id}", response_model=ProgramOut)
@@ -187,7 +299,7 @@ async def update_program(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
     updated = await db.programs.find_one({"_id": program_obj_id})
     if "duration_years" in update_data:
-        await _sync_program_semesters(program_id, int(update_data["total_semesters"]))
+        await _sync_auto_generated_batches(program_id, int(update_data["duration_years"]))
     return ProgramOut(**program_public(updated))
 
 

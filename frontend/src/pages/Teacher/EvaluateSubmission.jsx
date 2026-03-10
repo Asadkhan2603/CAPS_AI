@@ -4,7 +4,12 @@ import Card from '../../components/ui/Card';
 import FormInput from '../../components/ui/FormInput';
 import AIChatPanel from '../../components/Teacher/AIChatPanel';
 import { apiClient } from '../../services/apiClient';
-import { getEvaluationChatHistory, sendEvaluationChatMessage } from '../../services/aiService';
+import {
+  getEvaluationChatHistory,
+  getEvaluationTrace,
+  refreshEvaluationAi,
+  sendEvaluationChatMessage
+} from '../../services/aiService';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../hooks/useAuth';
 import { formatApiError } from '../../utils/apiError';
@@ -26,6 +31,25 @@ function questionCandidatesFromAssignment(assignment) {
   ];
 }
 
+function marksFromEvaluation(evaluation) {
+  return {
+    attendance_percent: evaluation?.attendance_percent ?? 85,
+    skill: evaluation?.skill ?? 2,
+    behavior: evaluation?.behavior ?? 2,
+    report: evaluation?.report ?? 8,
+    viva: evaluation?.viva ?? 15,
+    final_exam: evaluation?.final_exam ?? 40,
+    remarks: evaluation?.remarks || ''
+  };
+}
+
+function formatTraceTimestamp(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString();
+}
+
 export default function EvaluateSubmissionPage() {
   const { submissionId } = useParams();
   const navigate = useNavigate();
@@ -35,6 +59,7 @@ export default function EvaluateSubmissionPage() {
   const [submission, setSubmission] = useState(null);
   const [assignment, setAssignment] = useState(null);
   const [student, setStudent] = useState(null);
+  const [evaluation, setEvaluation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatSending, setChatSending] = useState(false);
@@ -45,6 +70,9 @@ export default function EvaluateSubmissionPage() {
   const [evaluationId, setEvaluationId] = useState('');
   const [aiPreview, setAiPreview] = useState(null);
   const [aiPreviewLoading, setAiPreviewLoading] = useState(false);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [aiRefreshLoading, setAiRefreshLoading] = useState(false);
+  const [traceItems, setTraceItems] = useState([]);
   const [marks, setMarks] = useState({
     attendance_percent: 85,
     skill: 2,
@@ -60,6 +88,14 @@ export default function EvaluateSubmissionPage() {
     () => questions.find((question) => question.id === selectedQuestionId) || questions[0],
     [questions, selectedQuestionId]
   );
+
+  function applyEvaluation(nextEvaluation) {
+    setEvaluation(nextEvaluation || null);
+    setEvaluationId(nextEvaluation?.id || '');
+    if (nextEvaluation) {
+      setMarks(marksFromEvaluation(nextEvaluation));
+    }
+  }
 
   async function loadCore() {
     if (!submissionId) return;
@@ -78,18 +114,7 @@ export default function EvaluateSubmissionPage() {
       const matchedStudent = (usersRes.data || []).find((item) => item.id === submissionData.student_user_id);
       setStudent(matchedStudent || null);
       const existingEvaluation = (evalRes.data || [])[0];
-      if (existingEvaluation) {
-        setEvaluationId(existingEvaluation.id);
-        setMarks({
-          attendance_percent: existingEvaluation.attendance_percent ?? 85,
-          skill: existingEvaluation.skill ?? 2,
-          behavior: existingEvaluation.behavior ?? 2,
-          report: existingEvaluation.report ?? 8,
-          viva: existingEvaluation.viva ?? 15,
-          final_exam: existingEvaluation.final_exam ?? 40,
-          remarks: existingEvaluation.remarks || ''
-        });
-      }
+      applyEvaluation(existingEvaluation || null);
     } catch (err) {
       pushToast({
         title: 'Load failed',
@@ -98,6 +123,26 @@ export default function EvaluateSubmissionPage() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadTrace(targetEvaluationId = evaluationId) {
+    if (!targetEvaluationId) {
+      setTraceItems([]);
+      return;
+    }
+    setTraceLoading(true);
+    try {
+      const response = await getEvaluationTrace(targetEvaluationId, { limit: 10 });
+      setTraceItems(response?.items || []);
+    } catch (err) {
+      pushToast({
+        title: 'AI trace failed',
+        description: formatApiError(err, 'Unable to load evaluation AI trace'),
+        variant: 'error'
+      });
+    } finally {
+      setTraceLoading(false);
     }
   }
 
@@ -133,18 +178,28 @@ export default function EvaluateSubmissionPage() {
     loadHistory(submission);
   }, [submission?.id]);
 
+  useEffect(() => {
+    loadTrace();
+  }, [evaluationId]);
+
   async function onSaveMarks() {
     if (!submission) return;
     try {
+      let savedEvaluation = null;
       if (evaluationId) {
-        await apiClient.put(`/evaluations/${evaluationId}`, marks);
+        const response = await apiClient.put(`/evaluations/${evaluationId}`, marks);
+        savedEvaluation = response.data || null;
       } else {
         const created = await apiClient.post('/evaluations/', {
           submission_id: submission.id,
           ...marks,
           is_finalized: false
         });
-        setEvaluationId(created.data?.id || '');
+        savedEvaluation = created.data || null;
+      }
+      if (savedEvaluation) {
+        applyEvaluation(savedEvaluation);
+        await loadTrace(savedEvaluation.id);
       }
       pushToast({ title: 'Saved', description: 'Marks saved successfully.', variant: 'success' });
     } catch (err) {
@@ -166,6 +221,29 @@ export default function EvaluateSubmissionPage() {
       pushToast({ title: 'AI preview failed', description: formatApiError(err, 'Failed to generate AI preview'), variant: 'error' });
     } finally {
       setAiPreviewLoading(false);
+    }
+  }
+
+  async function onRefreshAI() {
+    if (!evaluationId) return;
+    setAiRefreshLoading(true);
+    try {
+      const refreshedEvaluation = await refreshEvaluationAi(evaluationId);
+      applyEvaluation(refreshedEvaluation);
+      await loadTrace(refreshedEvaluation?.id || evaluationId);
+      pushToast({
+        title: 'AI refreshed',
+        description: 'Stored evaluation AI insight and trace were refreshed.',
+        variant: 'success'
+      });
+    } catch (err) {
+      pushToast({
+        title: 'AI refresh failed',
+        description: formatApiError(err, 'Unable to refresh stored AI insight'),
+        variant: 'error'
+      });
+    } finally {
+      setAiRefreshLoading(false);
     }
   }
 
@@ -281,8 +359,54 @@ export default function EvaluateSubmissionPage() {
                 <button className="btn-secondary" onClick={onPreviewAI} disabled={aiPreviewLoading}>
                   {aiPreviewLoading ? 'Generating...' : 'Preview AI Insight'}
                 </button>
+                <button
+                  className="btn-secondary"
+                  onClick={onRefreshAI}
+                  disabled={!evaluationId || aiRefreshLoading}
+                  title={evaluationId ? 'Refresh persisted AI for this evaluation' : 'Save marks first to create an evaluation'}
+                >
+                  {aiRefreshLoading ? 'Refreshing...' : 'Refresh Stored AI'}
+                </button>
                 <button className="btn-primary" onClick={onSaveMarks}>Save Marks</button>
               </div>
+              {evaluation ? (
+                <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">Persisted Evaluation AI</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Status: {evaluation.ai_status || 'pending'} | Provider: {evaluation.ai_provider || '-'} | Confidence:{' '}
+                      {evaluation.ai_confidence != null ? `${Math.round(evaluation.ai_confidence * 100)}%` : '-'}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
+                    {evaluation.ai_feedback || 'No stored AI feedback yet. Save or refresh the evaluation to persist AI insight.'}
+                  </p>
+                  {(evaluation.ai_strengths || []).length ? (
+                    <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
+                      Strengths: {(evaluation.ai_strengths || []).join(' | ')}
+                    </p>
+                  ) : null}
+                  {(evaluation.ai_gaps || []).length ? (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                      Gaps: {(evaluation.ai_gaps || []).join(' | ')}
+                    </p>
+                  ) : null}
+                  {(evaluation.ai_suggestions || []).length ? (
+                    <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">
+                      Suggestions: {(evaluation.ai_suggestions || []).join(' | ')}
+                    </p>
+                  ) : null}
+                  {(evaluation.ai_risk_flags || []).length ? (
+                    <p className="mt-1 text-xs text-rose-700 dark:text-rose-300">
+                      Risk Flags: {(evaluation.ai_risk_flags || []).join(' | ')}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Save marks once to persist AI insight and unlock trace history.
+                </p>
+              )}
               {aiPreview ? (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
                   <p className="text-sm font-semibold">AI Insight Preview</p>
@@ -302,7 +426,55 @@ export default function EvaluateSubmissionPage() {
             </Card>
           </div>
 
-          <div>
+          <div className="space-y-4">
+            <Card className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-semibold">Evaluation AI Trace</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Historical AI runs persisted for this evaluation.
+                  </p>
+                </div>
+                {traceLoading ? <p className="text-xs text-slate-500">Loading trace...</p> : null}
+              </div>
+              {!evaluationId ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Save marks to create an evaluation record and capture AI trace history.
+                </p>
+              ) : traceItems.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  No AI trace records found yet for this evaluation.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {traceItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-100">
+                          {formatTraceTimestamp(item.created_at)}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Status: {item.ai_status || '-'} | Provider: {item.ai_provider || '-'}
+                        </p>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                        Grade: {item.grade || '-'} | Total: {item.grand_total ?? '-'} | Internal: {item.internal_total ?? '-'} | AI Score:{' '}
+                        {item.ai_score ?? '-'} | Confidence:{' '}
+                        {item.ai_confidence != null ? `${Math.round(item.ai_confidence * 100)}%` : '-'}
+                      </p>
+                      {(item.ai_risk_flags || []).length ? (
+                        <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">
+                          Risk Flags: {(item.ai_risk_flags || []).join(' | ')}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
             {chatLoading ? <Card><p className="text-sm text-slate-500">Loading chat history...</p></Card> : null}
             <AIChatPanel
               messages={chatMessages}

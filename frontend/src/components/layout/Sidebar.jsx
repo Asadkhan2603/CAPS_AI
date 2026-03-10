@@ -23,7 +23,8 @@ import {
   Building2,
   GitBranch,
   Wrench,
-  History
+  History,
+  Sparkles
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -75,6 +76,7 @@ const groupedItems = [
       { to: '/attendance-records', label: 'Attendance', featureKey: 'attendanceRecords', icon: ClipboardCheck },
       { to: '/assignments', label: 'Assignments', featureKey: 'assignments', icon: FileText },
       { to: '/submissions', label: 'Submissions', featureKey: 'submissions', icon: ClipboardCheck },
+      { to: '/ai-operations', label: 'AI Operations', featureKey: 'aiModule', icon: Sparkles },
       { to: '/review-tickets', label: 'Review Tickets', featureKey: 'reviewTickets', icon: ScrollText },
       { to: '/evaluations', label: 'Evaluations', featureKey: 'evaluations', icon: CheckSquare },
       { to: '/enrollments', label: 'Enrollments', featureKey: 'enrollments', icon: UserCheck }

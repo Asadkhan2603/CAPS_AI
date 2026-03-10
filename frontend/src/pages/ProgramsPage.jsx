@@ -82,7 +82,7 @@ export default function ProgramsPage() {
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-        Total Semesters is auto-generated from Course Duration.
+        Total Semesters is auto-generated from Course Duration. Base batches are also auto-created from 2022 through the current year.
       </div>
       <EntityManager
         title="Programs"

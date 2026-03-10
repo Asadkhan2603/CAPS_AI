@@ -84,6 +84,13 @@ export default function CourseOfferingsPage() {
     ],
     [batchOptions, groupOptions, sectionOptions, semesterOptions, subjectOptions, teacherOptions]
   );
+  const editFields = useMemo(
+    () => [
+      ...createFields,
+      { name: 'is_active', label: 'Active', type: 'switch', defaultValue: true }
+    ],
+    [createFields]
+  );
 
   const columns = useMemo(
     () => [
@@ -94,7 +101,8 @@ export default function CourseOfferingsPage() {
       { key: 'batch_id', label: 'Batch', render: (row) => batchMap[row.batch_id] || row.batch_id || '-' },
       { key: 'semester_id', label: 'Semester', render: (row) => semesterMap[row.semester_id] || row.semester_id || '-' },
       { key: 'academic_year', label: 'Year' },
-      { key: 'offering_type', label: 'Type' }
+      { key: 'offering_type', label: 'Type' },
+      { key: 'is_active', label: 'Active', render: (row) => (row.is_active ? 'Yes' : 'No') }
     ],
     [batchMap, groupMap, sectionMap, semesterMap, subjectMap, teacherMap]
   );
@@ -105,10 +113,12 @@ export default function CourseOfferingsPage() {
       endpoint="/course-offerings/"
       filters={filters}
       createFields={createFields}
+      editFields={editFields}
       columns={columns}
+      enableEdit
       enableDelete
       createTransform={(payload) => ({ ...payload, group_id: payload.group_id || null })}
+      updateTransform={(payload) => ({ ...payload, group_id: payload.group_id || null })}
     />
   );
 }
-

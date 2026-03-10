@@ -18,6 +18,8 @@ class SubmissionOut(BaseModel):
     ai_feedback: str | None = None
     ai_provider: str | None = None
     ai_error: str | None = None
+    ai_prompt_version: str | None = None
+    ai_runtime_snapshot: dict | None = None
     similarity_score: float | None = None
     extracted_text: str | None = None
     created_at: datetime | None = None
@@ -31,4 +33,5 @@ class SubmissionUpdate(BaseModel):
     ai_feedback: str | None = Field(default=None, max_length=2000)
     ai_provider: str | None = Field(default=None, max_length=100)
     ai_error: str | None = Field(default=None, max_length=500)
+    ai_prompt_version: str | None = Field(default=None, max_length=100)
     similarity_score: float | None = Field(default=None, ge=0, le=1)

@@ -396,6 +396,9 @@ List columns show:
 - semester
 - academic year
 - type
+- active state
+
+The page now also exposes edit through `EntityManager`, not just create/archive.
 
 ### 5.5 Delete support
 
@@ -519,15 +522,14 @@ UI allows delete, but there is no governance review prompt and no explicit warni
 
 `ClassSlotsPage.jsx` labels offerings as:
 
-- `section_id | academic_year | offering_type`
+- `section name | academic_year | offering_type`
 
 instead of using human-friendly:
 
-- section name
 - subject name
 - teacher name
 
-This makes the downstream UX weaker than the data model supports.
+This is better than raw ids, but still weaker than the full enriched data model supports.
 
 ### 8.4 No explicit dependency surfacing
 

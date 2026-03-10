@@ -369,6 +369,7 @@ Assignments are upstream to:
 - submissions
 - evaluations
 - similarity logs
+- durable AI jobs scoped by assignment-linked submissions
 - notifications generated from similarity alerts
 - student history and dashboards
 - communication feed

@@ -24,6 +24,7 @@ export const FEATURE_ACCESS = {
   attendanceRecords: { allowedRoles: ['admin', 'teacher', 'student'] },
   assignments: { allowedRoles: ['admin', 'teacher'] },
   submissions: { allowedRoles: ['admin', 'teacher', 'student'] },
+  aiModule: { allowedRoles: ['admin', 'teacher'] },
   reviewTickets: { allowedRoles: ['admin', 'teacher'] },
   evaluations: { allowedRoles: ['admin', 'teacher', 'student'] },
   enrollments: {

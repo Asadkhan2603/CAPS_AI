@@ -11,6 +11,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.core.config import settings
 from app.core.database import db
+from app.services.ai_jobs import process_ai_jobs_once
 from app.services.background_jobs import (
     dispatch_scheduled_notice_notifications,
     run_daily_analytics_snapshot_job,
@@ -58,6 +59,7 @@ class AppScheduler:
                 "lock_ttl_seconds": self._lock_ttl_seconds,
                 "lock_renew_seconds": self._lock_renew_seconds,
                 "scheduled_notice_poll_seconds": settings.scheduled_notice_poll_seconds,
+                "ai_job_poll_seconds": settings.ai_job_poll_seconds,
                 "snapshot_hour_utc": settings.analytics_snapshot_hour_utc,
                 "snapshot_minute_utc": settings.analytics_snapshot_minute_utc,
             }
@@ -86,6 +88,7 @@ class AppScheduler:
             "lock_ttl_seconds": self._lock_ttl_seconds,
             "lock_renew_seconds": self._lock_renew_seconds,
             "scheduled_notice_poll_seconds": settings.scheduled_notice_poll_seconds,
+            "ai_job_poll_seconds": settings.ai_job_poll_seconds,
             "snapshot_time_utc": f"{settings.analytics_snapshot_hour_utc:02d}:{settings.analytics_snapshot_minute_utc:02d}",
             "last_notice_dispatch_at": self._last_notice_dispatch_at,
             "last_notice_dispatch_count": self._last_notice_dispatch_count,
@@ -135,6 +138,7 @@ class AppScheduler:
             return
         self._job_tasks = [
             asyncio.create_task(self._scheduled_notice_loop(), name="scheduled-notice-loop"),
+            asyncio.create_task(self._ai_job_loop(), name="ai-job-loop"),
             asyncio.create_task(self._daily_snapshot_loop(), name="daily-snapshot-loop"),
         ]
         logger.info({"event": "scheduler.jobs_started", "instance_id": self._instance_id})
@@ -226,6 +230,15 @@ class AppScheduler:
             except Exception:
                 logger.exception({"event": "scheduler.daily_snapshot.error"})
                 await asyncio.sleep(30)
+
+    async def _ai_job_loop(self) -> None:
+        sleep_for = max(5, settings.ai_job_poll_seconds)
+        while self._running and self._is_leader:
+            try:
+                await process_ai_jobs_once(max_jobs=3)
+            except Exception:
+                logger.exception({"event": "scheduler.ai_jobs.error"})
+            await asyncio.sleep(sleep_for)
 
 
 app_scheduler = AppScheduler()

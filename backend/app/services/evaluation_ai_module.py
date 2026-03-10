@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.ai_evaluation import generate_ai_feedback
+from app.services.ai_runtime import clone_runtime_snapshot
 
 
 def _safe_float(value: Any, fallback: float = 0.0) -> float:
@@ -56,8 +57,9 @@ def build_ai_insight(
     internal_total: float,
     grand_total: float,
     grade: str,
+    runtime_settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    ai = generate_ai_feedback(submission_text, max_score=10.0)
+    ai = generate_ai_feedback(submission_text, max_score=10.0, runtime_settings=runtime_settings)
     ai_score = _safe_float(ai.get("score"), 0.0)
     summary = str(ai.get("summary") or "No AI summary generated")
     strengths, gaps, suggestions = _split_insight_lines(summary)
@@ -81,6 +83,8 @@ def build_ai_insight(
         "ai_feedback": summary[:1600],
         "ai_status": str(ai.get("status") or "fallback"),
         "ai_provider": str(ai.get("provider") or "local"),
+        "ai_prompt_version": str(ai.get("prompt_version") or ""),
+        "ai_runtime_snapshot": clone_runtime_snapshot(ai.get("runtime_snapshot") if isinstance(ai.get("runtime_snapshot"), dict) else runtime_settings),
         "ai_confidence": max(0.0, min(confidence, 1.0)),
         "ai_strengths": strengths,
         "ai_gaps": gaps,
@@ -95,6 +99,8 @@ def build_ai_insight(
             "confidence": max(0.0, min(confidence, 1.0)),
             "status": str(ai.get("status") or "fallback"),
             "provider": str(ai.get("provider") or "local"),
+            "prompt_version": str(ai.get("prompt_version") or ""),
+            "runtime_snapshot": clone_runtime_snapshot(ai.get("runtime_snapshot") if isinstance(ai.get("runtime_snapshot"), dict) else runtime_settings),
         },
     }
 
@@ -106,6 +112,8 @@ def build_trace_record(*, evaluation_id: str | None, submission_id: str, actor_u
         "actor_user_id": actor_user_id,
         "ai_status": payload.get("ai_status"),
         "ai_provider": payload.get("ai_provider"),
+        "ai_prompt_version": payload.get("ai_prompt_version"),
+        "ai_runtime_snapshot": clone_runtime_snapshot(payload.get("ai_runtime_snapshot")),
         "ai_score": payload.get("ai_score"),
         "ai_confidence": payload.get("ai_confidence"),
         "ai_risk_flags": list(payload.get("ai_risk_flags") or []),

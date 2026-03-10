@@ -1,26 +1,59 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+.python-version
+
 # Environment
 .env
 .venv/
 venv/
+env/
+
+# Packaging
+*.egg-info/
+pip-wheel-metadata/
+
 # Node
 node_modules/
 dist/
+.vite/
+coverage/
+.eslintcache
+
+# Local runtime data
 uploads/
+backend/uploads/
+
 # OS/IDE
 .DS_Store
 Thumbs.db
 .vscode/
+.idea/
 
 # Runtime artifacts
 *.log
 *.out.log
 *.err.log
+*.pid
+tmp/
+temp/
+
+# Local environment overrides
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Historical scratch copies
 frontend_backup_*/
 frontend_before_replace_*/
 frontend_phase*_attempt_*/

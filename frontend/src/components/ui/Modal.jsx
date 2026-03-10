@@ -1,7 +1,16 @@
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-export default function Modal({ open, title, onClose, children }) {
+export default function Modal({ open, title, onClose, children, size = 'default' }) {
+  const contentClassName =
+    size === 'large'
+      ? 'max-w-5xl max-h-[90vh]'
+      : 'max-w-xl';
+  const bodyClassName =
+    size === 'large'
+      ? 'max-h-[72vh] overflow-y-auto pr-1'
+      : '';
+
   return (
     <AnimatePresence>
       {open ? (
@@ -12,7 +21,7 @@ export default function Modal({ open, title, onClose, children }) {
           exit={{ opacity: 0 }}
         >
           <motion.div
-            className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-soft dark:bg-slate-900"
+            className={`w-full rounded-2xl bg-white p-5 shadow-soft dark:bg-slate-900 ${contentClassName}`}
             initial={{ y: 16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 16, opacity: 0 }}
@@ -23,7 +32,7 @@ export default function Modal({ open, title, onClose, children }) {
                 <X size={16} />
               </button>
             </div>
-            {children}
+            <div className={bodyClassName}>{children}</div>
           </motion.div>
         </motion.div>
       ) : null}

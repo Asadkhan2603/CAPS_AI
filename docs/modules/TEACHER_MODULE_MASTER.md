@@ -37,9 +37,11 @@ Primary implementation sources:
 - `frontend/src/pages/AssignmentsPage.jsx`
 - `frontend/src/pages/SubmissionsPage.jsx`
 - `frontend/src/pages/EvaluationsPage.jsx`
+- `frontend/src/pages/AIModulePage.jsx`
 - `frontend/src/pages/Teacher/EvaluateSubmission.jsx`
 - `frontend/src/components/ui/TeacherClassTiles.jsx`
 - `frontend/src/components/Teacher/AIChatPanel.jsx`
+- `frontend/src/services/aiService.js`
 - `frontend/src/services/sectionsApi.js`
 
 Related references:
@@ -286,6 +288,7 @@ That flow is spread across:
 
 - `AssignmentsPage.jsx`
 - `SubmissionsPage.jsx`
+- `AIModulePage.jsx`
 - `Teacher/EvaluateSubmission.jsx`
 - `EvaluationsPage.jsx`
 
@@ -330,9 +333,28 @@ The AI preview does not itself finalize marks. It provides recommendation contex
 - rubric input
 - marks input
 - AI preview
+- persisted evaluation AI state
+- stored-AI refresh
+- evaluation trace history
 - AI chat assistance
 
 This is currently the richest teacher experience page in the system.
+
+### AI Operations Overview
+
+`AIModulePage.jsx` now gives teachers a dedicated AI operations surface for their accessible scope.
+
+It currently provides:
+
+- AI provider/runtime mode visibility
+- admin-only runtime override controls
+- submission AI pipeline counts
+- durable AI job queue state
+- recent evaluation AI runs
+- recent similarity flags
+- recent AI chat thread activity
+
+This does not replace submission review or the evaluation console, but it gives teachers a first-class AI workflow overview.
 
 ### AI Chat
 
@@ -618,7 +640,10 @@ This page is one of the central teacher operational surfaces.
 Teacher mode supports:
 
 - evaluation CRUD
+- trace viewer
+- direct AI refresh
 - finalize action
+- structured admin override-unfinalize modal
 - AI console navigation
 
 Teacher can only operate within owned evaluation scope enforced by backend.
@@ -633,9 +658,24 @@ Implements the advanced teacher evaluation workspace:
 - rubric drafting
 - marks input
 - AI preview
+- persisted evaluation AI state
+- stored-AI refresh
+- trace timeline for recent AI runs
 - AI chat assistance
 
 This is effectively the teacher grading cockpit.
+
+### `AIModulePage.jsx`
+
+Implements the dedicated teacher/admin AI operations view:
+
+- provider mode and runtime settings visibility
+- admin runtime config form for persisted overrides
+- scoped AI throughput summary
+- recent durable AI jobs
+- recent evaluation AI activity with direct console handoff
+- recent similarity flags
+- recent AI chat thread activity
 
 ### `TeacherClassTiles.jsx`
 
@@ -669,6 +709,7 @@ Relevant `FEATURE_ACCESS` entries currently expose:
 - `attendanceRecords` to `admin`, `teacher`, `student`
 - `assignments` to `admin`, `teacher`
 - `submissions` to `admin`, `teacher`, `student`
+- `aiModule` to `admin`, `teacher`
 - `evaluations` to `admin`, `teacher`, `student`
 - `enrollments` to:
   - `admin`
@@ -774,12 +815,13 @@ A class coordinator can manage:
 
 That is a broad operational role. If the product grows, this should be explicitly modeled rather than inferred from one field across many modules.
 
-### Teacher Dashboard Is Analytics-Heavy But Not Command-Centered
+### Teacher Workflow Is Still Split Across Multiple Operational Surfaces
 
-TeacherClassTiles provides useful overview, but there is no consolidated teacher control center linking:
+TeacherClassTiles and the new AI operations page improve visibility, but there is still no single teacher command center linking:
 
 - assignments
 - submissions
+- AI operations
 - evaluations
 - attendance
 - timetable
@@ -811,6 +853,7 @@ The workflow is operationally present but spread across multiple pages.
 - add a dedicated teacher command center page that aggregates:
   - my sections
   - pending submissions
+  - AI operations health and recent runs
   - attendance actions
   - timetable conflicts
   - evaluations awaiting finalize
@@ -875,6 +918,7 @@ Its strongest parts are:
 
 - scoped submission/evaluation access
 - AI-assisted grading workflow
+- dedicated AI operations visibility for teacher/admin scope
 - coordinator-based operational controls
 - attendance and timetable execution rules tied to actual ownership
 

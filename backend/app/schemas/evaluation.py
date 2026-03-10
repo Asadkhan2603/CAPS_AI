@@ -12,6 +12,8 @@ class EvaluationAIInsight(BaseModel):
     confidence: float = Field(ge=0, le=1)
     status: str = "fallback"
     provider: str | None = None
+    prompt_version: str | None = None
+    runtime_snapshot: dict | None = None
 
 
 class EvaluationCreate(BaseModel):
@@ -76,6 +78,8 @@ class EvaluationOut(BaseModel):
     ai_feedback: str | None = None
     ai_status: str | None = None
     ai_provider: str | None = None
+    ai_prompt_version: str | None = None
+    ai_runtime_snapshot: dict | None = None
     ai_confidence: float | None = Field(default=None, ge=0, le=1)
     ai_risk_flags: list[str] = []
     ai_strengths: list[str] = []

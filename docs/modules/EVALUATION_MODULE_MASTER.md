@@ -149,7 +149,8 @@ Role:
 
 Current gap:
 
-- backend exposes trace retrieval, but the main UI does not surface a dedicated trace viewer
+- backend and the dedicated teacher console now surface trace history for a single evaluation
+- remaining gap is broader cross-evaluation trace discovery and module-level AI operations visibility
 
 
 ## 4. Scoring Logic Implemented
@@ -268,7 +269,7 @@ Strengths:
 Weaknesses:
 
 - expensive AI work still runs inside request-time flows
-- trace is available in backend but not intentionally exposed in main UI
+- generic evaluation list pages still do not expose a module-wide AI timeline or cross-evaluation trace discovery
 - evaluation AI depends heavily on submission extracted text being present and well-formed
 
 
@@ -476,9 +477,9 @@ This is read-oriented and acceptable for current scope.
 
 Teacher/admin mode uses shared CRUD component:
 
-- generic create form
+- overlay-based create and edit form
 - list view
-- filtering
+- overlay-based filtering
 - row actions
 
 Create form supports:
@@ -493,7 +494,10 @@ Columns include:
 - submission
 - student
 - teacher
+- AI status
 - AI score
+- AI confidence
+- AI risk flags
 - AI feedback
 - internal total
 - grand total
@@ -504,8 +508,10 @@ Columns include:
 Row actions:
 
 - `Open AI Console`
+- `View Trace`
+- `Refresh AI`
 - `Finalize`
-- `Unfinalize` for admin
+- `Unfinalize` for admin through structured modal reason capture
 
 ### 10.2 Dedicated Teacher Evaluation Console
 
@@ -523,8 +529,12 @@ Capabilities:
 - create evaluation if absent
 - update evaluation if present
 - preview AI insight before save
+- show persisted evaluation AI state after save
+- refresh stored evaluation AI for the current evaluation
+- view recent evaluation AI trace history inline
 - access evaluation chat history
 - send evaluation chat messages
+- persist and reuse prompt/runtime-backed AI metadata
 
 This page is a better fit for complex grading than the generic CRUD page.
 
@@ -545,10 +555,8 @@ This page is a better fit for complex grading than the generic CRUD page.
 
 ### Missing Or Weak In UI
 
-- no dedicated UI for `GET /evaluations/{id}/trace`
-- no explicit button for `POST /evaluations/{id}/ai-refresh`
-- admin unfinalize uses `window.prompt`, which is weak UX and weak governance UX
-- no intentional visualization of AI risk flags, strengths, and suggestions beyond basic fields
+- generic evaluations list page still does not show a broader evaluation event timeline
+- generic evaluations list page still does not intentionally visualize AI strengths, gaps, and suggestions
 - no immutable history/timeline view for evaluation state changes
 
 
@@ -580,6 +588,7 @@ The following rules are implemented or strongly implied in code:
 ### 12.6 AI Trace Is Persisted On Create And Refresh
 
 - create/update/refresh flows persist trace data into `ai_evaluation_runs`
+- trace rows now also store `ai_prompt_version` and `ai_runtime_snapshot`
 
 
 ## 13. Frontend Vs Backend Gaps
@@ -592,7 +601,8 @@ Backend:
 
 Frontend:
 
-- no dedicated trace viewer in main evaluation UI
+- teacher evaluation console exposes trace history for one evaluation
+- generic evaluations page now exposes a dedicated trace viewer modal
 
 ### 13.2 AI Refresh Gap
 
@@ -602,7 +612,8 @@ Backend:
 
 Frontend:
 
-- no first-class “refresh AI” action in generic evaluations page
+- teacher evaluation console exposes a first-class stored-AI refresh action
+- generic evaluations page now also surfaces refresh directly
 
 ### 13.3 Governance UX Gap
 
@@ -612,10 +623,9 @@ Backend:
 
 Frontend:
 
-- uses `window.prompt`
-- no structured modal
+- uses a structured modal
 - no review-id style governance flow
-- no contextual display of why record is locked
+- still has no review-id style governance flow
 
 ### 13.4 Rich AI Data Gap
 
@@ -632,7 +642,24 @@ Frontend mostly surfaces:
 - `ai_score`
 - `ai_feedback`
 
-This means backend AI richness is underused in the UI.
+This is now only partly true.
+
+The dedicated evaluation console also surfaces:
+
+- stored AI status/provider
+- confidence
+- risk flags
+- recent trace history
+
+The generic evaluations page now also surfaces:
+
+- AI status
+- confidence
+- risk flags
+- trace viewer
+- direct AI refresh
+
+The remaining gap is that list UI still underuses strengths, gaps, and suggestions outside the dedicated console.
 
 
 ## 14. Architectural Issues
@@ -704,9 +731,9 @@ Recommended cleanup path:
 
 ### Phase 1: Surface Existing Backend Features Better
 
-- add trace viewer in frontend
-- add explicit AI refresh action in frontend
-- display AI confidence, strengths, gaps, and risk flags intentionally
+- extend beyond per-row trace viewer into broader evaluation timeline/history
+- display AI strengths, gaps, and suggestions intentionally outside the dedicated console
+- link broader AI activity review into the dedicated AI operations page where appropriate
 
 ### Phase 2: Tighten Governance Semantics
 
@@ -794,7 +821,7 @@ The evaluation module is already a meaningful production subsystem. It is not mi
 The main gaps are not absence of functionality. The main gaps are:
 
 - governance consistency
-- frontend exposure of backend features
+- uneven frontend exposure of backend features between the generic list and the dedicated teacher console
 - request-time AI cost
 - clarity of finalization semantics
 

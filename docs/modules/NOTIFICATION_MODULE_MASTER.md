@@ -29,7 +29,7 @@ This module is narrower than the broader communication domain:
 - communication handles notices, feed composition, and announcement workflows
 - notifications handle alert records with recipient visibility and read state
 
-The module is real on the backend, but thin on the frontend. CAPS AI currently has notification APIs and stored records, but not a true standalone notification center.
+The module is real on the backend and now has a dedicated frontend notification center. CAPS AI exposes notification APIs, stored records, direct read acknowledgement, and a standalone notification route in addition to feed/history projections.
 
 Primary backend files:
 
@@ -44,8 +44,8 @@ Primary frontend files:
 
 Important implementation reality:
 
-- `NotificationsPage.jsx` redirects to `/communication/feed`
-- notifications are mostly consumed as feed/history rows rather than managed as a first-class UI object
+- `NotificationsPage.jsx` is now a real notification center page
+- notifications are still consumed in feed/history, but they are also managed as first-class UI objects
 
 ## 2. Data Model
 
@@ -247,10 +247,12 @@ This is one of the main real producers of notification records.
 Producer path:
 
 - [similarity.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
+- [similarity_pipeline.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\similarity_pipeline.py)
 
 Behavior:
 
 - creates urgent notifications for integrity-related events
+- can be triggered by both synchronous similarity runs and durable queued similarity jobs
 
 This makes the notification module a system alert bus for plagiarism/similarity signals, not just a generic message table.
 
@@ -287,9 +289,12 @@ Not currently implemented:
 
 Current behavior:
 
-- redirects to `/communication/feed`
-
-This means the product route exists, but the notification center page does not.
+- renders a dedicated notification center
+- fetches `/notifications/`
+- supports unread/read and scope filtering
+- supports direct mark-as-read
+- supports paging
+- supports manual notification create for admin/teacher
 
 ### 7.2 `FeedPage.jsx`
 
@@ -315,27 +320,24 @@ Behavior:
 Important gap:
 
 - history shows `is_read`
-- but does not expose the backend read action
+- mark-as-read is now exposed on the dedicated notification page, but history itself still does not trigger the read action
 
 ## 8. Frontend vs Backend Gaps
 
-### 8.1 No dedicated notification center
+### 8.1 Notification interactions are split across pages
 
-The route exists, but the page redirects elsewhere.
+The dedicated notification center now exists and exposes filtering, read acknowledgement, and create flows. Feed/history still show notification data separately.
 
-### 8.2 No explicit mark-as-read UI
+### 8.2 No bulk read workflow
 
-Backend supports:
+Backend still lacks:
 
-- `PATCH /notifications/{id}/read`
+- bulk mark read
+- mark unread
 
-Frontend does not intentionally expose this interaction.
+Frontend therefore remains per-notification only.
 
-### 8.3 No manual create UI
-
-Backend allows admin/teacher notification creation, but there is no dedicated frontend create workflow.
-
-### 8.4 Feed treats notifications as generic activity
+### 8.3 Feed treats notifications as generic activity
 
 This is useful for chronology, but weakens notification-specific interactions like:
 
@@ -388,9 +390,9 @@ Current gap:
 
 ## 11. Risks and Bugs Identified
 
-### 11.1 No notification center despite route exposure
+### 11.1 Notification center exists, but interactions are still fragmented
 
-The product appears to expose notifications as a module, but the route is only a redirect.
+The dedicated page is now real, but feed/history remain separate notification consumption paths with lighter interaction affordances.
 
 ### 11.2 Scope is weakly typed
 
@@ -419,9 +421,9 @@ Notification reads are not surfaced as a stronger analytics or audit interaction
 
 ## 12. Architectural Issues
 
-### 12.1 Backend is ahead of frontend
+### 12.1 Frontend now covers the main notification contract
 
-The backend has a clean minimal notification API and shared creation service. The frontend still treats notifications as a secondary feed/history source.
+The backend API and shared creation service are now matched by a real notification page with filters, direct acknowledgement, and manual creation.
 
 ### 12.2 Producer contract is too loose
 
@@ -454,9 +456,9 @@ The module currently has no formal strategy for:
 
 ### Short-term
 
-- add explicit mark-as-read actions in UI
-- add unread filtering in the frontend
+- keep using the dedicated notification center for mark-as-read and unread filtering
 - keep using the shared creation service
+- decide whether history/feed should call through to the same acknowledgement flow
 
 ### Medium-term
 
@@ -518,9 +520,9 @@ Strengths:
 
 Weaknesses:
 
-- no true notification center
-- no explicit read UI
+- no bulk acknowledgement workflow
+- feed/history still provide lighter notification interaction than the dedicated page
 - weakly typed scope and priority
 - no lifecycle or retention strategy
 
-As implemented today, notifications are a real storage and delivery layer, but the user-facing experience is still an incomplete shell around that backend capability.
+As implemented today, notifications are a real storage and delivery layer with a functional notification center, but lifecycle, bulk interaction, and stronger typing are still unfinished.

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Plus, RefreshCw, Search as SearchIcon } from 'lucide-react';
 import Card from './Card';
 import FormInput from './FormInput';
 import Modal from './Modal';
@@ -35,6 +36,13 @@ function getFeatureKeyFromPath(...paths) {
 function buildInitialReviewMetadata(fields = []) {
   return fields.reduce((acc, field) => {
     acc[field.name] = field.defaultValue ?? '';
+    return acc;
+  }, {});
+}
+
+function buildInitialValues(fields = []) {
+  return fields.reduce((acc, item) => {
+    acc[item.name] = item.defaultValue ?? (item.type === 'number' ? (item.nullable ? '' : 0) : '');
     return acc;
   }, {});
 }
@@ -181,6 +189,7 @@ export default function EntityManager({
     deleteReviewPromptDescription,
     deleteReviewPromptTitle
   ]);
+  const { pushToast } = useToast();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [skip, setSkip] = useState(0);
@@ -193,7 +202,8 @@ export default function EntityManager({
   const [deleteReviewTarget, setDeleteReviewTarget] = useState(null);
   const [deleteReviewPromptConfig, setDeleteReviewPromptConfig] = useState(deleteReviewConfig);
   const [editingRowId, setEditingRowId] = useState(null);
-  const { pushToast } = useToast();
+  const [searchOverlayOpen, setSearchOverlayOpen] = useState(false);
+  const [formOverlayOpen, setFormOverlayOpen] = useState(false);
 
   const singularTitle = useMemo(() => {
     if (!title) return 'Item';
@@ -214,27 +224,24 @@ export default function EntityManager({
       }, {}),
     [filters]
   );
-
-  const initialCreateState = useMemo(
-    () =>
-      createFields.reduce((acc, item) => {
-        acc[item.name] = item.defaultValue ?? (item.type === 'number' ? (item.nullable ? '' : 0) : '');
-        return acc;
-      }, {}),
-    [createFields]
-  );
+  const initialCreateState = useMemo(() => buildInitialValues(createFields), [createFields]);
+  const editFormFields = editFields || createFields;
+  const activeFormFields = editingRowId ? editFormFields : createFields;
 
   const [filterValues, setFilterValues] = useState(initialFilterState);
+  const [searchDraftValues, setSearchDraftValues] = useState(initialFilterState);
   const [createValues, setCreateValues] = useState(initialCreateState);
-  const activeFormFields = editFields || createFields;
 
   useEffect(() => {
     setFilterValues(initialFilterState);
+    setSearchDraftValues(initialFilterState);
   }, [initialFilterState]);
 
   useEffect(() => {
-    setCreateValues(initialCreateState);
-  }, [initialCreateState]);
+    if (!editingRowId) {
+      setCreateValues(initialCreateState);
+    }
+  }, [editingRowId, initialCreateState]);
 
   useEffect(() => {
     setDeleteReviewPromptConfig(deleteReviewConfig);
@@ -249,18 +256,22 @@ export default function EntityManager({
     });
   }, [deleteReviewConfig]);
 
-  async function loadData() {
+  async function loadData(options = {}) {
+    const nextSkip = options.skip ?? skip;
+    const nextLimit = options.limit ?? limit;
+    const nextFilterValues = options.filterValues ?? filterValues;
+
     setLoading(true);
     setError('');
     try {
-      const params = Object.entries(filterValues).reduce((acc, [key, value]) => {
+      const params = Object.entries(nextFilterValues).reduce((acc, [key, value]) => {
         if (value !== '' && value !== null && value !== undefined) {
           acc[key] = value;
         }
         return acc;
       }, {});
-      params.skip = skip;
-      params.limit = limit;
+      params.skip = nextSkip;
+      params.limit = nextLimit;
 
       const response = await apiClient.get(listPath, { params });
       setRows(response.data);
@@ -277,32 +288,33 @@ export default function EntityManager({
     loadData();
   }, [skip, limit]);
 
-  function resolveFieldOptions(field, mode, nextCreateValues = createValues, nextFilterValues = filterValues) {
-    const rawOptions = typeof field.optionsResolver === 'function'
-      ? field.optionsResolver({
-          mode,
-          createValues: nextCreateValues,
-          filterValues: nextFilterValues,
-          rows
-        })
-      : (field.options || []);
+  function resolveFieldOptions(field, mode, nextCreateValues = createValues, nextFilterValues = searchDraftValues) {
+    const rawOptions =
+      typeof field.optionsResolver === 'function'
+        ? field.optionsResolver({
+            mode,
+            createValues: nextCreateValues,
+            filterValues: nextFilterValues,
+            rows
+          })
+        : field.options || [];
 
     const options = Array.isArray(rawOptions) ? rawOptions : [];
-    const dependsOn = mode === 'create' ? field.dependsOn : (field.filterDependsOn ?? field.dependsOn);
-    const matchKey = mode === 'create'
-      ? (field.optionMatchKey || dependsOn)
-      : (field.filterOptionMatchKey || field.optionMatchKey || dependsOn);
-    const requireParentSelection = mode === 'create'
-      ? Boolean(field.requireParentSelection)
-      : Boolean(field.filterRequireParentSelection ?? field.requireParentSelection);
+    const dependsOn = mode === 'create' ? field.dependsOn : field.filterDependsOn ?? field.dependsOn;
+    const matchKey =
+      mode === 'create'
+        ? field.optionMatchKey || dependsOn
+        : field.filterOptionMatchKey || field.optionMatchKey || dependsOn;
+    const requireParentSelection =
+      mode === 'create'
+        ? Boolean(field.requireParentSelection)
+        : Boolean(field.filterRequireParentSelection ?? field.requireParentSelection);
 
     if (!dependsOn) {
       return options;
     }
 
-    const parentValue = mode === 'create'
-      ? nextCreateValues?.[dependsOn]
-      : nextFilterValues?.[dependsOn];
+    const parentValue = mode === 'create' ? nextCreateValues?.[dependsOn] : nextFilterValues?.[dependsOn];
 
     if ((parentValue === '' || parentValue === null || parentValue === undefined) && requireParentSelection) {
       return [];
@@ -315,8 +327,8 @@ export default function EntityManager({
     return options.filter((option) => String(option?.[matchKey]) === String(parentValue));
   }
 
-  function onFilterChange(name, value) {
-    setFilterValues((prev) => {
+  function onSearchDraftChange(name, value) {
+    setSearchDraftValues((prev) => {
       const next = { ...prev, [name]: value };
 
       for (const field of filters) {
@@ -345,7 +357,7 @@ export default function EntityManager({
         const currentValue = next[field.name];
         if (currentValue === '' || currentValue === null || currentValue === undefined) continue;
 
-        const options = resolveFieldOptions(field, 'create', next, filterValues);
+        const options = resolveFieldOptions(field, 'create', next, searchDraftValues);
         const stillValid = options.some((option) => String(option.value) === String(currentValue));
         if (!stillValid) {
           next[field.name] = '';
@@ -356,8 +368,45 @@ export default function EntityManager({
     });
   }
 
+  function openSearchOverlay() {
+    setSearchDraftValues(filterValues);
+    setSearchOverlayOpen(true);
+  }
+
+  function closeSearchOverlay() {
+    setSearchDraftValues(filterValues);
+    setSearchOverlayOpen(false);
+  }
+
+  async function applyFilters() {
+    const nextFilterValues = { ...searchDraftValues };
+    setFilterValues(nextFilterValues);
+    setSkip(0);
+    setSearchOverlayOpen(false);
+    await loadData({ skip: 0, limit, filterValues: nextFilterValues });
+  }
+
+  async function resetFilters() {
+    setFilterValues(initialFilterState);
+    setSearchDraftValues(initialFilterState);
+    setSkip(0);
+    await loadData({ skip: 0, limit, filterValues: initialFilterState });
+  }
+
+  function openCreateOverlay() {
+    setEditingRowId(null);
+    setCreateValues(initialCreateState);
+    setFormOverlayOpen(true);
+  }
+
+  function closeFormOverlay() {
+    setFormOverlayOpen(false);
+    setEditingRowId(null);
+    setCreateValues(initialCreateState);
+  }
+
   function startEdit(row) {
-    const nextValues = activeFormFields.reduce((acc, field) => {
+    const nextValues = editFormFields.reduce((acc, field) => {
       if (row[field.name] !== undefined && row[field.name] !== null) {
         acc[field.name] = row[field.name];
       } else {
@@ -367,11 +416,7 @@ export default function EntityManager({
     }, {});
     setCreateValues(nextValues);
     setEditingRowId(row.id);
-  }
-
-  function cancelEdit() {
-    setEditingRowId(null);
-    setCreateValues(initialCreateState);
+    setFormOverlayOpen(true);
   }
 
   async function onSubmit(event) {
@@ -408,13 +453,13 @@ export default function EntityManager({
       } else {
         await apiClient.post(createPath, payload);
       }
-      setCreateValues(initialCreateState);
-      setEditingRowId(null);
+
       pushToast({
         title: 'Saved',
         description: editingRowId ? `${singularTitle} updated successfully.` : `${singularTitle} created successfully.`,
         variant: 'success'
       });
+      closeFormOverlay();
       await loadData();
     } catch (err) {
       const action = editingRowId ? 'update' : 'create';
@@ -470,7 +515,7 @@ export default function EntityManager({
           rowId: row.id,
           reviewId: trimmedReviewId || null,
           reviewMetadata: metadata,
-          message,
+          message
         });
         setDeleteReviewTarget(row);
         setDeleteReviewPromptConfig((prev) => ({
@@ -487,7 +532,7 @@ export default function EntityManager({
           rowId: row.id,
           reviewId: trimmedReviewId || null,
           reviewMetadata: metadata,
-          message,
+          message
         });
         pushToast({ title: 'Delete failed', description: message, variant: 'error' });
       }
@@ -503,167 +548,60 @@ export default function EntityManager({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="text-2xl font-semibold">{title}</h1>
             <div className="flex items-center gap-2">
-              <button className="btn-secondary" onClick={() => { setSkip(0); loadData(); }}>
-                Refresh
+              {filters.length ? (
+                <button
+                  type="button"
+                  className="btn-secondary !p-2"
+                  onClick={openSearchOverlay}
+                  title={`Search ${title}`}
+                  aria-label={`Search ${title}`}
+                >
+                  <SearchIcon size={18} />
+                </button>
+              ) : null}
+              {!hideCreate ? (
+                <button
+                  type="button"
+                  className="btn-secondary !p-2"
+                  onClick={openCreateOverlay}
+                  title={`Create ${singularTitle}`}
+                  aria-label={`Create ${singularTitle}`}
+                >
+                  <Plus size={18} />
+                </button>
+              ) : null}
+              <button type="button" className="btn-secondary" onClick={() => loadData()}>
+                <span className="inline-flex items-center gap-2">
+                  <RefreshCw size={16} />
+                  Refresh
+                </span>
               </button>
             </div>
           </div>
-
-          {filters.length ? (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {filters.map((field) => (
-                field.type === 'switch' ? (
-                  <label key={field.name} className="block space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
-                    <button
-                      type="button"
-                      className="inline-flex h-11 min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                      onClick={() => {
-                        const current = filterValues[field.name];
-                        const next = current === null ? true : current === true ? false : null;
-                        onFilterChange(field.name, next);
-                      }}
-                    >
-                      {filterValues[field.name] === null ? 'Any' : filterValues[field.name] ? 'On' : 'Off'}
-                    </button>
-                  </label>
-                ) : field.type === 'select' && field.searchable ? (
-                  <SearchableSelect
-                    key={field.name}
-                    label={field.label}
-                    value={filterValues[field.name]}
-                    options={resolveFieldOptions(field, 'filter')}
-                    placeholder={field.placeholder || `Search ${field.label}`}
-                    allowEmpty
-                    emptyLabel={field.placeholder || `All ${field.label}`}
-                    onValueChange={(nextValue) => onFilterChange(field.name, nextValue)}
-                  />
-                ) : field.type === 'select' ? (
-                  <FormInput
-                    key={field.name}
-                    as="select"
-                    label={field.label}
-                    value={filterValues[field.name]}
-                    onChange={(e) => onFilterChange(field.name, e.target.value)}
-                  >
-                    <option value="">{field.placeholder || `All ${field.label}`}</option>
-                    {resolveFieldOptions(field, 'filter').map((option) => (
-                      <option key={`${field.name}-${option.value}`} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </FormInput>
-                ) : (
-                  <FormInput
-                    key={field.name}
-                    label={field.label}
-                    type={field.type === 'datetime' ? 'datetime-local' : (field.type || 'text')}
-                    value={filterValues[field.name]}
-                    placeholder={field.placeholder}
-                    onChange={(e) => onFilterChange(field.name, e.target.value)}
-                  />
-                )
-              ))}
-            </div>
-          ) : null}
         </Card>
       </motion.div>
-
-      {!hideCreate ? (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
-          <Card>
-            <h2 className="mb-3 text-lg font-semibold">{editingRowId ? `Edit ${singularTitle}` : `Create ${singularTitle}`}</h2>
-            <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {activeFormFields.map((field) => (
-                field.type === 'switch' ? (
-                  <label key={field.name} className="block space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
-                    <div className="flex h-11 items-center">
-                      <label className="inline-flex cursor-pointer items-center gap-2">
-                        <input
-                          type="checkbox"
-                          className="peer sr-only"
-                          checked={Boolean(createValues[field.name])}
-                          onChange={(e) => onCreateChange(field.name, e.target.checked)}
-                        />
-                        <span className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:bg-brand-500 peer-checked:after:translate-x-5 dark:bg-slate-700" />
-                        <span className="text-xs text-slate-600 dark:text-slate-300">
-                          {createValues[field.name] ? 'Enabled' : 'Disabled'}
-                        </span>
-                      </label>
-                    </div>
-                  </label>
-                ) : field.type === 'select' && field.searchable ? (
-                  <SearchableSelect
-                    key={field.name}
-                    label={field.label}
-                    value={createValues[field.name]}
-                    options={resolveFieldOptions(field, 'create')}
-                    placeholder={field.placeholder || `Search ${field.label}`}
-                    required={field.required}
-                    allowEmpty={!field.required}
-                    emptyLabel={field.placeholder || `Select ${field.label}`}
-                    onValueChange={(nextValue) => onCreateChange(field.name, nextValue)}
-                  />
-                ) : field.type === 'select' ? (
-                  <FormInput
-                    key={field.name}
-                    as="select"
-                    label={field.label}
-                    required={field.required}
-                    value={createValues[field.name]}
-                    onChange={(e) => onCreateChange(field.name, e.target.value)}
-                  >
-                    <option value="">{field.placeholder || `Select ${field.label}`}</option>
-                    {resolveFieldOptions(field, 'create').map((option) => (
-                      <option key={`${field.name}-${option.value}`} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </FormInput>
-                ) : (
-                  <FormInput
-                    key={field.name}
-                    label={field.label}
-                    type={field.type === 'datetime' ? 'datetime-local' : (field.type || 'text')}
-                    min={field.min}
-                    max={field.max}
-                    required={field.required}
-                    value={createValues[field.name]}
-                    placeholder={field.placeholder}
-                    onChange={(e) => onCreateChange(field.name, e.target.value)}
-                  />
-                )
-              ))}
-              <div className="flex items-end gap-2">
-                <button type="submit" className="btn-primary w-full">{editingRowId ? 'Update' : 'Create'}</button>
-                {editingRowId ? (
-                  <button type="button" className="btn-secondary w-full" onClick={cancelEdit}>
-                    Cancel
-                  </button>
-                ) : null}
-              </div>
-            </form>
-          </Card>
-        </motion.div>
-      ) : null}
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
         <Card className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">{title} List</h2>
             <div className="flex items-center gap-2">
-              <button className="btn-secondary" disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - limit))}>Prev</button>
+              <button className="btn-secondary" disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - limit))}>
+                Prev
+              </button>
               <span className="text-xs text-slate-500">skip: {skip}</span>
-              <button className="btn-secondary" onClick={() => setSkip(skip + limit)}>Next</button>
+              <button className="btn-secondary" onClick={() => setSkip(skip + limit)}>
+                Next
+              </button>
               <select className="input w-24" value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
                 {pageSizeOptions.map((size) => (
-                  <option key={size} value={size}>{size}</option>
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
                 ))}
               </select>
             </div>
           </div>
-
           {enableDelete && deleteReviewConfig.enabled ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
@@ -700,6 +638,158 @@ export default function EntityManager({
           />
         </Card>
       </motion.div>
+
+      <Modal open={searchOverlayOpen} title={`Search ${title}`} onClose={closeSearchOverlay} size="large">
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {filters.map((field) =>
+              field.type === 'switch' ? (
+                <label key={field.name} className="block space-y-1">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
+                  <button
+                    type="button"
+                    className="inline-flex h-11 min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    onClick={() => {
+                      const current = searchDraftValues[field.name];
+                      const next = current === null ? true : current === true ? false : null;
+                      onSearchDraftChange(field.name, next);
+                    }}
+                  >
+                    {searchDraftValues[field.name] === null ? 'Any' : searchDraftValues[field.name] ? 'On' : 'Off'}
+                  </button>
+                </label>
+              ) : field.type === 'select' && field.searchable ? (
+                <SearchableSelect
+                  key={field.name}
+                  label={field.label}
+                  value={searchDraftValues[field.name]}
+                  options={resolveFieldOptions(field, 'filter', createValues, searchDraftValues)}
+                  placeholder={field.placeholder || `Search ${field.label}`}
+                  allowEmpty
+                  emptyLabel={field.placeholder || `All ${field.label}`}
+                  onValueChange={(nextValue) => onSearchDraftChange(field.name, nextValue)}
+                />
+              ) : field.type === 'select' ? (
+                <FormInput
+                  key={field.name}
+                  as="select"
+                  label={field.label}
+                  value={searchDraftValues[field.name]}
+                  onChange={(e) => onSearchDraftChange(field.name, e.target.value)}
+                >
+                  <option value="">{field.placeholder || `All ${field.label}`}</option>
+                  {resolveFieldOptions(field, 'filter', createValues, searchDraftValues).map((option) => (
+                    <option key={`${field.name}-${option.value}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </FormInput>
+              ) : (
+                <FormInput
+                  key={field.name}
+                  label={field.label}
+                  type={field.type === 'datetime' ? 'datetime-local' : field.type || 'text'}
+                  value={searchDraftValues[field.name]}
+                  placeholder={field.placeholder}
+                  onChange={(e) => onSearchDraftChange(field.name, e.target.value)}
+                />
+              )
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={closeSearchOverlay}>
+              Close
+            </button>
+            <button type="button" className="btn-secondary" onClick={resetFilters}>
+              Reset
+            </button>
+            <button type="button" className="btn-primary" onClick={applyFilters}>
+              Apply
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={formOverlayOpen}
+        title={editingRowId ? `Edit ${singularTitle}` : `Create ${singularTitle}`}
+        onClose={closeFormOverlay}
+        size="large"
+      >
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {activeFormFields.map((field) =>
+              field.type === 'switch' ? (
+                <label key={field.name} className="block space-y-1">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
+                  <div className="flex h-11 items-center">
+                    <label className="inline-flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="peer sr-only"
+                        checked={Boolean(createValues[field.name])}
+                        onChange={(e) => onCreateChange(field.name, e.target.checked)}
+                      />
+                      <span className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:bg-brand-500 peer-checked:after:translate-x-5 dark:bg-slate-700" />
+                      <span className="text-xs text-slate-600 dark:text-slate-300">
+                        {createValues[field.name] ? 'Enabled' : 'Disabled'}
+                      </span>
+                    </label>
+                  </div>
+                </label>
+              ) : field.type === 'select' && field.searchable ? (
+                <SearchableSelect
+                  key={field.name}
+                  label={field.label}
+                  value={createValues[field.name]}
+                  options={resolveFieldOptions(field, 'create', createValues, searchDraftValues)}
+                  placeholder={field.placeholder || `Search ${field.label}`}
+                  required={field.required}
+                  allowEmpty={!field.required}
+                  emptyLabel={field.placeholder || `Select ${field.label}`}
+                  onValueChange={(nextValue) => onCreateChange(field.name, nextValue)}
+                />
+              ) : field.type === 'select' ? (
+                <FormInput
+                  key={field.name}
+                  as="select"
+                  label={field.label}
+                  required={field.required}
+                  value={createValues[field.name]}
+                  onChange={(e) => onCreateChange(field.name, e.target.value)}
+                >
+                  <option value="">{field.placeholder || `Select ${field.label}`}</option>
+                  {resolveFieldOptions(field, 'create', createValues, searchDraftValues).map((option) => (
+                    <option key={`${field.name}-${option.value}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </FormInput>
+              ) : (
+                <FormInput
+                  key={field.name}
+                  label={field.label}
+                  type={field.type === 'datetime' ? 'datetime-local' : field.type || 'text'}
+                  min={field.min}
+                  max={field.max}
+                  required={field.required}
+                  value={createValues[field.name]}
+                  placeholder={field.placeholder}
+                  onChange={(e) => onCreateChange(field.name, e.target.value)}
+                />
+              )
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={closeFormOverlay}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary">
+              {editingRowId ? 'Update' : 'Create'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal open={deleteReviewPromptOpen} title={deleteReviewPromptConfig.promptTitle} onClose={closeDeleteReviewPrompt}>
         <div className="space-y-4">

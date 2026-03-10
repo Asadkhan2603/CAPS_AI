@@ -242,10 +242,14 @@ export default function SubmissionsPage() {
           limit: 50
         }
       });
-      const count = response?.data?.count ?? 0;
+      const count = response?.data?.submission_count ?? 0;
+      const jobId = response?.data?.job?.id;
+      const queued = Boolean(response?.data?.queued);
       pushToast({
-        title: 'Bulk AI completed',
-        description: `${count} pending submissions evaluated.`,
+        title: queued ? 'Bulk AI queued' : 'Bulk AI already queued',
+        description: jobId
+          ? `${count} submissions attached to job ${jobId}. Track progress in AI Operations.`
+          : 'No eligible submissions were found for bulk AI processing.',
         variant: 'success'
       });
       await loadData();
@@ -373,6 +377,7 @@ export default function SubmissionsPage() {
               <option value="pending">AI Pending</option>
               <option value="running">AI Running</option>
               <option value="completed">AI Completed</option>
+              <option value="fallback">AI Fallback</option>
               <option value="failed">AI Failed</option>
             </FormInput>
           </div>

@@ -19,6 +19,11 @@ class AIChatMessageOut(BaseModel):
     role: str
     content: str
     timestamp: datetime
+    question_id: str | None = None
+    provider_error: str | None = None
+    provider: str | None = None
+    prompt_version: str | None = None
+    runtime_snapshot: dict | None = None
 
 
 class AIChatThreadOut(BaseModel):

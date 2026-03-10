@@ -20,6 +20,8 @@ def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "ai_feedback": document.get("ai_feedback"),
         "ai_status": document.get("ai_status"),
         "ai_provider": document.get("ai_provider"),
+        "ai_prompt_version": document.get("ai_prompt_version"),
+        "ai_runtime_snapshot": document.get("ai_runtime_snapshot"),
         "ai_confidence": document.get("ai_confidence"),
         "ai_risk_flags": list(document.get("ai_risk_flags") or []),
         "ai_strengths": list(document.get("ai_strengths") or []),

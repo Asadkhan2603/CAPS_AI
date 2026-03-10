@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import EntityManager from '../components/ui/EntityManager';
 import { apiClient } from '../services/apiClient';
+import { useToast } from '../hooks/useToast';
 
 export default function BatchesPage() {
+  const { pushToast } = useToast();
   const [programs, setPrograms] = useState([]);
   const [specializations, setSpecializations] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     async function loadLookups() {
@@ -90,24 +94,31 @@ export default function BatchesPage() {
       },
       {
         name: 'start_year',
-        label: 'Start Year (Optional)',
+        label: 'Start Year / Join Year (Optional)',
         type: 'number',
         min: 2000,
         max: 2100,
         nullable: true,
-        placeholder: 'Auto if end year is provided'
+        placeholder: 'Example: 2022'
       },
       {
         name: 'end_year',
-        label: 'End Year (Optional)',
+        label: 'End Year / Pass-out Year (Optional)',
         type: 'number',
         min: 2000,
         max: 2100,
         nullable: true,
-        placeholder: 'Auto from program duration if blank'
+        placeholder: 'Example: 2026 for a 4-year batch starting in 2022'
       }
     ],
     [programOptions, specializationOptions]
+  );
+  const editFields = useMemo(
+    () => [
+      ...createFields,
+      { name: 'is_active', label: 'Active', type: 'switch', defaultValue: true }
+    ],
+    [createFields]
   );
 
   const columns = useMemo(
@@ -121,10 +132,61 @@ export default function BatchesPage() {
         render: (row) => specializationNameById[row.specialization_id] || row.specialization_id || '-'
       },
       { key: 'start_year', label: 'Start' },
-      { key: 'end_year', label: 'End' }
+      { key: 'end_year', label: 'End' },
+      { key: 'is_active', label: 'Active', render: (row) => (row.is_active ? 'Yes' : 'No') }
     ],
     [programNameById, specializationNameById]
   );
 
-  return <EntityManager title="Batches" endpoint="/batches/" filters={filters} createFields={createFields} columns={columns} enableDelete />;
+  async function onSeedBatches() {
+    setSyncing(true);
+    try {
+      const response = await apiClient.post('/programs/seed-batches');
+      pushToast({
+        title: 'Batches synced',
+        description: `${response.data?.batch_count ?? 0} batches ensured across ${response.data?.program_count ?? 0} programs.`,
+        variant: 'success'
+      });
+      setReloadToken((prev) => prev + 1);
+    } catch (err) {
+      const detail = err?.response?.data?.detail || 'Failed to seed program batches';
+      pushToast({ title: 'Sync failed', description: String(detail), variant: 'error' });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+        <p>
+          Programs now auto-seed base batches from 2022 to the current year. Use manual batch create only for exceptional or specialization-specific cohorts.
+        </p>
+        <button type="button" className="btn-secondary" onClick={onSeedBatches} disabled={syncing}>
+          {syncing ? 'Syncing...' : 'Sync Program Batches'}
+        </button>
+      </div>
+      <EntityManager
+        key={reloadToken}
+        title="Batches"
+        endpoint="/batches/"
+        filters={filters}
+        createFields={createFields}
+        editFields={editFields}
+        columns={columns}
+        enableEdit
+        enableDelete
+        createTransform={(payload) => ({
+          ...payload,
+          code: String(payload.code || '').trim().toUpperCase(),
+          specialization_id: payload.specialization_id || null
+        })}
+        updateTransform={(payload) => ({
+          ...payload,
+          code: String(payload.code || '').trim().toUpperCase(),
+          specialization_id: payload.specialization_id || null
+        })}
+      />
+    </div>
+  );
 }
