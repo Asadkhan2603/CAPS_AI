@@ -1,5 +1,33 @@
 # Communication Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -39,17 +67,17 @@ Current distinction:
 
 Primary backend files:
 
-- [notices.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\notices.py)
-- [admin_communication.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_communication.py)
-- [background_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\background_jobs.py)
+- [notices.py](/backend/app/api/v1/endpoints/notices.py)
+- [admin_communication.py](/backend/app/api/v1/endpoints/admin_communication.py)
+- [background_jobs.py](/backend/app/services/background_jobs.py)
 
 Primary frontend files:
 
-- [AnnouncementsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Communication\AnnouncementsPage.jsx)
-- [FeedPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Communication\FeedPage.jsx)
-- [MessagesPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Communication\MessagesPage.jsx)
-- [AdminCommunicationPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminCommunicationPage.jsx)
-- [CommunicationTabs.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\communication\CommunicationTabs.jsx)
+- [AnnouncementsPage.jsx](/frontend/src/pages/Communication/AnnouncementsPage.jsx)
+- [FeedPage.jsx](/frontend/src/pages/Communication/FeedPage.jsx)
+- [MessagesPage.jsx](/frontend/src/pages/Communication/MessagesPage.jsx)
+- [AdminCommunicationPage.jsx](/frontend/src/pages/Admin/AdminCommunicationPage.jsx)
+- [CommunicationTabs.jsx](/frontend/src/components/communication/CommunicationTabs.jsx)
 
 The current module is partly mature and partly staged:
 
@@ -98,8 +126,8 @@ The messaging UI exists, but it is currently future-ready rather than fully back
 
 Schema/model files:
 
-- [notice.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\notice.py)
-- [notices.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\notices.py)
+- [notice.py](/backend/app/schemas/notice.py)
+- [notices.py](/backend/app/models/notices.py)
 
 ### Public notice shape
 
@@ -172,7 +200,7 @@ These fields exist in the data model, but current frontend read tracking does no
 
 File:
 
-- [notices.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\notices.py)
+- [notices.py](/backend/app/api/v1/endpoints/notices.py)
 
 Publishing is constrained through `_can_publish_scope(...)`.
 
@@ -288,7 +316,7 @@ Behavior:
 
 File:
 
-- [admin_communication.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_communication.py)
+- [admin_communication.py](/backend/app/api/v1/endpoints/admin_communication.py)
 
 ### `POST /admin/communication/preview-target`
 
@@ -313,7 +341,7 @@ This is an administrative planning utility, not an end-user communication artifa
 
 File:
 
-- [background_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\background_jobs.py)
+- [background_jobs.py](/backend/app/services/background_jobs.py)
 
 Notices can fan out into notifications using:
 
@@ -335,7 +363,7 @@ This is the main point where Communication integrates with the Notification modu
 
 Frontend file:
 
-- [AnnouncementsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Communication\AnnouncementsPage.jsx)
+- [AnnouncementsPage.jsx](/frontend/src/pages/Communication/AnnouncementsPage.jsx)
 
 Capabilities:
 
@@ -355,7 +383,7 @@ Important behavior:
 
 Frontend file:
 
-- [CreateAnnouncementModal.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\communication\CreateAnnouncementModal.jsx)
+- [CreateAnnouncementModal.jsx](/frontend/src/components/communication/CreateAnnouncementModal.jsx)
 
 Capabilities:
 
@@ -371,7 +399,7 @@ The modal supports attachment validation on the client before backend upload.
 
 Frontend file:
 
-- [FeedPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Communication\FeedPage.jsx)
+- [FeedPage.jsx](/frontend/src/pages/Communication/FeedPage.jsx)
 
 Behavior:
 
@@ -388,7 +416,7 @@ This is a communication-oriented activity stream, not a direct representation of
 
 Frontend file:
 
-- [MessagesPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Communication\MessagesPage.jsx)
+- [MessagesPage.jsx](/frontend/src/pages/Communication/MessagesPage.jsx)
 
 Current state:
 
@@ -402,7 +430,7 @@ This must be documented as staged UI, not as a fully implemented module.
 
 Frontend file:
 
-- [AdminCommunicationPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminCommunicationPage.jsx)
+- [AdminCommunicationPage.jsx](/frontend/src/pages/Admin/AdminCommunicationPage.jsx)
 
 Capabilities:
 
@@ -413,7 +441,7 @@ Capabilities:
 
 File:
 
-- [noticeReadTracker.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\utils\noticeReadTracker.js)
+- [noticeReadTracker.js](/frontend/src/utils/noticeReadTracker.js)
 
 Important implementation reality:
 
@@ -611,3 +639,4 @@ From an architecture standpoint, the correct path is:
 - fix read-state consistency
 - treat feed as an aggregation projection
 - only elevate messaging to a real module once backend persistence and authorization are implemented
+

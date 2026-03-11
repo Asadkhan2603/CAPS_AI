@@ -51,27 +51,29 @@ Governance is strongest today around destructive operations and privileged admin
 
 Core backend implementation lives in:
 
-- [governance.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\governance.py)
-- [admin_governance.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_governance.py)
-- [audit.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\audit.py)
-- [permission_registry.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\core\permission_registry.py)
+- [governance.py](/backend/app/services/governance.py)
+- [admin_governance.py](/backend/app/api/v1/endpoints/admin_governance.py)
+- [audit.py](/backend/app/services/audit.py)
+- [permission_registry.py](/backend/app/core/permission_registry.py)
 
 Governance is consumed in protected endpoint files such as:
 
-- [departments.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\departments.py)
-- [branches.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\branches.py)
-- [years.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\years.py)
-- [courses.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\courses.py)
-- [classes.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\classes.py)
+- [faculties.py](/backend/app/api/v1/endpoints/faculties.py)
+- [departments.py](/backend/app/api/v1/endpoints/departments.py)
+- [programs.py](/backend/app/api/v1/endpoints/programs.py)
+- [specializations.py](/backend/app/api/v1/endpoints/specializations.py)
+- [batches.py](/backend/app/api/v1/endpoints/batches.py)
+- [semesters.py](/backend/app/api/v1/endpoints/semesters.py)
+- [classes.py](/backend/app/api/v1/endpoints/classes.py) (sections)
 
 ## Primary Frontend Files
 
 The governance UI and retry path live in:
 
-- [AdminGovernancePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminGovernancePage.jsx)
-- [adminGovernanceApi.js](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\services\adminGovernanceApi.js)
-- [EntityManager.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\components\ui\EntityManager.jsx)
-- [featureAccess.js](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
+- [AdminGovernancePage.jsx](/frontend/src/pages/Admin/AdminGovernancePage.jsx)
+- [adminGovernanceApi.js](/frontend/src/services/adminGovernanceApi.js)
+- [EntityManager.jsx](/frontend/src/components/ui/EntityManager.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
 
 `AdminGovernancePage.jsx` is the explicit governance console. `EntityManager.jsx` is the operational retry path for destructive actions that require prior review approval.
 
@@ -108,7 +110,7 @@ All admin governance endpoints currently use `require_permission("system.read")`
 
 Relevant file:
 
-- [admin_governance.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_governance.py)
+- [admin_governance.py](/backend/app/api/v1/endpoints/admin_governance.py)
 
 ## Review Record Model
 
@@ -178,7 +180,7 @@ The backend writes a new `admin_action_reviews` record with:
 - action and entity context
 - reason and optional metadata
 
-The frontend create form in [AdminGovernancePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminGovernancePage.jsx) currently collects:
+The frontend create form in [AdminGovernancePage.jsx](/frontend/src/pages/Admin/AdminGovernancePage.jsx) currently collects:
 
 - review type
 - action
@@ -234,7 +236,7 @@ Governance policy updates and review decisions are written to audit logs. Destru
 
 The most important governance execution logic is in:
 
-- [governance.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\governance.py)
+- [governance.py](/backend/app/services/governance.py)
 
 ### Function Behavior
 
@@ -276,11 +278,13 @@ Governance is currently wired most clearly into destructive academic setup actio
 
 Protected delete/archive flows include these endpoint families:
 
+- faculties
 - departments
-- branches
-- years
-- courses
-- classes or sections compatibility path
+- programs
+- specializations
+- batches
+- semesters
+- sections
 
 These endpoints are expected to call `enforce_review_approval(...)` and accept `review_id` from the request path or query parameters depending on endpoint shape.
 
@@ -305,7 +309,7 @@ What is still uneven:
 
 Governance integrates with the audit subsystem through:
 
-- [audit.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\audit.py)
+- [audit.py](/backend/app/services/audit.py)
 
 Important audit events include:
 
@@ -317,7 +321,7 @@ Important audit events include:
 
 Governance-related actions also benefit from the immutable audit-chain infrastructure described in:
 
-- [AUDIT_MODULE_MASTER.md](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\docs\modules\AUDIT_MODULE_MASTER.md)
+- [AUDIT_MODULE_MASTER.md](/docs/modules/AUDIT_MODULE_MASTER.md)
 
 ## Destructive Action Telemetry
 
@@ -422,7 +426,7 @@ The session API is read-only monitoring in the current implementation.
 
 The main frontend governance console is:
 
-- [AdminGovernancePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminGovernancePage.jsx)
+- [AdminGovernancePage.jsx](/frontend/src/pages/Admin/AdminGovernancePage.jsx)
 
 ### Page Capabilities
 
@@ -460,8 +464,8 @@ That works functionally, but it is a weak operator note strategy. Real productio
 
 The operational governance retry path for destructive CRUD is implemented in:
 
-- [EntityManager.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\components\ui\EntityManager.jsx)
-- [featureAccess.js](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
+- [EntityManager.jsx](/frontend/src/components/ui/EntityManager.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
 
 ### Flow
 
@@ -603,13 +607,16 @@ Validate:
 
 ## Related Documentation
 
-- [GOVERNANCE_MODULE_MASTER.md](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\docs\modules\GOVERNANCE_MODULE_MASTER.md)
-- [AUDIT_MODULE_MASTER.md](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\docs\modules\AUDIT_MODULE_MASTER.md)
-- [RBAC_MODULE_MASTER.md](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\docs\modules\RBAC_MODULE_MASTER.md)
-- [SYSTEM_MODULE_MASTER.md](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\docs\modules\SYSTEM_MODULE_MASTER.md)
-- [testing.md](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\docs\guides\testing.md)
-- [api-contracts.md](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\docs\guides\api-contracts.md)
+- [GOVERNANCE_MODULE_MASTER.md](/docs/modules/GOVERNANCE_MODULE_MASTER.md)
+- [AUDIT_MODULE_MASTER.md](/docs/modules/AUDIT_MODULE_MASTER.md)
+- [RBAC_MODULE_MASTER.md](/docs/modules/RBAC_MODULE_MASTER.md)
+- [SYSTEM_MODULE_MASTER.md](/docs/modules/SYSTEM_MODULE_MASTER.md)
+- [testing.md](/docs/guides/testing.md)
+- [api-contracts.md](/docs/guides/api-contracts.md)
 
 ## Summary
 
 Governance in CAPS AI is an active execution-control system built on policy state, review records, backend enforcement, audit logging, and frontend retry flows. The most important technical fact is that governance is already wired into real protected actions and can block execution when approval is missing. The most important remaining weakness is not missing infrastructure. It is uneven adoption and weak permission semantics around the governance control plane itself.
+
+
+

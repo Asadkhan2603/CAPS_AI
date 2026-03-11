@@ -1,5 +1,33 @@
 # RBAC Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -125,7 +153,7 @@ Behavior:
 
 Important implementation drift:
 
-- [user.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\user.py) currently types `AdminType` as:
+- [user.py](/backend/app/schemas/user.py) currently types `AdminType` as:
   - `super_admin`
   - `admin`
   - `academic_admin`
@@ -155,7 +183,7 @@ Extended roles are stored in:
 
 Important constraint:
 
-- [users.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\users.py) rejects `extended_roles` during user creation for non-teacher accounts
+- [users.py](/backend/app/api/v1/endpoints/users.py) rejects `extended_roles` during user creation for non-teacher accounts
 - but later extension-role updates explicitly support:
   - teacher extensions
   - student `club_president`
@@ -310,9 +338,6 @@ It supports policy matching across:
 - `batches.manage`
 - `semesters.manage`
 - `sections.manage`
-- `courses.manage`
-- `years.manage`
-- `branches.manage`
 
 #### Clubs
 
@@ -391,13 +416,10 @@ That works, but it is semantically broader than the name suggests.
 
 ### Academic Setup Policy
 
-Central academic setup entities:
+Core academic setup entities:
 
 - `faculties.manage`
 - `departments.manage`
-- `courses.manage`
-- `years.manage`
-- `branches.manage`
 
 Allowed:
 
@@ -418,6 +440,7 @@ Allowed:
 - `super_admin`
 - `admin`
 - `academic_admin`
+- `department_admin`
 - `department_admin`
 
 ### Teacher Extension Based Policy
@@ -618,8 +641,8 @@ Examples:
 
 This now mirrors the backend academic permission split validated in:
 
-- [test_academic_permissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_academic_permissions.py)
-- [permissions.test.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\utils\permissions.test.js)
+- [test_academic_permissions.py](/backend/tests/test_academic_permissions.py)
+- [permissions.test.js](/frontend/src/utils/permissions.test.js)
 
 ### General Multi-Role Pages
 
@@ -818,3 +841,4 @@ The RBAC system in CAPS AI is already richer than a simple role gate. It support
 Its main weakness is not lack of expressive power. The main weakness is incomplete scope enforcement and some remaining policy inconsistency across modules.
 
 The right next step is not inventing a new RBAC model. It is finishing normalization and enforcing scope consistently across the codebase.
+

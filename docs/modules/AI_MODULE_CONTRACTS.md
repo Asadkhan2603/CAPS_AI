@@ -6,12 +6,12 @@ This document defines the stable AI payload shapes currently used by CAPS AI acr
 
 Primary implementation files:
 
-- [ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py)
-- [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
-- [similarity.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
-- [ai_runtime.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_runtime.py)
-- [ai_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_jobs.py)
+- [ai.py](/backend/app/api/v1/endpoints/ai.py)
+- [submissions.py](/backend/app/api/v1/endpoints/submissions.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
+- [similarity.py](/backend/app/api/v1/endpoints/similarity.py)
+- [ai_runtime.py](/backend/app/services/ai_runtime.py)
+- [ai_jobs.py](/backend/app/services/ai_jobs.py)
 
 ## Submission AI Result
 
@@ -292,3 +292,5 @@ Top-level fields:
 - treat `ai_prompt_version`, `runtime_snapshot`, and `engine_version` as audit metadata, not user-editable fields
 - treat `fallback` as a valid AI outcome, not a transport error
 - prefer these stable contracts over inferring fields ad hoc from UI-specific usage
+
+

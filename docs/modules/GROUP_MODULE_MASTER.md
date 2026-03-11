@@ -1,5 +1,33 @@
 # GROUP MODULE MASTER
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -97,7 +125,7 @@ The backend enforces active uniqueness for:
 
 - `section_id + code`
 
-Observed supporting indexes in [indexes.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\core\indexes.py):
+Observed supporting indexes in [indexes.py](/backend/app/core/indexes.py):
 
 - `(section_id, code, is_active)`
 - `(section_id, is_active)`
@@ -108,12 +136,12 @@ This is one of the cleaner indexing stories in the academic-operations area.
 
 Primary backend file:
 
-- [groups.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\groups.py)
+- [groups.py](/backend/app/api/v1/endpoints/groups.py)
 
 Supporting files:
 
-- [group_item.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\group_item.py)
-- [groups.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\models\groups.py)
+- [group_item.py](/backend/app/schemas/group_item.py)
+- [groups.py](/backend/app/models/groups.py)
 
 ### 4.1 Section access model
 
@@ -237,7 +265,7 @@ Important gaps:
 
 Schema file:
 
-- [group_item.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\group_item.py)
+- [group_item.py](/backend/app/schemas/group_item.py)
 
 Create fields:
 
@@ -272,7 +300,7 @@ Important contract limitation:
 
 Primary page:
 
-- [GroupsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\GroupsPage.jsx)
+- [GroupsPage.jsx](/frontend/src/pages/GroupsPage.jsx)
 
 ### 6.1 Frontend behavior
 
@@ -280,7 +308,7 @@ The page uses shared `EntityManager` CRUD scaffolding.
 
 It loads:
 
-- all sections through [sectionsApi.js](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\services\sectionsApi.js)
+- all sections through [sectionsApi.js](/frontend/src/services/sectionsApi.js)
 
 ### 6.2 Filters exposed
 
@@ -325,7 +353,7 @@ Student master records can store:
 
 Observed in:
 
-- [students.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\students.py)
+- [students.py](/backend/app/api/v1/endpoints/students.py)
 
 Validation already exists there:
 
@@ -345,7 +373,7 @@ Validation:
 
 Observed in:
 
-- [course_offerings.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\course_offerings.py)
+- [course_offerings.py](/backend/app/api/v1/endpoints/course_offerings.py)
 
 ### 7.3 Class slots
 
@@ -357,7 +385,7 @@ Attendance marking rejects students who do not belong to the offering group when
 
 Observed in:
 
-- [attendance_records.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\attendance_records.py)
+- [attendance_records.py](/backend/app/api/v1/endpoints/attendance_records.py)
 
 ### 7.5 Student timetable and dashboard
 
@@ -540,3 +568,4 @@ Weaknesses:
 - unresolved policy choice around student group visibility
 
 As implemented today, the module is useful and coherent, but it is under-protected relative to the operational impact groups have on offerings, attendance, and student schedules.
+

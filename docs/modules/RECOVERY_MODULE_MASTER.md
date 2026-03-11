@@ -1,5 +1,33 @@
 # RECOVERY MODULE MASTER
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -35,11 +63,11 @@ The recovery model is:
 
 Primary backend file:
 
-- [admin_recovery.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_recovery.py)
+- [admin_recovery.py](/backend/app/api/v1/endpoints/admin_recovery.py)
 
 Primary frontend page:
 
-- [AdminRecoveryPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminRecoveryPage.jsx)
+- [AdminRecoveryPage.jsx](/frontend/src/pages/Admin/AdminRecoveryPage.jsx)
 
 Current scope is limited to a fixed allowlist of collections.
 
@@ -63,6 +91,7 @@ Important implication:
 
 - recovery is not generic across all collections
 - only explicitly whitelisted collections can be restored
+- legacy collections remain supported here even though their API routes are retired
 
 ## 3. Recovery Model
 
@@ -70,7 +99,7 @@ Important implication:
 
 The recovery backend uses shared helpers from:
 
-- [soft_delete.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\core\soft_delete.py)
+- [soft_delete.py](/backend/app/core/soft_delete.py)
 
 Current authoritative delete signal:
 
@@ -223,7 +252,7 @@ This is an operational log, not the primary source of truth for deletion state.
 
 Restore actions also write audit records through:
 
-- [audit.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\audit.py)
+- [audit.py](/backend/app/services/audit.py)
 
 This gives restore operations compliance visibility.
 
@@ -231,7 +260,7 @@ This gives restore operations compliance visibility.
 
 Frontend page:
 
-- [AdminRecoveryPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminRecoveryPage.jsx)
+- [AdminRecoveryPage.jsx](/frontend/src/pages/Admin/AdminRecoveryPage.jsx)
 
 ### 6.1 What the page does
 
@@ -477,3 +506,4 @@ Weaknesses:
 - collection support is inconsistent relative to actual soft-delete usage across the repo
 
 As implemented today, the module is a practical admin recovery tool for soft-deleted rows. It is not a full resilience or data-repair system, and it should not be described that way.
+

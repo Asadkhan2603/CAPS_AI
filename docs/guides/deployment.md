@@ -1,4 +1,4 @@
-﻿# Deployment Guide
+# Deployment Guide
 
 ## Overview
 
@@ -9,19 +9,19 @@ The repo currently supports two practical deployment modes:
 - Kubernetes manifests at the repo root for cluster deployment
 
 This guide is based on the current deployable assets in the repo:
-- [docker-compose.yml](d:\VS CODE\MY PROJECT\CAPS_AI\docker-compose.yml)
-- [backend/Dockerfile](d:\VS CODE\MY PROJECT\CAPS_AI\backend\Dockerfile)
-- [frontend/Dockerfile](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\Dockerfile)
-- [frontend/nginx.conf](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\nginx.conf)
-- [k8s-namespace.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-namespace.yaml)
-- [k8s-configmap.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-configmap.yaml)
-- [k8s-secrets.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-secrets.yaml)
-- [k8s-mongodb.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-mongodb.yaml)
-- [k8s-redis.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-redis.yaml)
-- [k8s-backend.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-backend.yaml)
-- [k8s-frontend.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-frontend.yaml)
-- [k8s-ingress.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-ingress.yaml)
-- [k8s-uploads-pvc.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-uploads-pvc.yaml)
+- [docker-compose.yml](docker-compose.yml)
+- [backend/Dockerfile](/backend/Dockerfile)
+- [frontend/Dockerfile](/frontend/Dockerfile)
+- [frontend/nginx.conf](/frontend/nginx.conf)
+- [k8s-namespace.yaml](k8s-namespace.yaml)
+- [k8s-configmap.yaml](k8s-configmap.yaml)
+- [k8s-secrets.yaml](k8s-secrets.yaml)
+- [k8s-mongodb.yaml](k8s-mongodb.yaml)
+- [k8s-redis.yaml](k8s-redis.yaml)
+- [k8s-backend.yaml](k8s-backend.yaml)
+- [k8s-frontend.yaml](k8s-frontend.yaml)
+- [k8s-ingress.yaml](k8s-ingress.yaml)
+- [k8s-uploads-pvc.yaml](k8s-uploads-pvc.yaml)
 
 ## Deployment Topology
 
@@ -56,7 +56,7 @@ frontend deployment
 ### Backend Image
 
 Source:
-- [backend/Dockerfile](d:\VS CODE\MY PROJECT\CAPS_AI\backend\Dockerfile)
+- [backend/Dockerfile](/backend/Dockerfile)
 
 Build characteristics:
 - base image: `python:3.13.12-slim`
@@ -77,7 +77,7 @@ Implications:
 ### Frontend Image
 
 Source:
-- [frontend/Dockerfile](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\Dockerfile)
+- [frontend/Dockerfile](/frontend/Dockerfile)
 
 Build characteristics:
 - multi-stage build
@@ -87,7 +87,7 @@ Build characteristics:
 - uses custom nginx config
 
 Runtime nginx config:
-- [frontend/nginx.conf](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\nginx.conf)
+- [frontend/nginx.conf](/frontend/nginx.conf)
 
 Current behavior:
 - serves SPA static assets
@@ -97,7 +97,7 @@ Current behavior:
 ## Local Docker Compose Deployment
 
 Primary file:
-- [docker-compose.yml](d:\VS CODE\MY PROJECT\CAPS_AI\docker-compose.yml)
+- [docker-compose.yml](docker-compose.yml)
 
 ### Services
 
@@ -192,7 +192,7 @@ Use this mode when:
 ### Namespace
 
 Namespace manifest:
-- [k8s-namespace.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-namespace.yaml)
+- [k8s-namespace.yaml](k8s-namespace.yaml)
 
 Namespace:
 - `caps-ai`
@@ -200,7 +200,7 @@ Namespace:
 ### Config And Secret Layer
 
 Config map file:
-- [k8s-configmap.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-configmap.yaml)
+- [k8s-configmap.yaml](k8s-configmap.yaml)
 
 Defined configmaps:
 - `backend-config`
@@ -208,7 +208,7 @@ Defined configmaps:
 - `nginx-config`
 
 Secret file:
-- [k8s-secrets.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-secrets.yaml)
+- [k8s-secrets.yaml](k8s-secrets.yaml)
 
 Defined secret:
 - `backend-secrets`
@@ -237,7 +237,7 @@ Important deployment rule:
 ### MongoDB Runtime
 
 Manifest:
-- [k8s-mongodb.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-mongodb.yaml)
+- [k8s-mongodb.yaml](k8s-mongodb.yaml)
 
 Current topology:
 - headless service `mongodb`
@@ -249,7 +249,7 @@ Current topology:
 ### Redis Runtime
 
 Manifest:
-- [k8s-redis.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-redis.yaml)
+- [k8s-redis.yaml](k8s-redis.yaml)
 
 Current topology:
 - ClusterIP service `redis`
@@ -259,7 +259,7 @@ Current topology:
 ### Backend Runtime
 
 Manifest:
-- [k8s-backend.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-backend.yaml)
+- [k8s-backend.yaml](k8s-backend.yaml)
 
 Current backend topology:
 - ClusterIP service on port `8000`
@@ -282,7 +282,7 @@ Important operational consequence:
 ### Frontend Runtime
 
 Manifest:
-- [k8s-frontend.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-frontend.yaml)
+- [k8s-frontend.yaml](k8s-frontend.yaml)
 
 Current frontend topology:
 - ClusterIP service on port `80`
@@ -297,7 +297,7 @@ Current resource settings:
 ### Ingress Runtime
 
 Manifest:
-- [k8s-ingress.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-ingress.yaml)
+- [k8s-ingress.yaml](k8s-ingress.yaml)
 
 Current ingress behavior:
 - host-based routing for `caps-ai.example.com`
@@ -378,7 +378,7 @@ These are not theoretical. They are visible in the current repo state.
 - `frontend-config`
 - `nginx-config`
 
-But [k8s-frontend.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-frontend.yaml) currently does not mount or consume those configmaps.
+But [k8s-frontend.yaml](k8s-frontend.yaml) currently does not mount or consume those configmaps.
 
 Practical effect:
 - runtime nginx config in the frontend pod comes from the baked image, not the cluster configmap
@@ -511,3 +511,5 @@ The deployment model is workable today. The main risks are not missing manifests
 - placeholder secret and host values in cluster manifests
 
 That means the next deployment improvements should focus on operational correctness and configuration discipline, not on adding more deployment targets.
+
+

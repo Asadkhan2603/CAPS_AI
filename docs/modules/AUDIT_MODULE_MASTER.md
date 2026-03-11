@@ -1,5 +1,33 @@
 # Audit Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -23,26 +51,26 @@ User action
 
 Primary implementation sources:
 
-- [audit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\audit.py)
-- [audit_logs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\audit_logs.py)
-- [audit_logs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\audit_logs.py)
-- [audit_log.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\audit_log.py)
-- [indexes.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\indexes.py)
-- [admin_analytics.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_analytics.py)
-- [admin_system.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_system.py)
-- [governance.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\governance.py)
+- [audit.py](/backend/app/services/audit.py)
+- [audit_logs.py](/backend/app/api/v1/endpoints/audit_logs.py)
+- [audit_logs.py](/backend/app/models/audit_logs.py)
+- [audit_log.py](/backend/app/schemas/audit_log.py)
+- [indexes.py](/backend/app/core/indexes.py)
+- [admin_analytics.py](/backend/app/api/v1/endpoints/admin_analytics.py)
+- [admin_system.py](/backend/app/api/v1/endpoints/admin_system.py)
+- [governance.py](/backend/app/services/governance.py)
 
 Primary frontend surfaces:
 
-- [AuditLogsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AuditLogsPage.jsx)
-- [AdminCompliancePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminCompliancePage.jsx)
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
+- [AuditLogsPage.jsx](/frontend/src/pages/AuditLogsPage.jsx)
+- [AdminCompliancePage.jsx](/frontend/src/pages/Admin/AdminCompliancePage.jsx)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
 
 Relevant adjacent module references:
 
-- [GOVERNANCE_MODULE_MASTER.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\GOVERNANCE_MODULE_MASTER.md)
-- [SYSTEM_MODULE_MASTER.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\SYSTEM_MODULE_MASTER.md)
+- [GOVERNANCE_MODULE_MASTER.md](/docs/modules/GOVERNANCE_MODULE_MASTER.md)
+- [SYSTEM_MODULE_MASTER.md](/docs/modules/SYSTEM_MODULE_MASTER.md)
 
 This document describes the audit module as implemented today, including operational audit logs, immutable audit chaining, telemetry events, list APIs, and compliance summary views.
 
@@ -123,11 +151,11 @@ Purpose:
 
 Public mapping:
 
-- [audit_logs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\audit_logs.py)
+- [audit_logs.py](/backend/app/models/audit_logs.py)
 
 API schema:
 
-- [audit_log.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\audit_log.py)
+- [audit_log.py](/backend/app/schemas/audit_log.py)
 
 Current fields exposed publicly:
 
@@ -229,7 +257,7 @@ This is not a replacement for `audit_logs`. It is a narrower operational supplem
 
 File:
 
-- [audit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\audit.py)
+- [audit.py](/backend/app/services/audit.py)
 
 Primary function:
 
@@ -293,7 +321,7 @@ That means the immutable path is supportive, not strictly enforced.
 
 File:
 
-- [audit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\audit.py)
+- [audit.py](/backend/app/services/audit.py)
 
 Secondary function:
 
@@ -346,7 +374,7 @@ This makes the audit layer useful for reconstructing sensitive delete flows end-
 
 File:
 
-- [audit_logs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\audit_logs.py)
+- [audit_logs.py](/backend/app/api/v1/endpoints/audit_logs.py)
 
 Route:
 
@@ -380,11 +408,11 @@ This is a notable policy decision.
 
 Frontend feature access:
 
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js) currently allows `admin` and `teacher`
+- [featureAccess.js](/frontend/src/config/featureAccess.js) currently allows `admin` and `teacher`
 
 Backend permission registry:
 
-- [permission_registry.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\permission_registry.py) defines `audit.read` only for:
+- [permission_registry.py](/backend/app/core/permission_registry.py) defines `audit.read` only for:
   - `super_admin`
   - `admin`
   - `compliance_admin`
@@ -402,7 +430,7 @@ This is one of the main audit-module authorization inconsistencies today.
 
 File:
 
-- [AuditLogsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AuditLogsPage.jsx)
+- [AuditLogsPage.jsx](/frontend/src/pages/AuditLogsPage.jsx)
 
 Current UI behavior:
 
@@ -435,7 +463,7 @@ Important limitation:
 
 File:
 
-- [AdminCompliancePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminCompliancePage.jsx)
+- [AdminCompliancePage.jsx](/frontend/src/pages/Admin/AdminCompliancePage.jsx)
 
 Purpose:
 
@@ -463,7 +491,7 @@ Frontend route:
 
 Route guard:
 
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
 
 Current effective access:
 
@@ -513,7 +541,7 @@ The audit module is not only for human inspection. Other modules derive platform
 
 File:
 
-- [admin_analytics.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_analytics.py)
+- [admin_analytics.py](/backend/app/api/v1/endpoints/admin_analytics.py)
 
 Route:
 
@@ -528,7 +556,7 @@ Derived metrics:
 
 File:
 
-- [admin_system.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_system.py)
+- [admin_system.py](/backend/app/api/v1/endpoints/admin_system.py)
 
 Derived metrics from audit logs:
 
@@ -543,8 +571,8 @@ This means the system module depends on the audit module being complete and corr
 
 Files:
 
-- [governance.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\governance.py)
-- [admin_governance.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_governance.py)
+- [governance.py](/backend/app/services/governance.py)
+- [admin_governance.py](/backend/app/api/v1/endpoints/admin_governance.py)
 
 Derived metrics:
 
@@ -788,3 +816,6 @@ Its main weaknesses are:
 - no clearly enforced retention execution path
 
 The correct next step is to treat audit as a first-class platform data system, not only as a log table. That means tightening access policy, exposing chain verification, standardizing event semantics, and making retention behavior operationally real.
+
+
+

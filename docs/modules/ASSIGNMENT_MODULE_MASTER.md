@@ -1,5 +1,33 @@
 # Assignment Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -37,18 +65,18 @@ This module is therefore not just CRUD. It is the anchor record for a full acade
 
 Primary backend file:
 
-- [assignments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\assignments.py)
+- [assignments.py](/backend/app/api/v1/endpoints/assignments.py)
 
 Primary frontend page:
 
-- [AssignmentsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AssignmentsPage.jsx)
+- [AssignmentsPage.jsx](/frontend/src/pages/AssignmentsPage.jsx)
 
 ## 2. Data Model
 
 Schema/model files:
 
-- [assignment.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\assignment.py)
-- [assignments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\assignments.py)
+- [assignment.py](/backend/app/schemas/assignment.py)
+- [assignments.py](/backend/app/models/assignments.py)
 
 ### Public record shape
 
@@ -289,12 +317,12 @@ Archive an assignment.
 
 Frontend page:
 
-- [AssignmentsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AssignmentsPage.jsx)
+- [AssignmentsPage.jsx](/frontend/src/pages/AssignmentsPage.jsx)
 
 Route/config:
 
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
 
 ### Current page capabilities
 
@@ -505,3 +533,5 @@ From an architecture standpoint, this module should be retained as the assessmen
 - cleaner ownership semantics
 - stronger lifecycle states
 - safer archival policy
+
+

@@ -1,13 +1,13 @@
-﻿# Frontend Architecture Guide
+# Frontend Architecture Guide
 
 ## Overview
 
 The frontend is a React 18 + Vite single-page application with route-level code splitting, provider-based state composition, a centralized API client, and a shared dashboard shell for authenticated pages.
 
 Primary entry points:
-- [main.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\main.jsx)
-- [App.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\App.jsx)
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
+- [main.jsx](/frontend/src/main.jsx)
+- [App.jsx](/frontend/src/App.jsx)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
 
 Core architectural characteristics:
 - React component architecture with hook-based state
@@ -48,7 +48,7 @@ frontend/
 
 ## Runtime Bootstrap Flow
 
-Bootstrap happens in [main.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\main.jsx).
+Bootstrap happens in [main.jsx](/frontend/src/main.jsx).
 
 Provider stack order:
 1. `BrowserRouter`
@@ -63,7 +63,7 @@ This order matters:
 - toast is cross-cutting UI feedback across all screens
 
 Application root:
-- [App.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\App.jsx)
+- [App.jsx](/frontend/src/App.jsx)
 
 `App.jsx` wraps the route system with:
 - `ErrorBoundary`
@@ -74,7 +74,7 @@ Architectural implication:
 ## Routing Architecture
 
 Primary route map:
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
 
 ### Route Composition Pattern
 
@@ -92,7 +92,7 @@ Pattern:
 ### Protected Route Behavior
 
 Implementation:
-- [ProtectedRoute.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\ProtectedRoute.jsx)
+- [ProtectedRoute.jsx](/frontend/src/routes/ProtectedRoute.jsx)
 
 Current behavior:
 - shows `PageLoader` while auth session is being checked
@@ -112,10 +112,10 @@ Important architectural point:
 ## Access Control Architecture
 
 Primary config:
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
 
 Permission utility:
-- [permissions.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\utils\permissions.js)
+- [permissions.js](/frontend/src/utils/permissions.js)
 
 ### What FEATURE_ACCESS Does
 
@@ -135,7 +135,7 @@ Examples of route-level subtype enforcement currently present:
 `FEATURE_ACCESS` also carries UI metadata for delete governance flows in shared CRUD pages.
 
 This is consumed by:
-- [EntityManager.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\ui\EntityManager.jsx)
+- [EntityManager.jsx](/frontend/src/components/ui/EntityManager.jsx)
 
 Result:
 - delete prompts can be configured per feature without hardcoding them page by page
@@ -143,7 +143,7 @@ Result:
 ## Auth State Architecture
 
 Primary implementation:
-- [AuthContext.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\context\AuthContext.jsx)
+- [AuthContext.jsx](/frontend/src/context/AuthContext.jsx)
 
 ### Auth Responsibilities
 
@@ -190,7 +190,7 @@ Architectural implication:
 ## Theme Architecture
 
 Implementation:
-- [ThemeContext.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\context\ThemeContext.jsx)
+- [ThemeContext.jsx](/frontend/src/context/ThemeContext.jsx)
 
 Current behavior:
 - persists theme in `localStorage`
@@ -203,8 +203,8 @@ Architectural consequence:
 ## Toast And Feedback Architecture
 
 Implementation:
-- [ToastContext.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\context\ToastContext.jsx)
-- [useToast.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\hooks\useToast.js)
+- [ToastContext.jsx](/frontend/src/context/ToastContext.jsx)
+- [useToast.js](/frontend/src/hooks/useToast.js)
 
 Current behavior:
 - creates short-lived in-memory toast entries
@@ -218,7 +218,7 @@ Usage pattern:
 ## Layout Architecture
 
 Primary authenticated shell:
-- [DashboardLayout.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\layout\DashboardLayout.jsx)
+- [DashboardLayout.jsx](/frontend/src/components/layout/DashboardLayout.jsx)
 
 Supporting layout components live under:
 - `frontend/src/components/layout`
@@ -239,7 +239,7 @@ Result:
 ## API Client Architecture
 
 Primary implementation:
-- [apiClient.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\services\apiClient.js)
+- [apiClient.js](/frontend/src/services/apiClient.js)
 
 ### Responsibilities
 
@@ -343,7 +343,7 @@ Shared UI components live under:
 - `frontend/src/components/ui`
 
 Important shared component:
-- [EntityManager.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\ui\EntityManager.jsx)
+- [EntityManager.jsx](/frontend/src/components/ui/EntityManager.jsx)
 
 ### EntityManager Responsibilities
 
@@ -381,7 +381,7 @@ Visual architecture characteristics:
 
 ## Build And Tooling Architecture
 
-From [package.json](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\package.json):
+From [package.json](/frontend/package.json):
 - dev server: `vite`
 - build: `vite build`
 - preview: `vite preview`
@@ -454,15 +454,15 @@ Risk:
 
 ## Recommended Reading Order For Frontend Engineers
 
-1. [main.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\main.jsx)
-2. [App.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\App.jsx)
-3. [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
-4. [ProtectedRoute.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\ProtectedRoute.jsx)
-5. [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
-6. [AuthContext.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\context\AuthContext.jsx)
-7. [apiClient.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\services\apiClient.js)
-8. [DashboardLayout.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\layout\DashboardLayout.jsx)
-9. [EntityManager.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\ui\EntityManager.jsx)
+1. [main.jsx](/frontend/src/main.jsx)
+2. [App.jsx](/frontend/src/App.jsx)
+3. [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
+4. [ProtectedRoute.jsx](/frontend/src/routes/ProtectedRoute.jsx)
+5. [featureAccess.js](/frontend/src/config/featureAccess.js)
+6. [AuthContext.jsx](/frontend/src/context/AuthContext.jsx)
+7. [apiClient.js](/frontend/src/services/apiClient.js)
+8. [DashboardLayout.jsx](/frontend/src/components/layout/DashboardLayout.jsx)
+9. [EntityManager.jsx](/frontend/src/components/ui/EntityManager.jsx)
 10. domain pages relevant to the module being changed
 
 ## Architecture Summary
@@ -477,3 +477,5 @@ It is not a component library-first architecture and not a heavy state-machine f
 - custom pages for the workflows that outgrow CRUD
 
 That is a reasonable architecture for the current system size. The main gains now come from normalizing the mixed service/page patterns, not from replacing the frontend foundation.
+
+

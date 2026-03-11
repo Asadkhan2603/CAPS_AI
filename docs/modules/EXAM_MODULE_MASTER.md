@@ -1,5 +1,33 @@
 # Exam Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -34,19 +62,19 @@ Those three collections together form the practical exam and assessment module u
 
 Primary backend files:
 
-- [assignments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\assignments.py)
-- [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
-- [ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py)
-- [grading.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\grading.py)
-- [ai_evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_evaluation.py)
-- [evaluation_ai_module.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\evaluation_ai_module.py)
+- [assignments.py](/backend/app/api/v1/endpoints/assignments.py)
+- [submissions.py](/backend/app/api/v1/endpoints/submissions.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
+- [ai.py](/backend/app/api/v1/endpoints/ai.py)
+- [grading.py](/backend/app/services/grading.py)
+- [ai_evaluation.py](/backend/app/services/ai_evaluation.py)
+- [evaluation_ai_module.py](/backend/app/services/evaluation_ai_module.py)
 
 Primary frontend files:
 
-- [AssignmentsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AssignmentsPage.jsx)
-- [SubmissionsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\SubmissionsPage.jsx)
-- [EvaluateSubmission.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
+- [AssignmentsPage.jsx](/frontend/src/pages/AssignmentsPage.jsx)
+- [SubmissionsPage.jsx](/frontend/src/pages/SubmissionsPage.jsx)
+- [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
 
 Operational role of this module:
 
@@ -137,11 +165,11 @@ Purpose:
 
 Primary schema file:
 
-- [assignment.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\assignment.py)
+- [assignment.py](/backend/app/schemas/assignment.py)
 
 Public model mapping:
 
-- [assignments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\assignments.py)
+- [assignments.py](/backend/app/models/assignments.py)
 
 Important stored fields:
 
@@ -183,11 +211,11 @@ Purpose:
 
 Primary schema file:
 
-- [submission.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\submission.py)
+- [submission.py](/backend/app/schemas/submission.py)
 
 Public model mapping:
 
-- [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\submissions.py)
+- [submissions.py](/backend/app/models/submissions.py)
 
 Important stored fields:
 
@@ -230,11 +258,11 @@ Purpose:
 
 Primary schema file:
 
-- [evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\evaluation.py)
+- [evaluation.py](/backend/app/schemas/evaluation.py)
 
 Public model mapping:
 
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\evaluations.py)
+- [evaluations.py](/backend/app/models/evaluations.py)
 
 Important stored fields:
 
@@ -303,7 +331,7 @@ These are not the core exam entities, but the module cannot operate without them
 
 File:
 
-- [assignments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\assignments.py)
+- [assignments.py](/backend/app/api/v1/endpoints/assignments.py)
 
 Implemented behavior:
 
@@ -331,7 +359,7 @@ Missing lifecycle states:
 
 File:
 
-- [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
+- [submissions.py](/backend/app/api/v1/endpoints/submissions.py)
 
 Implemented behavior:
 
@@ -352,8 +380,8 @@ Important access behavior:
 
 Files:
 
-- [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
-- [ai_evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_evaluation.py)
+- [submissions.py](/backend/app/api/v1/endpoints/submissions.py)
+- [ai_evaluation.py](/backend/app/services/ai_evaluation.py)
 
 Implemented behavior:
 
@@ -371,7 +399,7 @@ Implemented behavior:
 
 File:
 
-- [grading.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\grading.py)
+- [grading.py](/backend/app/services/grading.py)
 
 Implemented rules:
 
@@ -406,7 +434,7 @@ This grading logic is centralized and reused by evaluation creation and update f
 
 File:
 
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
 
 Implemented behavior:
 
@@ -424,7 +452,7 @@ Implemented behavior:
 
 File:
 
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
 
 Implemented behavior:
 
@@ -443,7 +471,7 @@ This gives teachers a pre-save advisory layer without committing the evaluation 
 
 File:
 
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
 
 Implemented behavior:
 
@@ -535,7 +563,7 @@ Similarity analysis is tied to whether the assignment allows plagiarism checking
 
 File:
 
-- [assignments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\assignments.py)
+- [assignments.py](/backend/app/api/v1/endpoints/assignments.py)
 
 ### `GET /assignments/`
 
@@ -577,7 +605,7 @@ Purpose:
 
 File:
 
-- [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
+- [submissions.py](/backend/app/api/v1/endpoints/submissions.py)
 
 ### `GET /submissions/`
 
@@ -625,7 +653,7 @@ Purpose:
 
 File:
 
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
 
 ### `GET /evaluations/`
 
@@ -685,7 +713,7 @@ Purpose:
 
 File:
 
-- [ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py)
+- [ai.py](/backend/app/api/v1/endpoints/ai.py)
 
 ### `POST /ai/evaluate`
 
@@ -709,7 +737,7 @@ Important note:
 
 File:
 
-- [AssignmentsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AssignmentsPage.jsx)
+- [AssignmentsPage.jsx](/frontend/src/pages/AssignmentsPage.jsx)
 
 Implemented UI capabilities:
 
@@ -727,7 +755,7 @@ Important gap:
 
 File:
 
-- [SubmissionsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\SubmissionsPage.jsx)
+- [SubmissionsPage.jsx](/frontend/src/pages/SubmissionsPage.jsx)
 
 Student capabilities:
 
@@ -750,7 +778,7 @@ Important implementation detail:
 
 File:
 
-- [EvaluateSubmission.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
+- [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
 
 Implemented UI capabilities:
 
@@ -890,7 +918,7 @@ Minimum automated test coverage should include the following.
 
 ### Unit tests
 
-- attendance point mapping in [grading.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\grading.py)
+- attendance point mapping in [grading.py](/backend/app/services/grading.py)
 - internal total computation
 - grand total computation
 - grade bucket mapping
@@ -947,3 +975,4 @@ The correct description of the current state is:
 That is coherent enough for coursework and internal assessment workflows.
 
 It is not yet sufficient for a fully normalized, institution-grade exam office system with scheduling, attempt orchestration, moderation, and published results.
+

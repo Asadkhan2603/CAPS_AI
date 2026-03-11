@@ -1,14 +1,14 @@
-﻿# Backend Architecture Guide
+# Backend Architecture Guide
 
 ## Overview
 
 The backend is a FastAPI application backed by MongoDB and optional Redis, with business logic split across route modules, core runtime utilities, service helpers, and a limited but growing domain layer.
 
 Primary backend entry points:
-- [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py)
-- [router.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\router.py)
-- [config.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\config.py)
-- [database.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\database.py)
+- [main.py](/backend/app/main.py)
+- [router.py](/backend/app/api/v1/router.py)
+- [config.py](/backend/app/core/config.py)
+- [database.py](/backend/app/core/database.py)
 
 Core architectural characteristics:
 - async HTTP service via FastAPI
@@ -41,7 +41,7 @@ backend/
 
 ## Runtime Bootstrap Flow
 
-Application bootstrap happens in [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py).
+Application bootstrap happens in [main.py](/backend/app/main.py).
 
 Startup sequence:
 1. load settings and configure logging
@@ -73,7 +73,7 @@ Role:
 - response model binding
 
 Key files:
-- [router.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\router.py)
+- [router.py](/backend/app/api/v1/router.py)
 - `backend/app/api/v1/endpoints/*.py`
 
 The endpoint layer is currently the dominant orchestration layer for business actions.
@@ -86,15 +86,15 @@ Role:
 - low-level helpers used by endpoint and service layers
 
 Important files:
-- [config.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\config.py)
-- [database.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\database.py)
-- [security.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\security.py)
-- [permission_registry.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\permission_registry.py)
-- [rate_limit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\rate_limit.py)
-- [observability.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\observability.py)
-- [indexes.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\indexes.py)
-- [response.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\response.py)
-- [soft_delete.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\soft_delete.py)
+- [config.py](/backend/app/core/config.py)
+- [database.py](/backend/app/core/database.py)
+- [security.py](/backend/app/core/security.py)
+- [permission_registry.py](/backend/app/core/permission_registry.py)
+- [rate_limit.py](/backend/app/core/rate_limit.py)
+- [observability.py](/backend/app/core/observability.py)
+- [indexes.py](/backend/app/core/indexes.py)
+- [response.py](/backend/app/core/response.py)
+- [soft_delete.py](/backend/app/core/soft_delete.py)
 
 ### `app/services`
 
@@ -104,20 +104,20 @@ Role:
 - AI, analytics, scheduler, grading, notifications, and governance helpers
 
 Important files:
-- [ai_chat_service.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_chat_service.py)
-- [ai_evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_evaluation.py)
-- [analytics_snapshot.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\analytics_snapshot.py)
-- [audit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\audit.py)
-- [background_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\background_jobs.py)
-- [cloudinary_uploads.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\cloudinary_uploads.py)
-- [evaluation_ai_module.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\evaluation_ai_module.py)
-- [file_parser.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\file_parser.py)
-- [governance.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\governance.py)
-- [grading.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\grading.py)
-- [notifications.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\notifications.py)
-- [pdf_report.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\pdf_report.py)
-- [scheduler.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\scheduler.py)
-- [similarity_engine.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\similarity_engine.py)
+- [ai_chat_service.py](/backend/app/services/ai_chat_service.py)
+- [ai_evaluation.py](/backend/app/services/ai_evaluation.py)
+- [analytics_snapshot.py](/backend/app/services/analytics_snapshot.py)
+- [audit.py](/backend/app/services/audit.py)
+- [background_jobs.py](/backend/app/services/background_jobs.py)
+- [cloudinary_uploads.py](/backend/app/services/cloudinary_uploads.py)
+- [evaluation_ai_module.py](/backend/app/services/evaluation_ai_module.py)
+- [file_parser.py](/backend/app/services/file_parser.py)
+- [governance.py](/backend/app/services/governance.py)
+- [grading.py](/backend/app/services/grading.py)
+- [notifications.py](/backend/app/services/notifications.py)
+- [pdf_report.py](/backend/app/services/pdf_report.py)
+- [scheduler.py](/backend/app/services/scheduler.py)
+- [similarity_engine.py](/backend/app/services/similarity_engine.py)
 
 ### `app/domains`
 
@@ -145,7 +145,7 @@ Role:
 
 ## API Route Architecture
 
-The full route graph is centralized in [router.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\router.py).
+The full route graph is centralized in [router.py](/backend/app/api/v1/router.py).
 
 ### Route Families
 
@@ -174,11 +174,11 @@ Academic core:
 - attendance records
 - enrollments
 
-Legacy academic compatibility:
-- courses
+Legacy academic compatibility (data-only):
 - branches
+- courses
 - years
-- classes
+- classes (collection name only)
 
 Assessment and AI:
 - assignments
@@ -201,29 +201,28 @@ Analytics:
 
 ### Canonical Academic Model At Route Level
 
-The backend now explicitly documents the canonical academic hierarchy in [router.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\router.py):
+The backend now explicitly documents the canonical academic hierarchy in [router.py](/backend/app/api/v1/router.py):
 
 ```text
 Faculty -> Department -> Program -> Specialization -> Batch -> Semester -> Section
 ```
 
-Legacy compatibility routes remain mounted and some are marked deprecated in OpenAPI:
-- `/courses`
-- `/branches`
-- `/years`
-- `/classes`
+Legacy compatibility routes are no longer mounted in the backend. Frontend redirects remain for legacy paths:
+- `/courses` -> `/programs`
+- `/branches` -> `/specializations`
+- `/years` -> `/batches`
 
-Canonical replacement:
-- `/sections`
+Canonical section route:
+- `/sections` (stored in the `classes` collection)
 
 ## Middleware Architecture
 
-Installed middleware in [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py):
+Installed middleware in [main.py](/backend/app/main.py):
 
 ### 1. RateLimitMiddleware
 
 Implementation:
-- [rate_limit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\rate_limit.py)
+- [rate_limit.py](/backend/app/core/rate_limit.py)
 
 Behavior:
 - rate limits mutating routes and auth endpoints
@@ -270,7 +269,7 @@ Behavior:
 
 ## Error Handling Architecture
 
-Global exception handlers in [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py):
+Global exception handlers in [main.py](/backend/app/main.py):
 - `HTTPException`
 - `RequestValidationError`
 - catch-all `Exception`
@@ -284,7 +283,7 @@ This gives the backend a centralized operational error model even though busines
 
 ## Configuration Architecture
 
-Configuration is centralized in [config.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\config.py) using a dataclass-backed settings object.
+Configuration is centralized in [config.py](/backend/app/core/config.py) using a dataclass-backed settings object.
 
 ### Major Configuration Areas
 
@@ -331,7 +330,7 @@ Media and upload integrations:
 ## Security Architecture
 
 Primary security implementation:
-- [security.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\security.py)
+- [security.py](/backend/app/core/security.py)
 
 ### Authentication Model
 
@@ -377,7 +376,7 @@ Architectural implication:
 ### MongoDB Binding
 
 Database binding is intentionally thin:
-- [database.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\database.py)
+- [database.py](/backend/app/core/database.py)
 
 Current model:
 - singleton Motor client
@@ -386,7 +385,7 @@ Current model:
 ### Mongo Helpers
 
 Additional helper:
-- [mongo.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\mongo.py)
+- [mongo.py](/backend/app/core/mongo.py)
 
 Used for:
 - object id parsing and query safety helpers
@@ -394,7 +393,7 @@ Used for:
 ### Index Management
 
 Startup index bootstrap:
-- [indexes.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\indexes.py)
+- [indexes.py](/backend/app/core/indexes.py)
 
 Purpose:
 - enforce required indexes at startup
@@ -449,7 +448,7 @@ Current conclusion:
 ## Observability Architecture
 
 Primary file:
-- [observability.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\observability.py)
+- [observability.py](/backend/app/core/observability.py)
 
 Current design:
 - JSON log formatter
@@ -467,8 +466,8 @@ Current limitation:
 ## Governance And Audit Architecture
 
 Primary files:
-- [governance.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\governance.py)
-- [audit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\audit.py)
+- [governance.py](/backend/app/services/governance.py)
+- [audit.py](/backend/app/services/audit.py)
 
 ### Governance
 
@@ -492,7 +491,7 @@ Architectural significance:
 ## Scheduler And Background Processing Architecture
 
 Primary file:
-- [scheduler.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\scheduler.py)
+- [scheduler.py](/backend/app/services/scheduler.py)
 
 ### Current Design
 
@@ -519,7 +518,7 @@ Local disk paths still exist for:
 - submission and registration related file flows in parts of the codebase
 
 Cloudinary integration helpers also exist:
-- [cloudinary_uploads.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\cloudinary_uploads.py)
+- [cloudinary_uploads.py](/backend/app/services/cloudinary_uploads.py)
 
 Architectural implication:
 - file handling is not yet fully normalized around one durable storage strategy
@@ -527,10 +526,10 @@ Architectural implication:
 ## AI And Analysis Architecture
 
 AI-related service files:
-- [ai_evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_evaluation.py)
-- [evaluation_ai_module.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\evaluation_ai_module.py)
-- [ai_chat_service.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_chat_service.py)
-- [similarity_engine.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\similarity_engine.py)
+- [ai_evaluation.py](/backend/app/services/ai_evaluation.py)
+- [evaluation_ai_module.py](/backend/app/services/evaluation_ai_module.py)
+- [ai_chat_service.py](/backend/app/services/ai_chat_service.py)
+- [similarity_engine.py](/backend/app/services/similarity_engine.py)
 
 Current reality:
 - AI is not isolated behind one internal gateway
@@ -544,13 +543,13 @@ Current repo deployment targets:
 - Kubernetes manifests for cluster deployment
 
 Backend container source:
-- [Dockerfile](d:\VS CODE\MY PROJECT\CAPS_AI\backend\Dockerfile)
+- [Dockerfile](/backend/Dockerfile)
 
 Relevant runtime manifests:
-- [docker-compose.yml](d:\VS CODE\MY PROJECT\CAPS_AI\docker-compose.yml)
-- [k8s-backend.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-backend.yaml)
-- [k8s-configmap.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-configmap.yaml)
-- [k8s-secrets.yaml](d:\VS CODE\MY PROJECT\CAPS_AI\k8s-secrets.yaml)
+- [docker-compose.yml](docker-compose.yml)
+- [k8s-backend.yaml](k8s-backend.yaml)
+- [k8s-configmap.yaml](k8s-configmap.yaml)
+- [k8s-secrets.yaml](k8s-secrets.yaml)
 
 ## Testing And Static Analysis Architecture
 
@@ -562,9 +561,9 @@ Backend runtime verification in CI currently includes:
 - custom backend safety checks
 
 Key files:
-- [ci.yml](d:\VS CODE\MY PROJECT\CAPS_AI\.github\workflows\ci.yml)
-- [requirements-dev.txt](d:\VS CODE\MY PROJECT\CAPS_AI\backend\requirements-dev.txt)
-- [check_backend_safety.py](d:\VS CODE\MY PROJECT\CAPS_AI\scripts\check_backend_safety.py)
+- [ci.yml](.github/workflows/ci.yml)
+- [requirements-dev.txt](/backend/requirements-dev.txt)
+- [check_backend_safety.py](scripts/check_backend_safety.py)
 
 Current CI emphasis:
 - strongest static analysis coverage is on governance-sensitive and academic-setup-sensitive modules
@@ -600,14 +599,14 @@ Current CI emphasis:
 
 ## Recommended Reading Order For Engineers
 
-1. [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py)
-2. [config.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\config.py)
-3. [router.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\router.py)
-4. [security.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\security.py)
-5. [permission_registry.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\permission_registry.py)
-6. [governance.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\governance.py)
-7. [audit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\audit.py)
-8. [scheduler.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\scheduler.py)
+1. [main.py](/backend/app/main.py)
+2. [config.py](/backend/app/core/config.py)
+3. [router.py](/backend/app/api/v1/router.py)
+4. [security.py](/backend/app/core/security.py)
+5. [permission_registry.py](/backend/app/core/permission_registry.py)
+6. [governance.py](/backend/app/services/governance.py)
+7. [audit.py](/backend/app/services/audit.py)
+8. [scheduler.py](/backend/app/services/scheduler.py)
 9. domain modules and route modules for the business area you are touching
 
 ## Architecture Summary
@@ -622,3 +621,5 @@ It is not a pure layered architecture and not a microservice system. It is a sin
 - a substantial amount of workflow logic still living in endpoint files
 
 That architecture is workable for the current system size. The next engineering gains come from targeted normalization, not from splitting the backend by default.
+
+

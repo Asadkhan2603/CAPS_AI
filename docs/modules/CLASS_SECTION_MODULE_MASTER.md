@@ -1,5 +1,33 @@
 # CLASS / SECTION MODULE MASTER
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -37,7 +65,7 @@ This module therefore sits at the fault line between:
 The route layer makes the architectural intent explicit:
 
 - `/sections` is canonical
-- `/classes` is a deprecated compatibility alias
+- `/classes` is not mounted and remains a legacy name only
 
 Operationally, this module is important because sections/classes are referenced by:
 
@@ -73,17 +101,16 @@ and may have:
 
 The actual implementation still uses:
 
-- backend file: [classes.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\classes.py)
-- schema file: [class_item.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\class_item.py)
-- model serializer: [classes.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\models\classes.py)
-- frontend page: [ClassesPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\ClassesPage.jsx)
+- backend file: [classes.py](/backend/app/api/v1/endpoints/classes.py)
+- schema file: [class_item.py](/backend/app/schemas/class_item.py)
+- model serializer: [classes.py](/backend/app/models/classes.py)
+- frontend page: [ClassesPage.jsx](/frontend/src/pages/ClassesPage.jsx)
 
-The router maps this legacy implementation to both:
+The router maps this legacy implementation to:
 
 - canonical route: `/sections`
-- deprecated alias: `/classes`
 
-This is intentional compatibility, but it also means the module carries naming debt.
+The backend no longer exposes a `/classes` route, but the naming debt remains in storage and code.
 
 ## 3. Database Collection
 
@@ -149,23 +176,21 @@ Important issue:
 
 Primary backend file:
 
-- [classes.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\classes.py)
+- [classes.py](/backend/app/api/v1/endpoints/classes.py)
 
 ### 4.1 Routing model
 
-The same router implementation is mounted twice:
+The router implementation is mounted once:
 
-- `/classes` as deprecated legacy alias
 - `/sections` as canonical endpoint
 
-This is defined in [router.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\router.py).
+There is no `/classes` backend route. This is defined in [router.py](/backend/app/api/v1/router.py).
 
 ### 4.2 Section/class list
 
 Endpoint:
 
 - `GET /sections/`
-- legacy alias: `GET /classes/`
 
 Behavior:
 
@@ -202,7 +227,6 @@ This is a strict coordinator-scoped read model.
 Endpoint:
 
 - `GET /sections/{class_id}`
-- legacy alias: `GET /classes/{class_id}`
 
 Behavior:
 
@@ -214,7 +238,6 @@ Behavior:
 Endpoint:
 
 - `POST /sections/`
-- legacy alias: `POST /classes/`
 
 Permission:
 
@@ -254,7 +277,6 @@ Persisted create state:
 Endpoint:
 
 - `PUT /sections/{class_id}`
-- legacy alias: `PUT /classes/{class_id}`
 
 Permission:
 
@@ -276,7 +298,6 @@ Important note:
 Endpoint:
 
 - `DELETE /sections/{class_id}`
-- legacy alias: `DELETE /classes/{class_id}`
 
 Permission:
 
@@ -302,7 +323,7 @@ This is an archive flow, not a hard delete.
 
 Schema file:
 
-- [class_item.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\class_item.py)
+- [class_item.py](/backend/app/schemas/class_item.py)
 
 Exposed create/update fields:
 
@@ -340,11 +361,11 @@ Important contract issue:
 
 Primary page:
 
-- [ClassesPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\ClassesPage.jsx)
+- [ClassesPage.jsx](/frontend/src/pages/ClassesPage.jsx)
 
 Service wrapper:
 
-- [sectionsApi.js](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\services\sectionsApi.js)
+- [sectionsApi.js](/frontend/src/services/sectionsApi.js)
 
 Route wiring:
 
@@ -594,9 +615,9 @@ Risk:
 
 - duplicate section names within the same academic context
 
-### 11.4 Legacy route may keep old integrations alive indefinitely
+### 11.4 Legacy naming may keep old integrations alive indefinitely
 
-Because `/classes` and `/sections` point to the same implementation, downstream callers may continue using the legacy path forever unless explicitly migrated.
+Even without a `/classes` route, legacy naming in collections and client code can keep confusion alive unless explicitly addressed.
 
 ## 12. Cleanup Strategy
 
@@ -606,7 +627,7 @@ Documentation, UI labels, API clients, and future features should use:
 
 - `Section`
 
-### 12.2 Retain `/classes` only as controlled compatibility alias
+### 12.2 Do not reintroduce `/classes` routes
 
 Make it explicit that new clients must use:
 
@@ -659,7 +680,6 @@ This is not urgent if the routing and docs are clear, but the current naming deb
 ### 13.2 Integration tests
 
 - canonical `/sections` create/list/get/update/archive flow
-- legacy `/classes` alias returning same behavior
 - teacher can list only coordinated sections
 - admin can create and archive section
 
@@ -689,3 +709,4 @@ Weaknesses:
 - denormalized `branch_name` handling is logically wrong
 
 As implemented today, this module is usable as the canonical section service, but it still carries the old class model inside it. The next step is not inventing new behavior; it is cleaning up naming, contract scope, and UI parity.
+

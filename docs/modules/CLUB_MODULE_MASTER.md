@@ -1,5 +1,33 @@
 # CLUB MODULE MASTER
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -195,18 +223,18 @@ These are not the core club collections, but the club module depends on them:
 - `club_events`
 - `event_registrations`
 
-These are documented in [EVENT_MODULE_MASTER.md](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\docs\modules\EVENT_MODULE_MASTER.md).
+These are documented in [EVENT_MODULE_MASTER.md](/docs/modules/EVENT_MODULE_MASTER.md).
 
 ## 4. Backend Logic Implemented
 
 Primary backend file:
 
-- [clubs.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\clubs.py)
+- [clubs.py](/backend/app/api/v1/endpoints/clubs.py)
 
 Supporting schema/model files:
 
-- [club.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\club.py)
-- [clubs.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\models\clubs.py)
+- [club.py](/backend/app/schemas/club.py)
+- [clubs.py](/backend/app/models/clubs.py)
 
 ### 4.1 Club discovery
 
@@ -409,11 +437,11 @@ Important implementation detail:
 
 Primary frontend page:
 
-- [ClubsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\ClubsPage.jsx)
+- [ClubsPage.jsx](/frontend/src/pages/ClubsPage.jsx)
 
 Secondary admin launcher:
 
-- [AdminClubsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminClubsPage.jsx)
+- [AdminClubsPage.jsx](/frontend/src/pages/Admin/AdminClubsPage.jsx)
 
 ### 5.1 `ClubsPage.jsx`
 
@@ -503,7 +531,7 @@ The clubs page includes an events tab that:
 - lists events
 - opens registration modal for students
 
-This overlaps with the dedicated [ClubEventsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\ClubEventsPage.jsx) page.
+This overlaps with the dedicated [ClubEventsPage.jsx](/frontend/src/pages/ClubEventsPage.jsx) page.
 
 ## 6. API Surface
 
@@ -761,3 +789,5 @@ Its main weaknesses are:
 - duplicated event experience across club and event pages
 
 As implemented today, it is a real operational module, not a placeholder. It is already suitable for managed club operations, provided the hidden field drift and duplicate UX surface are cleaned up.
+
+

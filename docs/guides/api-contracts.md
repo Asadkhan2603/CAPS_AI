@@ -1,14 +1,14 @@
-﻿# API Contracts Guide
+# API Contracts Guide
 
 ## Overview
 
 This guide defines the actual HTTP contract used by CAPS AI today.
 
 It is based on:
-- [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py)
-- [router.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\router.py)
-- [response.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\response.py)
-- [apiClient.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\services\apiClient.js)
+- [main.py](/backend/app/main.py)
+- [router.py](/backend/app/api/v1/router.py)
+- [response.py](/backend/app/core/response.py)
+- [apiClient.js](/frontend/src/services/apiClient.js)
 - the route modules under `backend/app/api/v1/endpoints`
 
 This document is not a Swagger replacement. It explains the stable patterns, request semantics, error semantics, and route families that clients must follow.
@@ -28,7 +28,7 @@ Public non-versioned runtime routes:
 Versioned API root:
 - default prefix: `/api/v1`
 
-The prefix is controlled by [config.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\config.py) through `API_PREFIX`.
+The prefix is controlled by [config.py](/backend/app/core/config.py) through `API_PREFIX`.
 
 ## Base URL Contract
 
@@ -46,7 +46,7 @@ Frontend client base URL:
 - `import.meta.env.VITE_API_BASE_URL || '/api/v1'`
 
 Implementation:
-- [apiClient.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\services\apiClient.js)
+- [apiClient.js](/frontend/src/services/apiClient.js)
 
 ### Practical Environment Implications
 
@@ -104,7 +104,7 @@ Primary auth routes:
 - `GET /auth/profile/avatar/{user_id}`
 
 Primary backend auth implementation:
-- [auth.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\auth.py)
+- [auth.py](/backend/app/api/v1/endpoints/auth.py)
 
 ### Token Model
 
@@ -162,17 +162,17 @@ The backend echoes or creates:
 On errors the backend also adds:
 - `X-Error-Id`
 
-These values are generated and logged in [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py).
+These values are generated and logged in [main.py](/backend/app/main.py).
 
 ## Response Envelope Contract
 
 The backend supports optional response wrapping.
 
 Implementation:
-- [response.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\response.py)
+- [response.py](/backend/app/core/response.py)
 
 Middleware:
-- `ResponseEnvelopeMiddleware` in [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py)
+- `ResponseEnvelopeMiddleware` in [main.py](/backend/app/main.py)
 
 The envelope is applied only when:
 - `RESPONSE_ENVELOPE_ENABLED=true`
@@ -248,7 +248,7 @@ Client rule:
 
 ## CORS Contract
 
-CORS is configured in [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py) from [config.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\config.py).
+CORS is configured in [main.py](/backend/app/main.py) from [config.py](/backend/app/core/config.py).
 
 Configured behavior:
 - `allow_credentials=True`
@@ -261,7 +261,7 @@ Origins are merged with common development defaults:
 
 ## Route Family Catalog
 
-The current route catalog from [router.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\router.py) is below.
+The current route catalog from [router.py](/backend/app/api/v1/router.py) is below.
 
 ### Identity And Access
 
@@ -324,17 +324,18 @@ Notable workflow operations:
 
 ### Legacy Academic Compatibility Routes
 
-Deprecated in router metadata:
-- `/courses`
-- `/branches`
-- `/years`
-- `/classes`
+Legacy academic routes are no longer mounted in the backend. Frontend redirects remain for:
+- `/courses` -> `/programs`
+- `/branches` -> `/specializations`
+- `/years` -> `/batches`
 
-Canonical replacement for sections:
-- `/sections`
+Sections:
+- `/sections` is canonical
+- section records are stored in the `classes` collection
+- there is no `/classes` backend route
 
 Client rule:
-- do not build new integrations against the legacy set unless migrating old data or screens
+- do not build new integrations against legacy paths unless translating historical data or screens
 
 ### Assessment And AI
 
@@ -580,7 +581,7 @@ Upload client rule:
 - use `multipart/form-data`
 - do not send large files blindly without verifying endpoint-specific limits
 
-Known current explicit avatar constraints from [auth.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\auth.py):
+Known current explicit avatar constraints from [auth.py](/backend/app/api/v1/endpoints/auth.py):
 - max size `3MB`
 - allowed types:
   - `.png`
@@ -599,8 +600,8 @@ Current enforcement styles in the backend include:
 - row-level ownership and scope checks inside route logic
 
 Current frontend enforcement is advisory and UX-oriented:
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
 
 Client rule:
 - never rely on frontend route access alone as proof of backend authorization
@@ -621,9 +622,9 @@ Frontend behavior in shared CRUD flows:
 - may send optional metadata fields
 
 Relevant files:
-- [governance.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\governance.py)
-- [EntityManager.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\ui\EntityManager.jsx)
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
+- [governance.py](/backend/app/services/governance.py)
+- [EntityManager.jsx](/frontend/src/components/ui/EntityManager.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
 
 Client rule:
 - for admin destructive actions, be prepared to handle governance-required retry flows
@@ -647,14 +648,14 @@ Support rule:
 The API is not fully uniform across old and new domains.
 
 Current compatibility tensions:
-- canonical academic model coexists with deprecated legacy endpoints
+- canonical academic model coexists with legacy data fields and frontend redirects
 - section data is still stored in class-shaped records
 - some modules expose richer workflow endpoints than the generic CRUD model implies
 - some destructive paths are hard delete while others are soft delete/archive
 
 Client rule:
 - prefer canonical route families
-- treat legacy academic endpoints as compatibility-only
+- treat legacy academic paths as redirect-only, not backend APIs
 - do not infer delete semantics without checking module behavior
 
 ## Practical Client Rules
@@ -662,7 +663,7 @@ Client rule:
 1. Use `/api/v1` unless deployment config overrides it.
 2. Always tolerate enveloped and unwrapped JSON responses.
 3. Preserve `trace_id` and `error_id`.
-4. Treat `/sections` as canonical and `/classes` as legacy.
+4. Treat `/sections` as canonical; `/classes` is storage-only and not a route.
 5. Expect `skip` and `limit` rather than a standardized paginated object.
 6. Treat workflow actions such as finalize, publish, AI refresh, and restore as first-class API operations, not CRUD variants.
 7. For admin destructive actions, support governance retry with `review_id`.
@@ -675,3 +676,5 @@ Client rule:
 3. Some modules still mix canonical and compatibility-era semantics.
 4. Governance-required delete flows are strongest in shared CRUD UIs, not in every custom page.
 5. Third-party clients must actively handle config-driven envelope behavior.
+
+

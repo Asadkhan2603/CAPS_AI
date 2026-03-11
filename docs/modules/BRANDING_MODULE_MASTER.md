@@ -1,5 +1,33 @@
 # Branding Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -21,16 +49,16 @@ Admin logo upload
 
 Primary implementation sources:
 
-- [branding.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\branding.py)
-- [Sidebar.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\layout\Sidebar.jsx)
-- [apiClient.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\services\apiClient.js)
+- [branding.py](/backend/app/api/v1/endpoints/branding.py)
+- [Sidebar.jsx](/frontend/src/components/layout/Sidebar.jsx)
+- [apiClient.js](/frontend/src/services/apiClient.js)
 
 Adjacent but separate branding-related references:
 
-- [ThemeContext.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\context\ThemeContext.jsx)
-- [auth.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\auth.py)
-- [Topbar.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\layout\Topbar.jsx)
-- [ProfilePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\ProfilePage.jsx)
+- [ThemeContext.jsx](/frontend/src/context/ThemeContext.jsx)
+- [auth.py](/backend/app/api/v1/endpoints/auth.py)
+- [Topbar.jsx](/frontend/src/components/layout/Topbar.jsx)
+- [ProfilePage.jsx](/frontend/src/pages/ProfilePage.jsx)
 
 This document describes the Branding Module as implemented today.
 
@@ -91,7 +119,7 @@ This distinction matters because the UI visually contains branding-adjacent elem
 
 File:
 
-- [branding.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\branding.py)
+- [branding.py](/backend/app/api/v1/endpoints/branding.py)
 
 Logo files are stored on local disk under:
 
@@ -245,7 +273,7 @@ Current response fields:
 
 File:
 
-- [Sidebar.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\layout\Sidebar.jsx)
+- [Sidebar.jsx](/frontend/src/components/layout/Sidebar.jsx)
 
 Current behavior:
 
@@ -295,7 +323,7 @@ The codebase contains other UI identity surfaces that may look like branding but
 
 File:
 
-- [ThemeContext.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\context\ThemeContext.jsx)
+- [ThemeContext.jsx](/frontend/src/context/ThemeContext.jsx)
 
 Theme mode currently manages:
 
@@ -308,9 +336,9 @@ This is frontend personalization, not institutional branding.
 
 Files:
 
-- [auth.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\auth.py)
-- [Topbar.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\layout\Topbar.jsx)
-- [ProfilePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\ProfilePage.jsx)
+- [auth.py](/backend/app/api/v1/endpoints/auth.py)
+- [Topbar.jsx](/frontend/src/components/layout/Topbar.jsx)
+- [ProfilePage.jsx](/frontend/src/pages/ProfilePage.jsx)
 
 Avatar support provides:
 
@@ -547,3 +575,4 @@ Its main weaknesses are:
 - no broader brand configuration beyond the logo
 
 The correct next step is to keep the module narrow unless there is a real institutional need for broader theming. If that need exists, the next evolution should be a proper brand settings subsystem built on durable media storage and audited admin controls.
+

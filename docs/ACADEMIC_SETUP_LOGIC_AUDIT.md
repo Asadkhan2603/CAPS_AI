@@ -24,6 +24,14 @@ as the canonical academic model.
 
 `Course`, `Year`, and `Branch` remain in the codebase as legacy compatibility modules and are no longer treated as co-equal academic hierarchy roots.
 
+## Status Update (2026-03-11)
+
+- backend routes for `/courses`, `/years`, `/branches`, and `/classes` are retired
+- `/sections` is the only public section route
+- frontend redirects map `/courses` -> `/programs`, `/years` -> `/batches`, `/branches` -> `/specializations`
+- legacy collections remain for historical data translation and recovery
+- references to legacy endpoint files in this audit are historical; those files are removed
+
 ## Canonical Academic Model In Code
 
 The primary hierarchy implemented in the current codebase is:
@@ -165,10 +173,10 @@ Legacy compatibility routes:
 Important note:
 
 - `/sections` is the canonical route for sections
-- `/classes` is still mounted as a legacy compatibility alias and is deprecated for new clients
-- `/courses`, `/years`, and `/branches` are now marked as deprecated in API metadata
+- `/classes` is no longer mounted; `/sections` is the only public route
+- `/courses`, `/years`, and `/branches` are retired backend routes with frontend redirects
 
-The router now distinguishes canonical routes from legacy compatibility routes directly in API metadata.
+The router now exposes only canonical routes; legacy compatibility remains in data and redirects.
 
 ## Frontend Route And Navigation Inventory
 
@@ -396,7 +404,7 @@ Backend:
 
 - collection: `classes`
 - endpoint: `backend/app/api/v1/endpoints/classes.py`
-- mounted under both `/classes` and `/sections`
+- mounted under `/sections` only (legacy `classes` collection)
 - supports list, get, create, update, archive
 - delete can require governance review via `review_id`
 

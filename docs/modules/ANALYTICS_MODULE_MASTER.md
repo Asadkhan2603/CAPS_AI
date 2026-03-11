@@ -1,5 +1,33 @@
 # Analytics Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -34,17 +62,17 @@ The Analytics module provides read-oriented metrics, summaries, and derived oper
 
 Primary backend files:
 
-- [analytics.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\analytics.py)
-- [admin_analytics.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_analytics.py)
-- [analytics_snapshot.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\analytics_snapshot.py)
+- [analytics.py](/backend/app/api/v1/endpoints/analytics.py)
+- [admin_analytics.py](/backend/app/api/v1/endpoints/admin_analytics.py)
+- [analytics_snapshot.py](/backend/app/services/analytics_snapshot.py)
 
 Primary frontend consumers:
 
-- [AnalyticsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AnalyticsPage.jsx)
-- [DashboardPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\DashboardPage.jsx)
-- [AdminAnalyticsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminAnalyticsPage.jsx)
-- [AdminCompliancePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminCompliancePage.jsx)
-- [TeacherClassTiles.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\ui\TeacherClassTiles.jsx)
+- [AnalyticsPage.jsx](/frontend/src/pages/AnalyticsPage.jsx)
+- [DashboardPage.jsx](/frontend/src/pages/DashboardPage.jsx)
+- [AdminAnalyticsPage.jsx](/frontend/src/pages/Admin/AdminAnalyticsPage.jsx)
+- [AdminCompliancePage.jsx](/frontend/src/pages/Admin/AdminCompliancePage.jsx)
+- [TeacherClassTiles.jsx](/frontend/src/components/ui/TeacherClassTiles.jsx)
 
 The module has two distinct layers:
 
@@ -265,7 +293,7 @@ This endpoint builds a nested analytical tree:
 
 Important facts:
 
-- it still uses legacy `courses -> years -> classes`
+- it still uses legacy data lineage `courses -> years -> classes` (storage-only compatibility)
 - it is paginated by class count
 - it builds a large in-memory response tree after multiple reads
 - it merges membership from both `enrollments` and `students.class_id`
@@ -274,7 +302,7 @@ This endpoint is structurally analytical, not canonical academic setup.
 
 Current frontend note:
 
-- the current [AcademicStructurePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AcademicStructurePage.jsx) does not use this endpoint anymore
+- the current [AcademicStructurePage.jsx](/frontend/src/pages/AcademicStructurePage.jsx) does not use this endpoint anymore
 - it now loads canonical academic setup entities directly
 
 That means `/analytics/academic-structure` is now a compatibility or reporting path, not the authoritative academic structure UI source.
@@ -346,7 +374,7 @@ This endpoint is consumed by the compliance UI rather than the main analytics pa
 
 Frontend file:
 
-- [AnalyticsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AnalyticsPage.jsx)
+- [AnalyticsPage.jsx](/frontend/src/pages/AnalyticsPage.jsx)
 
 Behavior:
 
@@ -360,7 +388,7 @@ This page is generic by design. It does not offer drill-down or advanced filteri
 
 Frontend file:
 
-- [DashboardPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\DashboardPage.jsx)
+- [DashboardPage.jsx](/frontend/src/pages/DashboardPage.jsx)
 
 Uses analytics for:
 
@@ -373,7 +401,7 @@ This means analytics is operationally embedded in the main product landing exper
 
 Frontend file:
 
-- [AdminAnalyticsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminAnalyticsPage.jsx)
+- [AdminAnalyticsPage.jsx](/frontend/src/pages/Admin/AdminAnalyticsPage.jsx)
 
 Calls:
 
@@ -386,7 +414,7 @@ It renders platform KPIs, but the UI is currently thin. It does not yet expose s
 
 Frontend file:
 
-- [AdminCompliancePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminCompliancePage.jsx)
+- [AdminCompliancePage.jsx](/frontend/src/pages/Admin/AdminCompliancePage.jsx)
 
 Calls:
 
@@ -398,7 +426,7 @@ This is effectively a specialized analytics consumer for governance/compliance r
 
 Frontend file:
 
-- [TeacherClassTiles.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\components\ui\TeacherClassTiles.jsx)
+- [TeacherClassTiles.jsx](/frontend/src/components/ui/TeacherClassTiles.jsx)
 
 This is one of the more operationally useful analytics consumers because it turns analytical aggregates into actionable teaching status.
 
@@ -522,7 +550,7 @@ Example:
 
 ### Risk 6: Admin snapshot UI expects fields that are not currently produced
 
-[AdminAnalyticsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminAnalyticsPage.jsx) renders:
+[AdminAnalyticsPage.jsx](/frontend/src/pages/Admin/AdminAnalyticsPage.jsx) renders:
 
 - `review_ticket_sla_hours`
 
@@ -646,3 +674,4 @@ From an architectural perspective, the correct direction is:
 - move heavy structure analytics away from legacy academic entities
 - stabilize payload contracts for frontend consumers
 - keep request-time analytics narrow and push broader analytics into cached or snapshot-backed views
+

@@ -1,5 +1,33 @@
 # AI Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -41,30 +69,30 @@ The implemented AI surface currently spans four main capabilities:
 
 Primary backend files:
 
-- [ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py)
-- [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
-- [similarity.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
-- [ai_runtime.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_runtime.py)
-- [ai_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_jobs.py)
-- [ai_chat_service.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_chat_service.py)
-- [ai_evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_evaluation.py)
-- [evaluation_ai_module.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\evaluation_ai_module.py)
-- [submission_ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\submission_ai.py)
-- [similarity_pipeline.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\similarity_pipeline.py)
-- [similarity_engine.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\similarity_engine.py)
+- [ai.py](/backend/app/api/v1/endpoints/ai.py)
+- [submissions.py](/backend/app/api/v1/endpoints/submissions.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
+- [similarity.py](/backend/app/api/v1/endpoints/similarity.py)
+- [ai_runtime.py](/backend/app/services/ai_runtime.py)
+- [ai_jobs.py](/backend/app/services/ai_jobs.py)
+- [ai_chat_service.py](/backend/app/services/ai_chat_service.py)
+- [ai_evaluation.py](/backend/app/services/ai_evaluation.py)
+- [evaluation_ai_module.py](/backend/app/services/evaluation_ai_module.py)
+- [submission_ai.py](/backend/app/services/submission_ai.py)
+- [similarity_pipeline.py](/backend/app/services/similarity_pipeline.py)
+- [similarity_engine.py](/backend/app/services/similarity_engine.py)
 
 Primary frontend consumers:
 
-- [SubmissionsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\SubmissionsPage.jsx)
-- [AIModulePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
-- [EvaluateSubmission.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
-- [aiService.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\services\aiService.js)
+- [SubmissionsPage.jsx](/frontend/src/pages/SubmissionsPage.jsx)
+- [AIModulePage.jsx](/frontend/src/pages/AIModulePage.jsx)
+- [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
+- [aiService.js](/frontend/src/services/aiService.js)
 
 Companion planning document:
 
-- [AI_MODULE_ACTION_PLAN.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\AI_MODULE_ACTION_PLAN.md)
-- [AI_MODULE_CONTRACTS.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\AI_MODULE_CONTRACTS.md)
+- [AI_MODULE_ACTION_PLAN.md](/docs/modules/AI_MODULE_ACTION_PLAN.md)
+- [AI_MODULE_CONTRACTS.md](/docs/modules/AI_MODULE_CONTRACTS.md)
 
 Important implementation reality:
 
@@ -200,8 +228,8 @@ This collection is important because it preserves traceability of AI assistance 
 
 Schema/model files:
 
-- [ai_chat.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\ai_chat.py)
-- [ai_chat.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\ai_chat.py)
+- [ai_chat.py](/backend/app/schemas/ai_chat.py)
+- [ai_chat.py](/backend/app/models/ai_chat.py)
 
 Stored fields:
 
@@ -234,8 +262,8 @@ Indexes:
 
 Schema/model files:
 
-- [similarity_log.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\similarity_log.py)
-- [similarity_logs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\similarity_logs.py)
+- [similarity_log.py](/backend/app/schemas/similarity_log.py)
+- [similarity_logs.py](/backend/app/models/similarity_logs.py)
 
 Stored fields:
 
@@ -285,7 +313,7 @@ Purpose:
 
 File:
 
-- [ai_evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_evaluation.py)
+- [ai_evaluation.py](/backend/app/services/ai_evaluation.py)
 
 Behavior:
 
@@ -312,9 +340,9 @@ This fallback design is important because it keeps academic flows working even w
 
 Files:
 
-- [ai_runtime.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_runtime.py)
-- [ai_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_jobs.py)
-- [scheduler.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\scheduler.py)
+- [ai_runtime.py](/backend/app/services/ai_runtime.py)
+- [ai_jobs.py](/backend/app/services/ai_jobs.py)
+- [scheduler.py](/backend/app/services/scheduler.py)
 
 Behavior:
 
@@ -328,7 +356,7 @@ Behavior:
 
 File:
 
-- [evaluation_ai_module.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\evaluation_ai_module.py)
+- [evaluation_ai_module.py](/backend/app/services/evaluation_ai_module.py)
 
 Behavior:
 
@@ -353,7 +381,7 @@ Risk flags currently include examples such as:
 
 File:
 
-- [ai_chat_service.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_chat_service.py)
+- [ai_chat_service.py](/backend/app/services/ai_chat_service.py)
 
 Behavior:
 
@@ -371,7 +399,7 @@ The service also strips accidental markdown fenced blocks to keep UI output clea
 
 File:
 
-- [similarity_engine.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\similarity_engine.py)
+- [similarity_engine.py](/backend/app/services/similarity_engine.py)
 
 Behavior:
 
@@ -388,7 +416,7 @@ This is not LLM-based similarity. It is a classical vector-space similarity engi
 
 File:
 
-- [ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py)
+- [ai.py](/backend/app/api/v1/endpoints/ai.py)
 
 ### `GET /ai/admin/runtime-config`
 
@@ -468,7 +496,7 @@ Access:
 
 File:
 
-- [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
+- [submissions.py](/backend/app/api/v1/endpoints/submissions.py)
 
 ### `POST /submissions/{submission_id}/ai-evaluate`
 
@@ -511,7 +539,7 @@ Behavior:
 
 File:
 
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
 
 ### `POST /evaluations/ai-preview`
 
@@ -546,7 +574,7 @@ Behavior:
 
 File:
 
-- [similarity.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
+- [similarity.py](/backend/app/api/v1/endpoints/similarity.py)
 
 ### `GET /similarity/checks`
 
@@ -590,7 +618,7 @@ Behavior:
 
 Frontend file:
 
-- [SubmissionsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\SubmissionsPage.jsx)
+- [SubmissionsPage.jsx](/frontend/src/pages/SubmissionsPage.jsx)
 
 Teacher/admin capabilities:
 
@@ -606,7 +634,7 @@ Student capabilities:
 
 Frontend file:
 
-- [EvaluateSubmission.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
+- [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
 
 Capabilities:
 
@@ -625,7 +653,7 @@ This is the main frontend surface where the AI module becomes an interactive tea
 
 Frontend file:
 
-- [aiService.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\services\aiService.js)
+- [aiService.js](/frontend/src/services/aiService.js)
 
 Current wrappers:
 
@@ -645,7 +673,7 @@ This is a narrow wrapper layer, not a broader typed AI SDK.
 
 Frontend file:
 
-- [AIModulePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
+- [AIModulePage.jsx](/frontend/src/pages/AIModulePage.jsx)
 
 Capabilities:
 
@@ -866,3 +894,6 @@ The correct direction remains:
 - preserve the fallback-first design
 - use durable jobs for heavier workloads
 - deepen observability and governance on top of the new runtime and job foundations
+
+
+

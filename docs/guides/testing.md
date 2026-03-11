@@ -1,4 +1,4 @@
-﻿# Testing Guide
+# Testing Guide
 
 ## Overview
 
@@ -11,7 +11,7 @@ The current test strategy has four layers:
 4. manual end-to-end validation for flows not yet covered by browser automation
 
 Primary CI file:
-- [ci.yml](d:\VS CODE\MY PROJECT\CAPS_AI\.github\workflows\ci.yml)
+- [ci.yml](.github/workflows/ci.yml)
 
 This guide is based on the current repo state, not an ideal future pipeline.
 
@@ -25,8 +25,8 @@ Runtime and tests use:
 - `httpx` for API/client-style testing where needed
 
 Dependencies:
-- [requirements.txt](d:\VS CODE\MY PROJECT\CAPS_AI\backend\requirements.txt)
-- [requirements-dev.txt](d:\VS CODE\MY PROJECT\CAPS_AI\backend\requirements-dev.txt)
+- [requirements.txt](/backend/requirements.txt)
+- [requirements-dev.txt](/backend/requirements-dev.txt)
 
 ### Frontend
 
@@ -37,7 +37,7 @@ Runtime and tests use:
 - ESLint
 
 Frontend package definition:
-- [package.json](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\package.json)
+- [package.json](/frontend/package.json)
 
 ### Static Analysis
 
@@ -48,7 +48,7 @@ Current static analysis tools:
 - custom backend safety checker
 
 Safety checker:
-- [check_backend_safety.py](d:\VS CODE\MY PROJECT\CAPS_AI\scripts\check_backend_safety.py)
+- [check_backend_safety.py](scripts/check_backend_safety.py)
 
 ## Testing Architecture
 
@@ -76,16 +76,16 @@ Current test directory:
 - `backend/tests`
 
 Current files visible in the repo:
-- [conftest.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\conftest.py)
-- [test_auth.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_auth.py)
-- [test_health.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_health.py)
-- [test_timetables.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_timetables.py)
-- [test_academic_permissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_academic_permissions.py)
-- [test_academic_setup_rules.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_academic_setup_rules.py)
-- [test_departments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_departments.py)
-- [test_destructive_action_telemetry.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_destructive_action_telemetry.py)
-- [test_soft_delete.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_soft_delete.py)
-- [test_main_missing_blocks.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_main_missing_blocks.py)
+- [conftest.py](/backend/tests/conftest.py)
+- [test_auth.py](/backend/tests/test_auth.py)
+- [test_health.py](/backend/tests/test_health.py)
+- [test_timetables.py](/backend/tests/test_timetables.py)
+- [test_academic_permissions.py](/backend/tests/test_academic_permissions.py)
+- [test_academic_setup_rules.py](/backend/tests/test_academic_setup_rules.py)
+- [test_departments.py](/backend/tests/test_departments.py)
+- [test_destructive_action_telemetry.py](/backend/tests/test_destructive_action_telemetry.py)
+- [test_soft_delete.py](/backend/tests/test_soft_delete.py)
+- [test_main_missing_blocks.py](/backend/tests/test_main_missing_blocks.py)
 
 ### Conftest Role
 
@@ -98,7 +98,7 @@ Implication:
 ## Frontend Test Layout
 
 Current explicit frontend test visibility from recent hardening work includes:
-- [permissions.test.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\utils\permissions.test.js)
+- [permissions.test.js](/frontend/src/utils/permissions.test.js)
 
 This test currently verifies:
 - admin subtype access behavior
@@ -109,7 +109,7 @@ Current frontend testing model is still sparse compared with backend behavior co
 
 ## CI Architecture
 
-Defined in [ci.yml](d:\VS CODE\MY PROJECT\CAPS_AI\.github\workflows\ci.yml).
+Defined in [ci.yml](.github/workflows/ci.yml).
 
 ### Job 1: `backend-static-analysis`
 
@@ -127,13 +127,24 @@ Runs:
 - `bandit`
 - `python scripts/check_backend_safety.py`
 
-Current static-analysis scope is intentionally narrow and focused on governance-sensitive academic setup files:
+Current CI static-analysis scope (stale, because it references removed legacy endpoints):
 - `backend/app/services/governance.py`
 - `backend/app/api/v1/endpoints/departments.py`
 - `backend/app/api/v1/endpoints/branches.py`
 - `backend/app/api/v1/endpoints/years.py`
 - `backend/app/api/v1/endpoints/courses.py`
 - `backend/app/api/v1/endpoints/classes.py`
+- `scripts/check_backend_safety.py`
+
+Recommended scope update for the canonical academic model:
+- `backend/app/services/governance.py`
+- `backend/app/api/v1/endpoints/faculties.py`
+- `backend/app/api/v1/endpoints/departments.py`
+- `backend/app/api/v1/endpoints/programs.py`
+- `backend/app/api/v1/endpoints/specializations.py`
+- `backend/app/api/v1/endpoints/batches.py`
+- `backend/app/api/v1/endpoints/semesters.py`
+- `backend/app/api/v1/endpoints/classes.py` (sections)
 - `scripts/check_backend_safety.py`
 
 ### Job 2: `backend`
@@ -171,7 +182,7 @@ Purpose:
 ### Custom Safety Checker
 
 Implementation:
-- [check_backend_safety.py](d:\VS CODE\MY PROJECT\CAPS_AI\scripts\check_backend_safety.py)
+- [check_backend_safety.py](scripts/check_backend_safety.py)
 
 Current checks include:
 - obvious unreachable statements after terminal control flow
@@ -205,7 +216,7 @@ npm run build
 
 ### Static Analysis Run
 
-From repo root:
+From repo root (current CI commands, stale):
 
 ```powershell
 python -m pip install -r backend/requirements.txt
@@ -214,6 +225,14 @@ python -m flake8 backend/app/services/governance.py backend/app/api/v1/endpoints
 python -m mypy --config-file mypy.ini backend/app/services/governance.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/branches.py backend/app/api/v1/endpoints/years.py backend/app/api/v1/endpoints/courses.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
 python -m bandit -c bandit.yaml backend/app/services/governance.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/branches.py backend/app/api/v1/endpoints/years.py backend/app/api/v1/endpoints/courses.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
 python scripts/check_backend_safety.py
+```
+
+Recommended update for the canonical academic endpoints:
+
+```powershell
+python -m flake8 backend/app/services/governance.py backend/app/api/v1/endpoints/faculties.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/programs.py backend/app/api/v1/endpoints/specializations.py backend/app/api/v1/endpoints/batches.py backend/app/api/v1/endpoints/semesters.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
+python -m mypy --config-file mypy.ini backend/app/services/governance.py backend/app/api/v1/endpoints/faculties.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/programs.py backend/app/api/v1/endpoints/specializations.py backend/app/api/v1/endpoints/batches.py backend/app/api/v1/endpoints/semesters.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
+python -m bandit -c bandit.yaml backend/app/services/governance.py backend/app/api/v1/endpoints/faculties.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/programs.py backend/app/api/v1/endpoints/specializations.py backend/app/api/v1/endpoints/batches.py backend/app/api/v1/endpoints/semesters.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
 ```
 
 ### Full Local Stack Validation
@@ -249,10 +268,10 @@ Manual checks:
 ### If You Change Academic Setup
 
 Run at minimum:
-- [test_academic_permissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_academic_permissions.py)
-- [test_academic_setup_rules.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_academic_setup_rules.py)
-- [test_departments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_departments.py)
-- [test_soft_delete.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_soft_delete.py)
+- [test_academic_permissions.py](/backend/tests/test_academic_permissions.py)
+- [test_academic_setup_rules.py](/backend/tests/test_academic_setup_rules.py)
+- [test_departments.py](/backend/tests/test_departments.py)
+- [test_soft_delete.py](/backend/tests/test_soft_delete.py)
 - frontend permission test if UI access changed
 - static analysis and safety checker if delete/governance paths changed
 
@@ -264,8 +283,8 @@ Manual checks:
 ### If You Change Governance Or Destructive Actions
 
 Run at minimum:
-- [test_destructive_action_telemetry.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_destructive_action_telemetry.py)
-- [test_departments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_departments.py)
+- [test_destructive_action_telemetry.py](/backend/tests/test_destructive_action_telemetry.py)
+- [test_departments.py](/backend/tests/test_departments.py)
 - static analysis suite
 - frontend governance prompt flows manually if `EntityManager` or feature access changed
 
@@ -278,7 +297,7 @@ Manual checks:
 ### If You Change Timetables Or Attendance
 
 Run at minimum:
-- [test_timetables.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\tests\test_timetables.py)
+- [test_timetables.py](/backend/tests/test_timetables.py)
 - relevant manual attendance/timetable routes
 
 Manual checks:
@@ -290,7 +309,7 @@ Manual checks:
 ### If You Change Frontend Route Access Or Policy Logic
 
 Run at minimum:
-- [permissions.test.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\utils\permissions.test.js)
+- [permissions.test.js](/frontend/src/utils/permissions.test.js)
 - `npm run lint`
 - `npm run build`
 
@@ -411,3 +430,5 @@ This is not yet a full pyramid with heavy E2E coverage. It is a controlled hybri
 3. widen static analysis coverage to more backend modules once current lint debt is reduced
 4. add API-level integration coverage for modules still validated mostly by direct function tests
 5. add deployment-smoke checks after container startup in CI or release pipelines
+
+

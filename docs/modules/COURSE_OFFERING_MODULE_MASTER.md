@@ -1,5 +1,33 @@
 # COURSE OFFERING MODULE MASTER
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -138,7 +166,7 @@ These are response-time enrichments, not stored fields in the base document.
 
 ### 3.3 Indexes
 
-Observed indexes in [indexes.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\core\indexes.py):
+Observed indexes in [indexes.py](/backend/app/core/indexes.py):
 
 - `(section_id, semester_id, academic_year, is_active)`
 - `(teacher_user_id, is_active)`
@@ -170,12 +198,12 @@ Important limitation:
 
 Primary backend file:
 
-- [course_offerings.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\course_offerings.py)
+- [course_offerings.py](/backend/app/api/v1/endpoints/course_offerings.py)
 
 Supporting files:
 
-- [course_offering.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\course_offering.py)
-- [course_offerings.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\models\course_offerings.py)
+- [course_offering.py](/backend/app/schemas/course_offering.py)
+- [course_offerings.py](/backend/app/models/course_offerings.py)
 
 ### 4.1 Write access model
 
@@ -338,7 +366,7 @@ Important gaps:
 
 Primary page:
 
-- [CourseOfferingsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\CourseOfferingsPage.jsx)
+- [CourseOfferingsPage.jsx](/frontend/src/pages/CourseOfferingsPage.jsx)
 
 ### 5.1 Frontend architecture
 
@@ -351,7 +379,7 @@ Lookups loaded:
 - batches
 - semesters
 - groups
-- sections through [sectionsApi.js](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\services\sectionsApi.js)
+- sections through [sectionsApi.js](/frontend/src/services/sectionsApi.js)
 
 ### 5.2 Create support
 
@@ -423,8 +451,8 @@ This means:
 
 Observed in:
 
-- [ClassSlotsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\ClassSlotsPage.jsx)
-- [class_slots.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\class_slots.py)
+- [ClassSlotsPage.jsx](/frontend/src/pages/ClassSlotsPage.jsx)
+- [class_slots.py](/backend/app/api/v1/endpoints/class_slots.py)
 
 ### 6.2 Attendance
 
@@ -432,7 +460,7 @@ Attendance uses class slot -> course offering -> section/group chain.
 
 Observed in:
 
-- [attendance_records.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\attendance_records.py)
+- [attendance_records.py](/backend/app/api/v1/endpoints/attendance_records.py)
 
 Attendance validation depends on offering context:
 
@@ -457,8 +485,8 @@ to render:
 
 Observed in:
 
-- [DashboardPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\DashboardPage.jsx)
-- [TimetablePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\TimetablePage.jsx)
+- [DashboardPage.jsx](/frontend/src/pages/DashboardPage.jsx)
+- [TimetablePage.jsx](/frontend/src/pages/TimetablePage.jsx)
 
 ## 7. Business Rules
 
@@ -687,3 +715,5 @@ Weaknesses:
 - downstream UIs do not exploit enriched metadata well
 
 As implemented today, this module is a core teaching-operations boundary. It should be treated as a protected academic delivery contract, not as simple reference data.
+
+

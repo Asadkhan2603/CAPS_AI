@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document converts the current [AI_MODULE_MASTER.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\AI_MODULE_MASTER.md) analysis into an execution plan with priorities, delivery scope, and acceptance criteria.
+This document converts the current [AI_MODULE_MASTER.md](/docs/modules/AI_MODULE_MASTER.md) analysis into an execution plan with priorities, delivery scope, and acceptance criteria.
 
 ## Current State Summary
 
@@ -23,7 +23,7 @@ Implemented so far:
 - runtime AI configuration now persists through `settings` and is visible/editable from the AI operations page for admins
 - bulk submission AI and async similarity now run through durable persisted `ai_jobs`
 - prompt/runtime metadata is now stored on submissions, evaluations, traces, chat messages, and similarity logs
-- canonical contracts are now documented in [AI_MODULE_CONTRACTS.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\AI_MODULE_CONTRACTS.md)
+- canonical contracts are now documented in [AI_MODULE_CONTRACTS.md](/docs/modules/AI_MODULE_CONTRACTS.md)
 
 ## Gap Analysis
 
@@ -57,7 +57,7 @@ Acceptance criteria:
 
 Status:
 
-- implemented on 2026-03-10 in [EvaluateSubmission.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
+- implemented on 2026-03-10 in [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
 
 ## Gap 2: AI response contracts are not centralized enough
 
@@ -91,7 +91,7 @@ Acceptance criteria:
 
 Status:
 
-- implemented on 2026-03-10 in [AI_MODULE_CONTRACTS.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\AI_MODULE_CONTRACTS.md)
+- implemented on 2026-03-10 in [AI_MODULE_CONTRACTS.md](/docs/modules/AI_MODULE_CONTRACTS.md)
 
 ## Gap 3: Heavy processing still runs close to request time
 
@@ -123,7 +123,7 @@ Acceptance criteria:
 
 Status:
 
-- implemented on 2026-03-10 through [ai_jobs.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_jobs.py), [submissions.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py), and [similarity.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
+- implemented on 2026-03-10 through [ai_jobs.py](/backend/app/services/ai_jobs.py), [submissions.py](/backend/app/api/v1/endpoints/submissions.py), and [similarity.py](/backend/app/api/v1/endpoints/similarity.py)
 
 ## Gap 4: No administrative AI configuration surface
 
@@ -155,7 +155,7 @@ Acceptance criteria:
 
 Status:
 
-- implemented on 2026-03-10 in [ai.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py) and [AIModulePage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
+- implemented on 2026-03-10 in [ai.py](/backend/app/api/v1/endpoints/ai.py) and [AIModulePage.jsx](/frontend/src/pages/AIModulePage.jsx)
 
 ## Gap 5: AI governance is mostly implicit
 
@@ -186,7 +186,7 @@ Acceptance criteria:
 
 Status:
 
-- partially implemented on 2026-03-10 through prompt/runtime metadata in [ai_runtime.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\ai_runtime.py), [evaluation_ai_module.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\evaluation_ai_module.py), and the persisted submission/evaluation/chat contracts
+- partially implemented on 2026-03-10 through prompt/runtime metadata in [ai_runtime.py](/backend/app/services/ai_runtime.py), [evaluation_ai_module.py](/backend/app/services/evaluation_ai_module.py), and the persisted submission/evaluation/chat contracts
 
 ## Delivery Roadmap
 
@@ -236,3 +236,6 @@ The original priority gaps are now closed enough for active use. The remaining A
 - add richer trace/job filtering across time, provider, and actor
 - add module-level metrics or dashboards for provider fallback rate, queue latency, and failure rate
 - add policy/governance reporting around teacher override behavior and AI usage trends
+
+
+

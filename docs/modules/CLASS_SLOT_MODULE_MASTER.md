@@ -1,5 +1,33 @@
 # CLASS SLOT MODULE MASTER
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -123,7 +151,7 @@ Indirect relations via the offering:
 
 ### 3.3 Indexes
 
-Observed index in [indexes.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\core\indexes.py):
+Observed index in [indexes.py](/backend/app/core/indexes.py):
 
 - `(course_offering_id, day, start_time, is_active)`
 
@@ -141,12 +169,12 @@ Important gap:
 
 Primary backend file:
 
-- [class_slots.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\class_slots.py)
+- [class_slots.py](/backend/app/api/v1/endpoints/class_slots.py)
 
 Supporting files:
 
-- [class_slot.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\class_slot.py)
-- [class_slots.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\models\class_slots.py)
+- [class_slot.py](/backend/app/schemas/class_slot.py)
+- [class_slots.py](/backend/app/models/class_slots.py)
 
 ### 4.1 Offering dependency
 
@@ -310,7 +338,7 @@ Important gap:
 
 Schema file:
 
-- [class_slot.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\class_slot.py)
+- [class_slot.py](/backend/app/schemas/class_slot.py)
 
 Create contract:
 
@@ -348,7 +376,7 @@ Important limitation:
 
 Primary page:
 
-- [ClassSlotsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\ClassSlotsPage.jsx)
+- [ClassSlotsPage.jsx](/frontend/src/pages/ClassSlotsPage.jsx)
 
 ### 6.1 Frontend behavior
 
@@ -414,7 +442,7 @@ Attendance records depend directly on class slots.
 
 Observed in:
 
-- [attendance_records.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\attendance_records.py)
+- [attendance_records.py](/backend/app/api/v1/endpoints/attendance_records.py)
 
 Attendance logic uses:
 
@@ -439,8 +467,8 @@ Student schedule views are built from:
 
 Observed in:
 
-- [TimetablePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\TimetablePage.jsx)
-- [DashboardPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\DashboardPage.jsx)
+- [TimetablePage.jsx](/frontend/src/pages/TimetablePage.jsx)
+- [DashboardPage.jsx](/frontend/src/pages/DashboardPage.jsx)
 
 ### 7.3 Timetable architecture relationship
 
@@ -653,3 +681,5 @@ Weaknesses:
 - poor operator labeling
 
 As implemented today, the module is usable and operationally meaningful, but it is still a lightweight runtime scheduler rather than a fully policy-driven institutional timetable engine.
+
+

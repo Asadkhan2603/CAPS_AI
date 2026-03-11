@@ -1,5 +1,33 @@
 # Review Ticket Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -21,26 +49,26 @@ Finalized evaluation
 
 Primary implementation sources:
 
-- [review_tickets.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\review_tickets.py)
-- [review_tickets.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\review_tickets.py)
-- [review_ticket.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\review_ticket.py)
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
-- [audit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\audit.py)
-- [admin_analytics.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_analytics.py)
-- [analytics_snapshot.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\analytics_snapshot.py)
+- [review_tickets.py](/backend/app/api/v1/endpoints/review_tickets.py)
+- [review_tickets.py](/backend/app/models/review_tickets.py)
+- [review_ticket.py](/backend/app/schemas/review_ticket.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
+- [audit.py](/backend/app/services/audit.py)
+- [admin_analytics.py](/backend/app/api/v1/endpoints/admin_analytics.py)
+- [analytics_snapshot.py](/backend/app/services/analytics_snapshot.py)
 
 Primary frontend surfaces:
 
-- [ReviewTicketsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\ReviewTicketsPage.jsx)
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
-- [AdminAnalyticsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminAnalyticsPage.jsx)
+- [ReviewTicketsPage.jsx](/frontend/src/pages/ReviewTicketsPage.jsx)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
+- [AdminAnalyticsPage.jsx](/frontend/src/pages/Admin/AdminAnalyticsPage.jsx)
 
 Related references:
 
-- [EXAM_MODULE_MASTER.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\EXAM_MODULE_MASTER.md)
-- [AUDIT_MODULE_MASTER.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\AUDIT_MODULE_MASTER.md)
-- [GOVERNANCE_MODULE_MASTER.md](d:\VS CODE\MY PROJECT\CAPS_AI\docs\modules\GOVERNANCE_MODULE_MASTER.md)
+- [EXAM_MODULE_MASTER.md](/docs/modules/EXAM_MODULE_MASTER.md)
+- [AUDIT_MODULE_MASTER.md](/docs/modules/AUDIT_MODULE_MASTER.md)
+- [GOVERNANCE_MODULE_MASTER.md](/docs/modules/GOVERNANCE_MODULE_MASTER.md)
 
 This document describes the review ticket module as implemented today.
 
@@ -95,11 +123,11 @@ Purpose:
 
 Schema:
 
-- [review_ticket.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\review_ticket.py)
+- [review_ticket.py](/backend/app/schemas/review_ticket.py)
 
 Public model mapping:
 
-- [review_tickets.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\review_tickets.py)
+- [review_tickets.py](/backend/app/models/review_tickets.py)
 
 Current stored fields:
 
@@ -171,7 +199,7 @@ Review tickets are listed in generic recovery tooling, which means the system ex
 
 File:
 
-- [review_tickets.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\review_tickets.py)
+- [review_tickets.py](/backend/app/api/v1/endpoints/review_tickets.py)
 
 Route:
 
@@ -296,7 +324,7 @@ Evaluation side effect:
 
 File:
 
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
 
 Related route:
 
@@ -356,7 +384,7 @@ This is a separate approval pattern from the governance module.
 
 File:
 
-- [review_tickets.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\review_tickets.py)
+- [review_tickets.py](/backend/app/api/v1/endpoints/review_tickets.py)
 
 ### `GET /review-tickets/`
 
@@ -418,7 +446,7 @@ Not implemented:
 
 File:
 
-- [ReviewTicketsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\ReviewTicketsPage.jsx)
+- [ReviewTicketsPage.jsx](/frontend/src/pages/ReviewTicketsPage.jsx)
 
 Teacher capabilities:
 
@@ -457,7 +485,7 @@ Frontend route:
 
 Feature access:
 
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
 - `allowedRoles: ['admin', 'teacher']`
 
 This matches the backend route guard for listing.
@@ -468,7 +496,7 @@ This matches the backend route guard for listing.
 
 File:
 
-- [admin_analytics.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_analytics.py)
+- [admin_analytics.py](/backend/app/api/v1/endpoints/admin_analytics.py)
 
 Current metric:
 
@@ -480,7 +508,7 @@ This means review tickets already feed control-plane summaries.
 
 File:
 
-- [analytics_snapshot.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\analytics_snapshot.py)
+- [analytics_snapshot.py](/backend/app/services/analytics_snapshot.py)
 
 Snapshot metric:
 
@@ -492,7 +520,7 @@ This extends ticket visibility into platform snapshots.
 
 File:
 
-- [AdminAnalyticsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminAnalyticsPage.jsx)
+- [AdminAnalyticsPage.jsx](/frontend/src/pages/Admin/AdminAnalyticsPage.jsx)
 
 Observed issue:
 
@@ -700,3 +728,5 @@ Its main weaknesses are:
 - no integration with the broader governance approval framework
 
 The correct next step is to decide whether review tickets should stay narrow and explicit or evolve into a real platform-wide review workflow system. Right now they are effective, but intentionally limited.
+
+

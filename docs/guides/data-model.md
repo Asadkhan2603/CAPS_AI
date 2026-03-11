@@ -1,13 +1,13 @@
-﻿# Data Model Guide
+# Data Model Guide
 
 ## Overview
 
-CAPS AI uses MongoDB as its primary operational datastore. The application is not built around an ORM or relational foreign keys. Most entities are persisted directly as Mongo documents and are accessed through the shared Motor database binding in [database.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\database.py).
+CAPS AI uses MongoDB as its primary operational datastore. The application is not built around an ORM or relational foreign keys. Most entities are persisted directly as Mongo documents and are accessed through the shared Motor database binding in [database.py](/backend/app/core/database.py).
 
 Primary data model files and runtime anchors:
-- [database.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\database.py)
-- [indexes.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\indexes.py)
-- [soft_delete.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\soft_delete.py)
+- [database.py](/backend/app/core/database.py)
+- [indexes.py](/backend/app/core/indexes.py)
+- [soft_delete.py](/backend/app/core/soft_delete.py)
 - route modules under `backend/app/api/v1/endpoints`
 
 Current persistence characteristics:
@@ -95,11 +95,11 @@ Faculty
 Important implementation detail:
 - section records are still physically stored in `classes`
 - `/sections` is the canonical API route
-- `/classes` is the deprecated compatibility alias
+- there is no `/classes` backend route
 
 ## Legacy Academic Compatibility Hierarchy
 
-The older compatibility-era model still exists in storage and route behavior:
+The older compatibility-era model still exists in storage, but the backend routes are no longer mounted:
 
 ```text
 Department
@@ -659,7 +659,7 @@ Operational nature:
 
 ## Index Strategy
 
-Index bootstrap happens centrally in [indexes.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\indexes.py).
+Index bootstrap happens centrally in [indexes.py](/backend/app/core/indexes.py).
 
 ### Index Categories In Use
 
@@ -762,7 +762,7 @@ Compatibility note:
 - not all non-academic modules use the canonical contract yet
 
 Migration helper:
-- [migrate_academic_soft_delete.py](d:\VS CODE\MY PROJECT\CAPS_AI\scripts\migrate_academic_soft_delete.py)
+- [migrate_academic_soft_delete.py](scripts/migrate_academic_soft_delete.py)
 
 ### Current Mixed Delete Model
 
@@ -831,6 +831,9 @@ Canonical route:
 Physical collection:
 - `classes`
 
+Route note:
+- `/classes` is not mounted; it is a storage-only legacy name
+
 Effect:
 - naming mismatch leaks into code, docs, and mental model
 
@@ -884,3 +887,5 @@ Its weakest areas are:
 - uneven delete and recovery behavior across modules
 
 The correct next step is disciplined normalization around canonical academic entities and consistent lifecycle semantics, not a wholesale redesign of persistence technology.
+
+

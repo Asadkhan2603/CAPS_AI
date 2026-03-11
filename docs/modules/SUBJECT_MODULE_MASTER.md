@@ -1,5 +1,33 @@
 # Subject Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -72,9 +100,9 @@ This means the module behaves more like a master data catalog than a workflow en
 
 Primary backend files:
 
-- [subjects.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\subjects.py)
-- [subject.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\subject.py)
-- [subjects.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\subjects.py)
+- [subjects.py](/backend/app/api/v1/endpoints/subjects.py)
+- [subject.py](/backend/app/schemas/subject.py)
+- [subjects.py](/backend/app/models/subjects.py)
 
 Purpose of the collection:
 
@@ -324,12 +352,12 @@ Hard delete a subject.
 
 Frontend page:
 
-- [SubjectsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\SubjectsPage.jsx)
+- [SubjectsPage.jsx](/frontend/src/pages/SubjectsPage.jsx)
 
 Supporting access and route files:
 
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
 
 ### 8.1 UI behavior
 
@@ -555,3 +583,5 @@ From an architectural perspective, the correct direction is clear:
 - expose update intentionally
 - retire via inactive state, not routine hard delete
 - protect destructive deletion with dependency and governance controls
+
+

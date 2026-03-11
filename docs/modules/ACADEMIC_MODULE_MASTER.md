@@ -1,5 +1,33 @@
 # Academic Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -168,7 +196,7 @@ Section is the bottom node of the canonical hierarchy.
 In the backend it is stored in collection `classes` and exposed through:
 
 - canonical route: `/sections`
-- compatibility route: `/classes`
+- storage collection: `classes` (no `/classes` route)
 
 Section can reference:
 
@@ -724,21 +752,9 @@ Operations:
 - `PUT /semesters/{semester_id}`
 - `DELETE /semesters/{semester_id}`
 
-#### `/classes`
-
-Legacy compatibility route for sections.
-
-Operations:
-
-- `GET /classes`
-- `GET /classes/{class_id}`
-- `POST /classes`
-- `PUT /classes/{class_id}`
-- `DELETE /classes/{class_id}`
-
 #### `/sections`
 
-Canonical route for sections, mounted to the same operational handler family as classes.
+Canonical route for sections. Section records are stored in the legacy-named `classes` collection, but there is no `/classes` backend route.
 
 Operations:
 
@@ -750,41 +766,17 @@ Operations:
 
 ### Legacy Compatibility Endpoints
 
-#### `/courses`
+Legacy academic routes are no longer mounted in the backend:
 
-Operations:
-
-- `GET /courses`
-- `GET /courses/{course_id}`
-- `POST /courses`
-- `PUT /courses/{course_id}`
-- `DELETE /courses/{course_id}`
-
-#### `/years`
-
-Operations:
-
-- `GET /years`
-- `GET /years/{year_id}`
-- `POST /years`
-- `PUT /years/{year_id}`
-- `DELETE /years/{year_id}`
-
-#### `/branches`
-
-Operations:
-
-- `GET /branches`
-- `GET /branches/{branch_id}`
-- `POST /branches`
-- `PUT /branches/{branch_id}`
-- `DELETE /branches/{branch_id}`
+- `/courses` -> frontend redirect to `/programs`
+- `/years` -> frontend redirect to `/batches`
+- `/branches` -> frontend redirect to `/specializations`
 
 ### API Status Notes
 
 - `/sections` is canonical
-- `/classes` remains a compatibility alias
-- `/courses`, `/years`, and `/branches` are deprecated in API metadata for new architecture
+- `/classes` is not mounted (storage-only legacy name)
+- `/courses`, `/years`, and `/branches` are retired routes with frontend redirects only
 
 ## 7. Frontend Implementation
 
@@ -804,9 +796,9 @@ The frontend uses two major patterns:
 | `BatchesPage.jsx` | Yes | Yes | Yes | specialization filtered by program; base batches are auto-seeded from program create, can be backfilled from the page, and now support active-state edit |
 | `SemestersPage.jsx` | Yes | No | Yes | backend update exists |
 | `ClassesPage.jsx` | Yes | Partial/custom | Partial/custom | custom cascading form, not a standard EntityManager page |
-| `CoursesPage.jsx` | No | No | No | effectively read-only despite backend CRUD |
-| `YearsPage.jsx` | Yes | No | Yes | backend update exists |
-| `BranchesPage.jsx` | Yes | No | Yes | uses department code relation |
+| Legacy `/courses` | - | - | - | frontend redirect only; no dedicated page |
+| Legacy `/years` | - | - | - | frontend redirect only; no dedicated page |
+| Legacy `/branches` | - | - | - | frontend redirect only; no dedicated page |
 
 ### Academic Structure Pages
 
@@ -977,7 +969,7 @@ Treat the following as legacy compatibility modules unless a strong business cas
 - `courses`
 - `years`
 - `branches`
-- `/classes` as a compatibility alias to `/sections`
+- `classes` as a storage-only legacy collection name
 
 ### Simplification Strategy
 
@@ -985,7 +977,7 @@ Treat the following as legacy compatibility modules unless a strong business cas
 
 - keep documentation aligned with the canonical hierarchy
 - keep `/sections` as the primary section route
-- keep legacy endpoints marked deprecated
+- treat legacy routes as retired, with frontend redirects only
 
 #### Phase 2: Remove UI Ambiguity
 

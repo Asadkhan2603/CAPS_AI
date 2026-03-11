@@ -1,5 +1,33 @@
 # Enrollment Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -158,9 +186,9 @@ This records which authenticated actor assigned the student.
 
 Backend implementation is in:
 
-- [enrollments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\enrollments.py)
-- [enrollment.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\enrollment.py)
-- [enrollments.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\enrollments.py)
+- [enrollments.py](/backend/app/api/v1/endpoints/enrollments.py)
+- [enrollment.py](/backend/app/schemas/enrollment.py)
+- [enrollments.py](/backend/app/models/enrollments.py)
 
 ### 5.1 Supported operations
 
@@ -325,12 +353,12 @@ That absence is an important product constraint and should be treated as an expl
 
 Frontend implementation is centered on:
 
-- [EnrollmentsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\EnrollmentsPage.jsx)
+- [EnrollmentsPage.jsx](/frontend/src/pages/EnrollmentsPage.jsx)
 
 Supporting configuration:
 
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
 
 ### 8.1 Page behavior
 
@@ -565,3 +593,4 @@ From a system-design perspective, the module should be preserved but normalized:
 - align it to canonical section terminology
 - remove duplicate membership state
 - add a controlled lifecycle for change and removal
+

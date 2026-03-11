@@ -1,5 +1,33 @@
 # NOTIFICATION MODULE MASTER
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -33,14 +61,14 @@ The module is real on the backend and now has a dedicated frontend notification 
 
 Primary backend files:
 
-- [notifications.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\notifications.py)
-- [notifications.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\notifications.py)
+- [notifications.py](/backend/app/api/v1/endpoints/notifications.py)
+- [notifications.py](/backend/app/services/notifications.py)
 
 Primary frontend files:
 
-- [NotificationsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\NotificationsPage.jsx)
-- [FeedPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Communication\FeedPage.jsx)
-- [HistoryPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\HistoryPage.jsx)
+- [NotificationsPage.jsx](/frontend/src/pages/NotificationsPage.jsx)
+- [FeedPage.jsx](/frontend/src/pages/Communication/FeedPage.jsx)
+- [HistoryPage.jsx](/frontend/src/pages/HistoryPage.jsx)
 
 Important implementation reality:
 
@@ -51,8 +79,8 @@ Important implementation reality:
 
 Schema/model files:
 
-- [notification.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\notification.py)
-- [notifications.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\models\notifications.py)
+- [notification.py](/backend/app/schemas/notification.py)
+- [notifications.py](/backend/app/models/notifications.py)
 
 ### 2.1 Collection
 
@@ -207,7 +235,7 @@ Current limitation:
 
 Service file:
 
-- [notifications.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\notifications.py)
+- [notifications.py](/backend/app/services/notifications.py)
 
 Shared function:
 
@@ -234,7 +262,7 @@ Notifications are not only manually created through the notification API.
 
 Producer path:
 
-- [background_jobs.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\background_jobs.py)
+- [background_jobs.py](/backend/app/services/background_jobs.py)
 
 Behavior:
 
@@ -246,8 +274,8 @@ This is one of the main real producers of notification records.
 
 Producer path:
 
-- [similarity.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
-- [similarity_pipeline.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\services\similarity_pipeline.py)
+- [similarity.py](/backend/app/api/v1/endpoints/similarity.py)
+- [similarity_pipeline.py](/backend/app/services/similarity_pipeline.py)
 
 Behavior:
 
@@ -376,8 +404,8 @@ The notification collection is included in recovery tooling.
 
 Observed in:
 
-- [admin_recovery.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_recovery.py)
-- [AdminRecoveryPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminRecoveryPage.jsx)
+- [admin_recovery.py](/backend/app/api/v1/endpoints/admin_recovery.py)
+- [AdminRecoveryPage.jsx](/frontend/src/pages/Admin/AdminRecoveryPage.jsx)
 
 Implication:
 
@@ -526,3 +554,5 @@ Weaknesses:
 - no lifecycle or retention strategy
 
 As implemented today, notifications are a real storage and delivery layer with a functional notification center, but lifecycle, bulk interaction, and stronger typing are still unfinished.
+
+

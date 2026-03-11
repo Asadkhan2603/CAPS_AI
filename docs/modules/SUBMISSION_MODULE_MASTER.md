@@ -1,5 +1,33 @@
 # SUBMISSION MODULE MASTER
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -37,15 +65,15 @@ It is therefore one of the most important workflow modules in CAPS AI. It is not
 
 Primary backend files:
 
-- [submissions.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\submissions.py)
-- [submission.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\submission.py)
-- [submissions.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\models\submissions.py)
+- [submissions.py](/backend/app/api/v1/endpoints/submissions.py)
+- [submission.py](/backend/app/schemas/submission.py)
+- [submissions.py](/backend/app/models/submissions.py)
 
 Primary frontend files:
 
-- [SubmissionsPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\SubmissionsPage.jsx)
-- [EvaluateSubmission.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
-- [AIModulePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
+- [SubmissionsPage.jsx](/frontend/src/pages/SubmissionsPage.jsx)
+- [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
+- [AIModulePage.jsx](/frontend/src/pages/AIModulePage.jsx)
 
 ## 2. Core Domain Model
 
@@ -81,8 +109,8 @@ A submission record answers these questions:
 
 Schema/model files:
 
-- [submission.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\schemas\submission.py)
-- [submissions.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\models\submissions.py)
+- [submission.py](/backend/app/schemas/submission.py)
+- [submissions.py](/backend/app/models/submissions.py)
 
 ### 3.1 Collection
 
@@ -605,12 +633,12 @@ Submissions feed directly into:
 
 Observed frontend/backend dependencies:
 
-- [EvaluateSubmission.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
-- [AIModulePage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\AIModulePage.jsx)
-- [evaluations.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
-- [similarity.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\similarity.py)
-- [ai.py](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\backend\app\api\v1\endpoints\ai.py)
-- [HistoryPage.jsx](d:\VS%20CODE\MY%20PROJECT\CAPS_AI\frontend\src\pages\HistoryPage.jsx)
+- [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
+- [AIModulePage.jsx](/frontend/src/pages/AIModulePage.jsx)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
+- [similarity.py](/backend/app/api/v1/endpoints/similarity.py)
+- [ai.py](/backend/app/api/v1/endpoints/ai.py)
+- [HistoryPage.jsx](/frontend/src/pages/HistoryPage.jsx)
 
 ## 11. Cleanup Strategy
 
@@ -686,3 +714,5 @@ Weaknesses:
 - unclear duplicate submission policy
 
 As implemented today, the module is functional and central to assessment workflows. Its biggest weaknesses are operational durability and lifecycle integrity, not missing core functionality.
+
+

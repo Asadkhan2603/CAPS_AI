@@ -1,5 +1,33 @@
 # System Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -24,26 +52,26 @@ Runtime startup
 
 Primary implementation sources:
 
-- [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py)
-- [config.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\config.py)
-- [database.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\database.py)
-- [indexes.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\indexes.py)
-- [rate_limit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\rate_limit.py)
-- [redis_store.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\redis_store.py)
-- [response.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\response.py)
-- [observability.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\observability.py)
-- [scheduler.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\scheduler.py)
-- [admin_system.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_system.py)
-- [admin_recovery.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_recovery.py)
+- [main.py](/backend/app/main.py)
+- [config.py](/backend/app/core/config.py)
+- [database.py](/backend/app/core/database.py)
+- [indexes.py](/backend/app/core/indexes.py)
+- [rate_limit.py](/backend/app/core/rate_limit.py)
+- [redis_store.py](/backend/app/core/redis_store.py)
+- [response.py](/backend/app/core/response.py)
+- [observability.py](/backend/app/core/observability.py)
+- [scheduler.py](/backend/app/services/scheduler.py)
+- [admin_system.py](/backend/app/api/v1/endpoints/admin_system.py)
+- [admin_recovery.py](/backend/app/api/v1/endpoints/admin_recovery.py)
 
 Primary frontend surfaces:
 
-- [AdminSystemPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminSystemPage.jsx)
-- [AdminRecoveryPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminRecoveryPage.jsx)
-- [AdminDashboardPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminDashboardPage.jsx)
-- [AdminDeveloperPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Admin\AdminDeveloperPage.jsx)
-- [AppRoutes.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\routes\AppRoutes.jsx)
-- [featureAccess.js](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\config\featureAccess.js)
+- [AdminSystemPage.jsx](/frontend/src/pages/Admin/AdminSystemPage.jsx)
+- [AdminRecoveryPage.jsx](/frontend/src/pages/Admin/AdminRecoveryPage.jsx)
+- [AdminDashboardPage.jsx](/frontend/src/pages/Admin/AdminDashboardPage.jsx)
+- [AdminDeveloperPage.jsx](/frontend/src/pages/Admin/AdminDeveloperPage.jsx)
+- [AppRoutes.jsx](/frontend/src/routes/AppRoutes.jsx)
+- [featureAccess.js](/frontend/src/config/featureAccess.js)
 
 This document describes the System Module as implemented today.
 
@@ -87,7 +115,7 @@ Key implementation reality:
 
 File:
 
-- [main.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\main.py)
+- [main.py](/backend/app/main.py)
 
 Core startup path:
 
@@ -146,7 +174,7 @@ This gives CAPS AI a consistent error contract at the platform layer.
 
 File:
 
-- [config.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\config.py)
+- [config.py](/backend/app/core/config.py)
 
 `Settings` is a dataclass populated from environment variables.
 
@@ -226,7 +254,7 @@ This is useful operationally, but it also means configuration is permissive in d
 
 File:
 
-- [database.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\database.py)
+- [database.py](/backend/app/core/database.py)
 
 Behavior:
 
@@ -239,7 +267,7 @@ This is a simple adapter with no connection pooling customization in code. It re
 
 File:
 
-- [redis_store.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\redis_store.py)
+- [redis_store.py](/backend/app/core/redis_store.py)
 
 Capabilities:
 
@@ -264,7 +292,7 @@ This adapter is central to:
 
 File:
 
-- [response.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\response.py)
+- [response.py](/backend/app/core/response.py)
 
 Purpose:
 
@@ -277,7 +305,7 @@ This is infrastructure behavior rather than business behavior.
 
 File:
 
-- [observability.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\observability.py)
+- [observability.py](/backend/app/core/observability.py)
 
 Capabilities:
 
@@ -294,7 +322,7 @@ This module underpins most system-level logging behavior.
 
 File:
 
-- [indexes.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\indexes.py)
+- [indexes.py](/backend/app/core/indexes.py)
 
 `ensure_indexes()` is executed during app startup.
 
@@ -339,7 +367,7 @@ Tradeoff:
 
 File:
 
-- [rate_limit.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\core\rate_limit.py)
+- [rate_limit.py](/backend/app/core/rate_limit.py)
 
 The rate limiter is mounted as application middleware near startup.
 
@@ -392,7 +420,7 @@ The middleware prunes stale keys aggressively, but that does not make it distrib
 
 File:
 
-- [scheduler.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\scheduler.py)
+- [scheduler.py](/backend/app/services/scheduler.py)
 
 The scheduler is the operational orchestrator for recurring background jobs.
 
@@ -474,7 +502,7 @@ Access:
 
 File:
 
-- [admin_system.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_system.py)
+- [admin_system.py](/backend/app/api/v1/endpoints/admin_system.py)
 
 Route:
 
@@ -502,7 +530,7 @@ This is the main system diagnostics API currently exposed to operators.
 
 File:
 
-- [admin_recovery.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\admin_recovery.py)
+- [admin_recovery.py](/backend/app/api/v1/endpoints/admin_recovery.py)
 
 Routes:
 
@@ -534,6 +562,9 @@ Important behavior:
 - recovery queries use soft-delete semantics
 - restore writes audit log event
 - restore also appends a row into `recovery_logs` when available
+
+Note:
+- legacy collections such as `courses`, `branches`, and `years` remain in the recovery set even though their API routes are retired
 
 Important limitation:
 
@@ -919,3 +950,5 @@ Its main weaknesses are:
 - limited operator controls beyond observation and restore
 
 The right next step is not to replace this module. The right next step is to split responsibilities more cleanly and tighten the operational contracts that already exist.
+
+

@@ -1,5 +1,33 @@
 # Evaluation Module Master
 
+## Module Overview
+This section provides a standardized summary for the module. Refer to the detailed sections below for full context.
+
+## Responsibilities
+- Core responsibilities are described in the detailed sections below.
+
+## Components
+- Primary backend endpoints, schemas, and UI surfaces are listed below.
+
+## API Endpoints
+- Refer to the API endpoint inventory in this document.
+
+## Data Models
+- Refer to the data model details in this document.
+
+## Workflows
+- Refer to the workflow and lifecycle sections below.
+
+## Dependencies
+- Refer to dependency notes in this document.
+
+## Known Limitations
+- Refer to current limitations described below.
+
+## Improvements
+- Refer to improvement opportunities listed below.
+
+
 ## Module Tree
 
 ```text
@@ -38,11 +66,11 @@ Operationally, this module is the point where a submission becomes an assessed a
 
 Primary implementation surfaces:
 
-- [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py)
-- [evaluation.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\schemas\evaluation.py)
-- [evaluations.py model](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\models\evaluations.py)
-- [EvaluationsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\EvaluationsPage.jsx)
-- [EvaluateSubmission.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
+- [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py)
+- [evaluation.py](/backend/app/schemas/evaluation.py)
+- [evaluations.py model](/backend/app/models/evaluations.py)
+- [EvaluationsPage.jsx](/frontend/src/pages/EvaluationsPage.jsx)
+- [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
 
 
 ## 2. Functional Position In The System
@@ -172,7 +200,7 @@ These fields represent the teacher-entered scoring inputs.
 
 ### 4.2 Computed Values
 
-[evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py) delegates derived calculations to [grading.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\services\grading.py):
+[evaluations.py](/backend/app/api/v1/endpoints/evaluations.py) delegates derived calculations to [grading.py](/backend/app/services/grading.py):
 
 - `internal_total(...)`
 - `grand_total(...)`
@@ -303,7 +331,7 @@ Teacher authority check currently combines:
 - assignment creator ownership
 - class coordinator access to the assignment’s class
 
-This is implemented through `_ensure_teacher_can_evaluate_submission(...)` and assignment access helpers in [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py).
+This is implemented through `_ensure_teacher_can_evaluate_submission(...)` and assignment access helpers in [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py).
 
 ### 6.3 Finalization Authority
 
@@ -373,7 +401,7 @@ Architectural impact:
 
 ## 9. API Endpoints
 
-Primary endpoints in [evaluations.py](d:\VS CODE\MY PROJECT\CAPS_AI\backend\app\api\v1\endpoints\evaluations.py):
+Primary endpoints in [evaluations.py](/backend/app/api/v1/endpoints/evaluations.py):
 
 ### 9.1 List Evaluations
 
@@ -449,7 +477,7 @@ Purpose:
 
 Frontend page:
 
-- [EvaluationsPage.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\EvaluationsPage.jsx)
+- [EvaluationsPage.jsx](/frontend/src/pages/EvaluationsPage.jsx)
 
 Current behavior differs by role.
 
@@ -517,7 +545,7 @@ Row actions:
 
 Frontend page:
 
-- [EvaluateSubmission.jsx](d:\VS CODE\MY PROJECT\CAPS_AI\frontend\src\pages\Teacher\EvaluateSubmission.jsx)
+- [EvaluateSubmission.jsx](/frontend/src/pages/Teacher/EvaluateSubmission.jsx)
 
 This is the richer evaluation workspace.
 
@@ -826,3 +854,5 @@ The main gaps are not absence of functionality. The main gaps are:
 - clarity of finalization semantics
 
 That means the correct next step is refinement and hardening, not a ground-up rewrite.
+
+
