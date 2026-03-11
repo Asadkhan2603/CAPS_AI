@@ -4,6 +4,7 @@ This file is the entry point for the project documentation tree under `docs/`.
 
 ## Core Audits
 
+- [Documentation Audit Report](../DOCUMENTATION_AUDIT_REPORT.md)
 - [Academic Setup Logic Audit](../ACADEMIC_SETUP_LOGIC_AUDIT.md)
 
 ## Module Masters
@@ -158,14 +159,14 @@ University
                         `-- Section
 ```
 
-Legacy compatibility hierarchy:
+Legacy compatibility hierarchy is retained only for historical data translation:
 
 ```text
 Department
 `-- Branch
     `-- Course
         `-- Year
-            `-- Section/Class
+            `-- Section
 ```
 
 ## Guides
@@ -180,7 +181,7 @@ Department
 
 ## Archives
 
-- `docs/archives/OLD_DATA`
+- `../archives/OLD_DATA`
 
 ## Recommended Reading Order
 
@@ -196,4 +197,3 @@ Department
 - `ACADEMIC_MODULE_MASTER.md` should remain the umbrella for the canonical hierarchy:
   `Faculty -> Department -> Program -> Specialization -> Batch -> Semester -> Section`
 - Legacy compatibility areas such as courses, years, branches, and classes should be documented inside the relevant module masters with explicit deprecation or compatibility notes.
-
