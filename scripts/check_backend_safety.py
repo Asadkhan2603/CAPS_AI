@@ -14,10 +14,12 @@ FILES_FOR_UNREACHABLE_SCAN = [
 ]
 
 GOVERNANCE_DELETE_FILES = {
+    "faculties.py": "delete_faculty",
     "departments.py": "delete_department",
-    "branches.py": "delete_branch",
-    "years.py": "delete_year",
-    "courses.py": "delete_course",
+    "programs.py": "delete_program",
+    "specializations.py": "delete_specialization",
+    "batches.py": "delete_batch",
+    "semesters.py": "delete_semester",
     "classes.py": "delete_class",
 }
 
