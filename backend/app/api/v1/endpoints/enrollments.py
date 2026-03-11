@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -11,6 +11,17 @@ from app.schemas.enrollment import EnrollmentCreate, EnrollmentOut
 from app.services.audit import log_audit_event
 
 router = APIRouter()
+
+
+async def _distinct_strings(collection: Any, field: str, query: dict[str, Any], *, fallback_length: int) -> list[str]:
+    distinct = getattr(collection, "distinct", None)
+    if callable(distinct):
+        try:
+            return sorted({str(value) for value in await distinct(field, query) if value is not None})
+        except Exception:
+            pass
+    rows = await collection.find(query, {field: 1}).to_list(length=fallback_length)
+    return sorted({str(item.get(field)) for item in rows if item.get(field) is not None})
 
 
 def _can_manage_class(current_user: dict, class_doc: dict) -> bool:
@@ -47,14 +58,12 @@ async def _teacher_manageable_class_ids(current_user: dict, class_id_filter: str
         query = {"is_active": True}
         if class_id_filter:
             query["_id"] = parse_object_id(class_id_filter)
-        rows = await db.classes.find(query, {"_id": 1}).to_list(length=10000)
-        return {str(item.get("_id")) for item in rows if item.get("_id")}
+        return set(await _distinct_strings(db.classes, "_id", query, fallback_length=10000))
     if "class_coordinator" in extensions:
         query = {"class_coordinator_user_id": teacher_user_id, "is_active": True}
         if class_id_filter:
             query["_id"] = parse_object_id(class_id_filter)
-        rows = await db.classes.find(query, {"_id": 1}).to_list(length=1000)
-        return {str(item.get("_id")) for item in rows if item.get("_id")}
+        return set(await _distinct_strings(db.classes, "_id", query, fallback_length=1000))
     return set()
 
 
