@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 from bson import ObjectId
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile, status
@@ -20,6 +20,22 @@ from app.services.cloudinary_uploads import (
 from app.services.background_jobs import fanout_notice_notifications
 
 router = APIRouter()
+
+
+async def _distinct_values(collection: Any, field: str, query: dict, *, fallback_length: int) -> list[Any]:
+    distinct = getattr(collection, 'distinct', None)
+    if callable(distinct):
+        try:
+            return [value for value in await distinct(field, query) if value is not None]
+        except Exception:
+            pass
+    rows = await collection.find(query, {field: 1}).to_list(length=fallback_length)
+    values: list[Any] = []
+    for row in rows:
+        value = row.get(field)
+        if value is not None:
+            values.append(value)
+    return values
 
 
 def _can_publish_scope(current_user: dict, scope: str) -> bool:
@@ -77,38 +93,57 @@ async def _student_scope_visibility_ids(current_user: dict) -> tuple[set[str], s
     user_id = str(current_user['_id'])
     user_email = (current_user.get('email') or '').strip().lower()
 
-    student_profiles = await db.students.find({'$or': [{'email': user_email}, {'user_id': user_id}]}).to_list(length=1000)
-    student_ids = [str(item['_id']) for item in student_profiles]
+    student_query = {'$or': [{'email': user_email}, {'user_id': user_id}]}
+    student_object_ids = await _distinct_values(db.students, '_id', student_query, fallback_length=1000)
+    student_ids = [str(item) for item in student_object_ids if item]
 
-    class_ids: set[str] = set()
-    for profile in student_profiles:
-        class_id = profile.get('class_id')
-        if class_id:
-            class_ids.add(class_id)
+    class_ids = {
+        value
+        for value in await _distinct_values(db.students, 'class_id', student_query, fallback_length=1000)
+        if isinstance(value, str) and value
+    }
 
     if student_ids:
-        enrollments = await db.enrollments.find({'student_id': {'$in': student_ids}}).to_list(length=5000)
-        for enrollment in enrollments:
-            class_id = enrollment.get('class_id')
-            if class_id:
-                class_ids.add(class_id)
+        class_ids.update(
+            {
+                value
+                for value in await _distinct_values(
+                    db.enrollments,
+                    'class_id',
+                    {'student_id': {'$in': student_ids}},
+                    fallback_length=5000,
+                )
+                if isinstance(value, str) and value
+            }
+        )
 
     batch_ids: set[str] = set()
     if class_ids:
         class_object_ids = [ObjectId(class_id) for class_id in class_ids if ObjectId.is_valid(class_id)]
-        classes = await db.classes.find({'_id': {'$in': class_object_ids}}).to_list(length=2000) if class_object_ids else []
-        for class_doc in classes:
-            batch_id = class_doc.get('batch_id')
-            if batch_id:
-                batch_ids.add(batch_id)
+        if class_object_ids:
+            batch_ids = {
+                value
+                for value in await _distinct_values(
+                    db.classes,
+                    'batch_id',
+                    {'_id': {'$in': class_object_ids}},
+                    fallback_length=2000,
+                )
+                if isinstance(value, str) and value
+            }
 
     subject_ids: set[str] = set()
     if class_ids:
-        assignments = await db.assignments.find({'class_id': {'$in': list(class_ids)}}).to_list(length=5000)
-        for assignment in assignments:
-            subject_id = assignment.get('subject_id')
-            if subject_id:
-                subject_ids.add(subject_id)
+        subject_ids = {
+            value
+            for value in await _distinct_values(
+                db.assignments,
+                'subject_id',
+                {'class_id': {'$in': list(class_ids)}},
+                fallback_length=5000,
+            )
+            if isinstance(value, str) and value
+        }
 
     return class_ids, batch_ids, subject_ids
 
