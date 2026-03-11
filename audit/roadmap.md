@@ -74,28 +74,72 @@ Debt impact:
 
 ## 9. Recommended Roadmap (Phase-wise)
 
+## Execution Status Update (2026-03-11)
+- Phase 0 (stabilize and secure): completed in `56fbe7d`.
+  - dependency upgrades completed (backend + frontend)
+  - SHA1 replaced with SHA256 for submission AI idempotency
+  - CI quality gates added (`pip_audit`, `npm audit`, backend/frontend coverage)
+- Phase 1 (performance and reliability): core backlog completed across `9f39c65`, `d3eac0a`, `13722be`, `455069a`, `76438a9`.
+  - notice fanout batching and high-limit query reduction completed
+  - teacher-scope query hot paths reduced with `distinct` + safe fallback patterns
+  - remaining open item: endpoint/scheduler observability metrics and alerting
+- Phase 2 (structural refactor): backend refactor implementation completed in current branch (pending merge/push).
+  - shared access-control utilities extracted into services
+  - monolithic `ai.py` and `evaluations.py` split into submodules
+  - service-layer orchestration added for AI runtime, AI ops, AI chat, evaluation workflows, and access-policy checks
+
 ### Phase 0 (0-1 week): Stabilize and Secure
+Status: `Completed`
 1. Patch dependencies and eliminate SHA1 usage.
 2. Clean flake8 failures.
 3. Add SCA + coverage CI gates.
 
 ### Phase 1 (1-3 weeks): Performance and Reliability
+Status: `Mostly Completed`
 1. Fix top `to_list` hotspots with paging/chunking.
 2. Parallelize/batch notice fanout.
-3. Add endpoint and scheduler observability metrics with alerting.
+3. Add endpoint and scheduler observability metrics with alerting (open).
 
 ### Phase 2 (3-6 weeks): Structural Refactor
-1. Extract shared access-control/governance utilities.
-2. Split monolithic endpoints into submodules.
-3. Introduce service layer for academic/AI/communication domains.
+Status: `Completed (Backend) / Pending (Frontend policy UX follow-up)`
+
+Workstream A: Shared access-control and governance utilities
+1. Create a centralized access policy service for teacher/admin scope checks. (completed)
+2. Replace duplicated `_teacher_can_access_assignment` logic across: (completed)
+   - `backend/app/api/v1/endpoints/ai.py`
+   - `backend/app/api/v1/endpoints/evaluations.py`
+   - `backend/app/api/v1/endpoints/similarity.py`
+   - `backend/app/api/v1/endpoints/submissions.py`
+3. Consolidate governance delete-approval enforcement wrappers for academic modules. (partially complete; further standardization pending)
+
+Workstream B: Split monolithic endpoint files
+1. Split `backend/app/api/v1/endpoints/ai.py` into role-focused submodules: (completed)
+   - runtime/admin config
+   - jobs and operations
+   - chat/evaluation
+2. Split `backend/app/api/v1/endpoints/evaluations.py` into: (completed)
+   - CRUD and grade workflows
+   - AI preview/refresh/trace workflows
+3. Add router composition tests to guarantee path and permission parity. (covered by existing backend test suite; explicit dedicated composition tests still optional)
+
+Workstream C: Service-layer introduction (AI/academic/communication)
+1. Move non-HTTP business logic from endpoints into services. (completed for AI/evaluation/submission/similarity domains)
+2. Keep endpoint handlers thin (validation, auth, response mapping only). (completed for AI and evaluations; improved for submissions/similarity)
+3. Define explicit command/query boundaries per domain. (partially complete; expanded command/query contracts can continue in Phase 3)
+
+Phase 2 acceptance gates
+1. No API path changes and no role-regression in route tests.
+2. Static analysis and test suite remain green in CI.
+3. Endpoint files targeted in this phase are reduced in size and duplicate access logic is removed.
 
 ### Phase 3 (6-10 weeks): Data and Documentation Integrity
+Status: `Pending`
 1. Introduce migration/version strategy for Mongo data shapes.
 2. Remove legacy schema/index artifacts where safe.
 3. Align and version docs (stop ignoring actionable docs, refresh READMEs/module docs).
 
 ### Phase 4 (Continuous): Scale Readiness
+Status: `Pending`
 1. Load/perf regression tests in CI/CD.
 2. Capacity planning for AI and similarity workloads.
 3. Release governance with risk budgets and rollback criteria.
-

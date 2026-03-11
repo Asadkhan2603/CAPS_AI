@@ -1,4 +1,4 @@
-from typing import List, Set
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -10,56 +10,13 @@ from app.schemas.similarity_log import SimilarityLogOut
 from app.services.ai_jobs import AI_JOB_TYPE_SIMILARITY, queue_ai_job, schedule_ai_job_processing, serialize_ai_job
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
+from app.services.similarity_access_policy import (
+    filter_similarity_logs_for_user,
+    teacher_can_run_similarity_for_assignment,
+)
 from app.services.similarity_pipeline import run_similarity_pipeline
 
 router = APIRouter()
-
-
-async def _teacher_can_access_assignment(teacher_user_id: str, assignment_id: str) -> bool:
-    assignment = await db.assignments.find_one({'_id': parse_object_id(assignment_id)})
-    if not assignment:
-        return False
-    if assignment.get('created_by') == teacher_user_id:
-        return True
-
-    class_id = assignment.get('class_id')
-    if not class_id:
-        return False
-
-    class_doc = await db.classes.find_one({'_id': parse_object_id(class_id)})
-    if not class_doc:
-        return False
-    return class_doc.get('class_coordinator_user_id') == teacher_user_id
-
-
-async def _class_coordinator_class_ids(user_id: str) -> Set[str]:
-    classes = await db.classes.find({'class_coordinator_user_id': user_id}).to_list(length=1000)
-    return {str(item.get('_id')) for item in classes if item.get('_id')}
-
-
-async def _can_view_similarity_log(current_user: dict, item: dict) -> bool:
-    if current_user.get('role') == 'admin':
-        return True
-    if current_user.get('role') != 'teacher':
-        return False
-
-    user_id = str(current_user['_id'])
-    extensions = current_user.get('extended_roles', [])
-    if 'year_head' in extensions:
-        return True
-
-    if 'class_coordinator' in extensions:
-        coordinator_classes = await _class_coordinator_class_ids(user_id)
-        if item.get('source_class_id') in coordinator_classes or item.get('matched_class_id') in coordinator_classes:
-            return True
-
-    source_assignment_id = item.get('source_assignment_id')
-    matched_assignment_id = item.get('matched_assignment_id')
-    if source_assignment_id and await _teacher_can_access_assignment(user_id, source_assignment_id):
-        return True
-    if matched_assignment_id and await _teacher_can_access_assignment(user_id, matched_assignment_id):
-        return True
-    return False
 
 
 @router.get('/checks', response_model=List[SimilarityLogOut])
@@ -79,12 +36,7 @@ async def similarity_checks(
     cursor = db.similarity_logs.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
 
-    if current_user.get('role') == 'teacher':
-        scoped = []
-        for item in items:
-            if await _can_view_similarity_log(current_user, item):
-                scoped.append(item)
-        items = scoped
+    items = await filter_similarity_logs_for_user(current_user, items, database=db)
 
     return [SimilarityLogOut(**similarity_log_public(item)) for item in items]
 
@@ -109,7 +61,11 @@ async def run_similarity_check(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Submission has no assignment mapping')
 
     if current_user.get('role') == 'teacher':
-        allowed = await _teacher_can_access_assignment(str(current_user['_id']), source_assignment_id)
+        allowed = await teacher_can_run_similarity_for_assignment(
+            str(current_user['_id']),
+            source_assignment_id,
+            database=db,
+        )
         if not allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to run similarity on this submission')
 
@@ -139,12 +95,7 @@ async def run_similarity_check(
     )
 
     created_items = list(result.get('items') or [])
-    if current_user.get('role') == 'teacher':
-        scoped = []
-        for item in created_items:
-            if await _can_view_similarity_log(current_user, item):
-                scoped.append(item)
-        created_items = scoped
+    created_items = await filter_similarity_logs_for_user(current_user, created_items, database=db)
 
     return [SimilarityLogOut(**similarity_log_public(item)) for item in created_items]
 
@@ -169,7 +120,11 @@ async def run_similarity_check_async(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Submission has no assignment mapping')
 
     if current_user.get('role') == 'teacher':
-        allowed = await _teacher_can_access_assignment(str(current_user['_id']), source_assignment_id)
+        allowed = await teacher_can_run_similarity_for_assignment(
+            str(current_user['_id']),
+            source_assignment_id,
+            database=db,
+        )
         if not allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to run similarity on this submission')
 

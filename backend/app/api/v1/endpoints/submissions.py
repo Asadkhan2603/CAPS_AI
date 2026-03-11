@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
-from typing import Any, List
+from typing import List
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -16,6 +16,7 @@ from app.services.ai_jobs import AI_JOB_TYPE_BULK_SUBMISSION, queue_ai_job, sche
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
 from app.services.file_parser import parse_file_content
+from app.services.submission_access_policy import teacher_accessible_assignment_ids, teacher_can_access_submission
 from app.services.submission_ai import evaluate_submission_and_save
 
 router = APIRouter()
@@ -23,71 +24,6 @@ router = APIRouter()
 UPLOAD_DIR = Path('uploads/submissions')
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.txt', '.md'}
-
-
-async def _teacher_can_access_assignment(teacher_user_id: str, assignment_id: str) -> bool:
-    assignment = await db.assignments.find_one({'_id': parse_object_id(assignment_id)})
-    if not assignment:
-        return False
-    if assignment.get('created_by') == teacher_user_id:
-        return True
-
-    class_id = assignment.get('class_id')
-    if not class_id:
-        return False
-
-    class_doc = await db.classes.find_one({'_id': parse_object_id(class_id)})
-    if not class_doc:
-        return False
-    return class_doc.get('class_coordinator_user_id') == teacher_user_id
-
-
-async def _distinct_strings(collection: Any, field: str, query: dict[str, Any], *, fallback_length: int) -> list[str]:
-    distinct = getattr(collection, 'distinct', None)
-    if callable(distinct):
-        try:
-            return sorted({str(value) for value in await distinct(field, query) if value is not None})
-        except Exception:
-            pass
-    rows = await collection.find(query, {field: 1}).to_list(length=fallback_length)
-    return sorted({str(row.get(field)) for row in rows if row.get(field) is not None})
-
-
-async def _teacher_accessible_assignment_ids(teacher_user_id: str) -> set[str]:
-    created_ids = set(
-        await _distinct_strings(
-            db.assignments,
-            '_id',
-            {'created_by': teacher_user_id},
-            fallback_length=5000,
-        )
-    )
-
-    class_ids = await _distinct_strings(
-        db.classes,
-        '_id',
-        {'class_coordinator_user_id': teacher_user_id, 'is_active': True},
-        fallback_length=5000,
-    )
-    if not class_ids:
-        return created_ids
-
-    class_assignment_ids = set(
-        await _distinct_strings(
-            db.assignments,
-            '_id',
-            {'class_id': {'$in': class_ids}},
-            fallback_length=10000,
-        )
-    )
-    return created_ids.union(class_assignment_ids)
-
-
-async def _teacher_can_access_submission(teacher_user_id: str, submission: dict) -> bool:
-    assignment_id = submission.get('assignment_id')
-    if not assignment_id:
-        return False
-    return await _teacher_can_access_assignment(teacher_user_id, assignment_id)
 
 
 @router.get('/', response_model=List[SubmissionOut])
@@ -111,7 +47,10 @@ async def list_submissions(
         query['student_user_id'] = str(current_user['_id'])
     if current_user.get('role') == 'teacher':
         teacher_user_id = str(current_user['_id'])
-        accessible_assignment_ids = await _teacher_accessible_assignment_ids(teacher_user_id)
+        accessible_assignment_ids = await teacher_accessible_assignment_ids(
+            teacher_user_id,
+            database=db,
+        )
         if not accessible_assignment_ids:
             return []
         if assignment_id and assignment_id not in accessible_assignment_ids:
@@ -139,7 +78,7 @@ async def get_submission(
     if current_user.get('role') == 'student' and item.get('student_user_id') != str(current_user['_id']):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to view this submission')
     if current_user.get('role') == 'teacher':
-        allowed = await _teacher_can_access_submission(str(current_user['_id']), item)
+        allowed = await teacher_can_access_submission(str(current_user['_id']), item, database=db)
         if not allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to view this submission')
 
@@ -216,7 +155,7 @@ async def ai_evaluate_submission(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Submission not found')
 
     if current_user.get('role') == 'teacher':
-        allowed = await _teacher_can_access_submission(str(current_user['_id']), item)
+        allowed = await teacher_can_access_submission(str(current_user['_id']), item, database=db)
         if not allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to evaluate this submission')
 
@@ -255,7 +194,7 @@ async def ai_evaluate_pending_submissions(
 
     for item in items:
         if current_user.get('role') == 'teacher':
-            allowed = await _teacher_can_access_submission(teacher_user_id, item)
+            allowed = await teacher_can_access_submission(teacher_user_id, item, database=db)
             if not allowed:
                 continue
         if item.get('_id'):
@@ -311,7 +250,7 @@ async def update_submission(
     if current_user.get('role') == 'student' and item.get('student_user_id') != str(current_user['_id']):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to update this submission')
     if current_user.get('role') == 'teacher':
-        allowed = await _teacher_can_access_submission(str(current_user['_id']), item)
+        allowed = await teacher_can_access_submission(str(current_user['_id']), item, database=db)
         if not allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to update this submission')
 
@@ -340,7 +279,7 @@ async def delete_submission(
     if current_user.get('role') == 'student' and item.get('student_user_id') != str(current_user['_id']):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to delete this submission')
     if current_user.get('role') == 'teacher':
-        allowed = await _teacher_can_access_submission(str(current_user['_id']), item)
+        allowed = await teacher_can_access_submission(str(current_user['_id']), item, database=db)
         if not allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to delete this submission')
 
