@@ -11,6 +11,7 @@ from app.models.semesters import semester_public
 from app.schemas.semester_item import SemesterCreate, SemesterOut, SemesterUpdate
 from app.services.academic_batching import build_semester_academic_year
 from app.services.audit import log_destructive_action_event
+from app.services.governance import enforce_review_approval
 
 router = APIRouter()
 
@@ -132,6 +133,7 @@ async def update_semester(
 @router.delete("/{semester_id}")
 async def delete_semester(
     semester_id: str,
+    review_id: str | None = Query(default=None),
     current_user=Depends(require_permission("semesters.manage")),
 ) -> dict:
     actor_user_id = str(current_user.get("_id") or "") or None
@@ -142,8 +144,16 @@ async def delete_semester(
         entity_id=semester_id,
         stage="requested",
         detail="Semester delete requested",
+        review_id=review_id,
         metadata={"admin_type": current_user.get("admin_type")},
     )
+    governance_completed = bool(await enforce_review_approval(
+        current_user=current_user,
+        review_id=review_id,
+        action="semesters.delete",
+        entity_type="semester",
+        entity_id=semester_id,
+    ))
     result = await db.semesters.update_one(
         {"_id": parse_object_id(semester_id), "is_active": True},
         build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
@@ -157,6 +167,8 @@ async def delete_semester(
         entity_id=semester_id,
         stage="completed",
         detail="Semester archived",
+        review_id=review_id,
+        governance_completed=governance_completed,
         outcome="archived",
         metadata={"admin_type": current_user.get("admin_type")},
     )

@@ -10,6 +10,7 @@ from app.core.soft_delete import apply_is_active_filter, build_soft_delete_updat
 from app.models.faculties import faculty_public
 from app.schemas.faculty import FacultyCreate, FacultyOut, FacultyUpdate
 from app.services.audit import log_destructive_action_event
+from app.services.governance import enforce_review_approval
 
 router = APIRouter()
 
@@ -97,6 +98,7 @@ async def update_faculty(
 @router.delete("/{faculty_id}")
 async def delete_faculty(
     faculty_id: str,
+    review_id: str | None = Query(default=None),
     current_user=Depends(require_permission("faculties.manage")),
 ) -> dict:
     actor_user_id = str(current_user.get("_id") or "") or None
@@ -107,8 +109,16 @@ async def delete_faculty(
         entity_id=faculty_id,
         stage="requested",
         detail="Faculty delete requested",
+        review_id=review_id,
         metadata={"admin_type": current_user.get("admin_type")},
     )
+    governance_completed = bool(await enforce_review_approval(
+        current_user=current_user,
+        review_id=review_id,
+        action="faculties.delete",
+        entity_type="faculty",
+        entity_id=faculty_id,
+    ))
     result = await db.faculties.update_one(
         {"_id": parse_object_id(faculty_id), "is_active": True},
         build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
@@ -122,6 +132,8 @@ async def delete_faculty(
         entity_id=faculty_id,
         stage="completed",
         detail="Faculty archived",
+        review_id=review_id,
+        governance_completed=governance_completed,
         outcome="archived",
         metadata={"admin_type": current_user.get("admin_type")},
     )
