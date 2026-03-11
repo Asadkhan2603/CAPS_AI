@@ -26,6 +26,10 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
+      - name: Dependency audit backend
+        run: |
+          python -m pip_audit -r backend/requirements.txt --ignore-vuln CVE-2024-23342
+
       - name: Flake8 backend safety-critical modules
         run: |
           python -m flake8 \
@@ -85,10 +89,12 @@ jobs:
           python-version: "3.11"
 
       - name: Install backend deps
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
-      - name: Run backend tests
-        run: pytest -q
+      - name: Run backend tests with coverage gate
+        run: pytest -q --cov=app --cov-report=term-missing --cov-fail-under=55
 
   frontend:
     runs-on: ubuntu-latest
@@ -109,11 +115,17 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
+      - name: Dependency audit frontend
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Lint frontend
         run: npm run lint
 
       - name: Run frontend tests
         run: npm run test:ci
+
+      - name: Run frontend coverage gate
+        run: npm run test:coverage
 
       - name: Build frontend
         run: npm run build

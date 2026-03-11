@@ -250,7 +250,7 @@ async def ai_evaluate_pending_submissions(
             'job': None,
         }
 
-    ids_fingerprint = hashlib.sha1(','.join(candidate_ids).encode('utf-8')).hexdigest()[:16]
+    ids_fingerprint = hashlib.sha256(','.join(candidate_ids).encode('utf-8')).hexdigest()[:16]
     idempotency_key = f"{current_user.get('role')}:{teacher_user_id}:bulk_submission_ai:{assignment_id or 'all'}:{ids_fingerprint}:{limit}"
     job, created = await queue_ai_job(
         job_type=AI_JOB_TYPE_BULK_SUBMISSION,
