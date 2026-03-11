@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
-from typing import List
+from typing import Any, List
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -42,26 +42,44 @@ async def _teacher_can_access_assignment(teacher_user_id: str, assignment_id: st
     return class_doc.get('class_coordinator_user_id') == teacher_user_id
 
 
-async def _teacher_accessible_assignment_ids(teacher_user_id: str) -> set[str]:
-    created_rows = await db.assignments.find(
-        {'created_by': teacher_user_id},
-        {'_id': 1},
-    ).to_list(length=5000)
-    created_ids = {str(item.get('_id')) for item in created_rows if item.get('_id')}
+async def _distinct_strings(collection: Any, field: str, query: dict[str, Any], *, fallback_length: int) -> list[str]:
+    distinct = getattr(collection, 'distinct', None)
+    if callable(distinct):
+        try:
+            return sorted({str(value) for value in await distinct(field, query) if value is not None})
+        except Exception:
+            pass
+    rows = await collection.find(query, {field: 1}).to_list(length=fallback_length)
+    return sorted({str(row.get(field)) for row in rows if row.get(field) is not None})
 
-    class_rows = await db.classes.find(
+
+async def _teacher_accessible_assignment_ids(teacher_user_id: str) -> set[str]:
+    created_ids = set(
+        await _distinct_strings(
+            db.assignments,
+            '_id',
+            {'created_by': teacher_user_id},
+            fallback_length=5000,
+        )
+    )
+
+    class_ids = await _distinct_strings(
+        db.classes,
+        '_id',
         {'class_coordinator_user_id': teacher_user_id, 'is_active': True},
-        {'_id': 1},
-    ).to_list(length=5000)
-    class_ids = [str(item.get('_id')) for item in class_rows if item.get('_id')]
+        fallback_length=5000,
+    )
     if not class_ids:
         return created_ids
 
-    class_assignment_rows = await db.assignments.find(
-        {'class_id': {'$in': class_ids}},
-        {'_id': 1},
-    ).to_list(length=10000)
-    class_assignment_ids = {str(item.get('_id')) for item in class_assignment_rows if item.get('_id')}
+    class_assignment_ids = set(
+        await _distinct_strings(
+            db.assignments,
+            '_id',
+            {'class_id': {'$in': class_ids}},
+            fallback_length=10000,
+        )
+    )
     return created_ids.union(class_assignment_ids)
 
 
