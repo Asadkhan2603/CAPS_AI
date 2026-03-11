@@ -25,8 +25,8 @@ async def preview_target(
     if not scope_ref_id:
         raise HTTPException(status_code=400, detail='scope_ref_id is required for selected scope')
 
-    if scope == 'year':
-        class_rows = await db.classes.find({'year_id': scope_ref_id}).to_list(length=5000)
+    if scope == 'batch':
+        class_rows = await db.classes.find({'batch_id': scope_ref_id}).to_list(length=5000)
         class_ids = [str(item.get('_id')) for item in class_rows if item.get('_id')]
         student_ids = set()
         if class_ids:
@@ -34,7 +34,7 @@ async def preview_target(
             for row in enrollment_rows:
                 if row.get('student_id'):
                     student_ids.add(row.get('student_id'))
-        return {'scope': 'year', 'matched_users': len(student_ids), 'estimated_reach': len(student_ids)}
+        return {'scope': 'batch', 'matched_users': len(student_ids), 'estimated_reach': len(student_ids)}
 
     if scope == 'class':
         parse_object_id(scope_ref_id)

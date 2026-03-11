@@ -60,9 +60,11 @@ export default function AdminDashboardPage() {
         </p>
         <div className="flex flex-wrap gap-2">
           <Link className="btn-secondary" to="/admin/governance">Go Governance</Link>
-          <Link className="btn-secondary" to="/admin/academic-structure">Go Academic Structure</Link>
-          <Link className="btn-secondary" to="/admin/operations">Go Operations</Link>
-          <Link className="btn-secondary" to="/admin/clubs">Go Clubs</Link>
+          <Link className="btn-secondary" to="/faculties">Go Academic Structure</Link>
+          <Link className="btn-secondary" to="/students">Go Operations</Link>
+          <Link className="btn-secondary" to="/clubs">Go Clubs</Link>
+          <Link className="btn-secondary" to="/communication/announcements">Go Communication</Link>
+          <Link className="btn-secondary" to="/audit-logs">Go Compliance</Link>
         </div>
       </Card>
     </div>

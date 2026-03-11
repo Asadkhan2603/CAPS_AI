@@ -9,13 +9,13 @@ export default function StatCard({ icon: Icon, title, value, hint, gradient = 'f
       <div className={cn('absolute inset-x-0 top-0 h-1 bg-gradient-to-r', gradient)} />
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{title}</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-50">{value}</p>
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{title}</p>
+          <p className="mt-1.5 text-[2rem] font-semibold leading-none text-slate-900 dark:text-slate-50">{value}</p>
           {hint ? <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</p> : null}
         </div>
         {Icon ? (
-          <div className="rounded-2xl bg-brand-50 p-3 text-brand-600 dark:bg-brand-900/40 dark:text-brand-300">
-            <Icon size={20} />
+          <div className="rounded-2xl bg-brand-50 p-2.5 text-brand-600 dark:bg-brand-900/40 dark:text-brand-300">
+            <Icon size={18} />
           </div>
         ) : null}
       </div>

@@ -135,6 +135,7 @@ def _empty_academic_structure_payload(*, page: int, page_size: int, total_classe
             'name': settings.app_name,
             'location': 'Indore, India',
         },
+        'programs': [],
         'courses': [],
         'pagination': {
             'page': page,
@@ -200,8 +201,9 @@ async def analytics_summary(
         'role': role,
         'summary': {
             'users': await db.users.count_documents({}),
-            'courses': await db.courses.count_documents({}),
-            'years': await db.years.count_documents({}),
+            'programs': await db.programs.count_documents({}),
+            'batches': await db.batches.count_documents({}),
+            'semesters': await db.semesters.count_documents({}),
             'classes': await db.classes.count_documents({}),
             'subjects': await db.subjects.count_documents({}),
             'students': await db.students.count_documents({}),
@@ -228,7 +230,7 @@ async def _teacher_section_tiles(
     now = datetime.now(timezone.utc)
     classes = await db.classes.find(
         {'class_coordinator_user_id': user_id, 'is_active': True},
-        {'name': 1, 'year_id': 1},
+        {'name': 1, 'program_id': 1, 'batch_id': 1, 'semester_id': 1},
     ).to_list(length=ANALYTICS_SMALL_SCAN_CAP)
     teacher_assignment_classes = await _distinct_values(
         db.assignments,
@@ -241,7 +243,7 @@ async def _teacher_section_tiles(
     if extra_class_object_ids:
         extra_classes = await db.classes.find(
             {'_id': {'$in': extra_class_object_ids}, 'is_active': True},
-            {'name': 1, 'year_id': 1},
+            {'name': 1, 'program_id': 1, 'batch_id': 1, 'semester_id': 1},
         ).to_list(length=ANALYTICS_SMALL_SCAN_CAP)
 
     class_by_id = {str(item.get('_id')): item for item in classes}
@@ -406,7 +408,9 @@ async def _teacher_section_tiles(
             {
                 'class_id': class_id,
                 'class_name': class_doc.get('name', class_id),
-                'year_id': class_doc.get('year_id'),
+                'program_id': class_doc.get('program_id'),
+                'batch_id': class_doc.get('batch_id'),
+                'semester_id': class_doc.get('semester_id'),
                 'total_students': total_students,
                 'active_assignments': active_assignments,
                 'late_submissions_count': late_submissions_count,
@@ -487,7 +491,13 @@ async def academic_structure(
     skip = (page - 1) * page_size
     class_cursor = db.classes.find(
         class_query,
-        {'name': 1, 'course_id': 1, 'year_id': 1, 'class_coordinator_user_id': 1},
+        {
+            'name': 1,
+            'program_id': 1,
+            'batch_id': 1,
+            'semester_id': 1,
+            'class_coordinator_user_id': 1,
+        },
     )
     if hasattr(class_cursor, 'sort'):
         class_cursor = class_cursor.sort('name', 1)
@@ -570,18 +580,33 @@ async def academic_structure(
         ).to_list(length=_bounded_cap(minimum=ANALYTICS_SMALL_SCAN_CAP, estimate=len(subject_object_ids) * 2, maximum=ANALYTICS_MEDIUM_SCAN_CAP))
         subject_by_id = {str(item.get('_id')): item for item in subjects if item.get('_id')}
 
-    course_ids = {str(item.get('course_id')) for item in classes if item.get('course_id')}
-    year_ids = {str(item.get('year_id')) for item in classes if item.get('year_id')}
+    program_ids = {str(item.get('program_id')) for item in classes if item.get('program_id')}
+    batch_ids = {str(item.get('batch_id')) for item in classes if item.get('batch_id')}
+    semester_ids = {str(item.get('semester_id')) for item in classes if item.get('semester_id')}
+    programs_collection = getattr(db, 'programs', None)
+    batches_collection = getattr(db, 'batches', None)
+    semesters_collection = getattr(db, 'semesters', None)
 
-    course_object_ids = _safe_object_ids(list(course_ids))
-    courses = await db.courses.find({'_id': {'$in': course_object_ids}, 'is_active': True}).to_list(
-        length=_bounded_cap(minimum=ANALYTICS_SMALL_SCAN_CAP, estimate=len(course_object_ids) * 2, maximum=ANALYTICS_MEDIUM_SCAN_CAP)
-    ) if course_object_ids else []
+    program_object_ids = _safe_object_ids(list(program_ids))
+    programs = []
+    if programs_collection is not None and program_object_ids:
+        programs = await programs_collection.find({'_id': {'$in': program_object_ids}, 'is_active': True}).to_list(
+            length=_bounded_cap(minimum=ANALYTICS_SMALL_SCAN_CAP, estimate=len(program_object_ids) * 2, maximum=ANALYTICS_MEDIUM_SCAN_CAP)
+        )
 
-    year_object_ids = _safe_object_ids(list(year_ids))
-    years = await db.years.find({'_id': {'$in': year_object_ids}, 'is_active': True}).to_list(
-        length=_bounded_cap(minimum=ANALYTICS_SMALL_SCAN_CAP, estimate=len(year_object_ids) * 2, maximum=ANALYTICS_MEDIUM_SCAN_CAP)
-    ) if year_object_ids else []
+    batch_object_ids = _safe_object_ids(list(batch_ids))
+    batches = []
+    if batches_collection is not None and batch_object_ids:
+        batches = await batches_collection.find({'_id': {'$in': batch_object_ids}, 'is_active': True}).to_list(
+            length=_bounded_cap(minimum=ANALYTICS_SMALL_SCAN_CAP, estimate=len(batch_object_ids) * 2, maximum=ANALYTICS_MEDIUM_SCAN_CAP)
+        )
+
+    semester_object_ids = _safe_object_ids(list(semester_ids))
+    semesters = []
+    if semesters_collection is not None and semester_object_ids:
+        semesters = await semesters_collection.find({'_id': {'$in': semester_object_ids}, 'is_active': True}).to_list(
+            length=_bounded_cap(minimum=ANALYTICS_SMALL_SCAN_CAP, estimate=len(semester_object_ids) * 2, maximum=ANALYTICS_MEDIUM_SCAN_CAP)
+        )
 
     coordinator_ids = {str(item.get('class_coordinator_user_id')) for item in classes if item.get('class_coordinator_user_id')}
     coordinator_object_ids = _safe_object_ids(list(coordinator_ids))
@@ -641,35 +666,77 @@ async def academic_structure(
             ),
         )
 
-    course_by_id = {str(item.get('_id')): item for item in courses if item.get('_id')}
-    year_by_id = {str(item.get('_id')): item for item in years if item.get('_id')}
+    program_by_id = {str(item.get('_id')): item for item in programs if item.get('_id')}
+    batch_by_id = {str(item.get('_id')): item for item in batches if item.get('_id')}
+    semester_by_id = {str(item.get('_id')): item for item in semesters if item.get('_id')}
 
     tree: dict[str, dict[str, Any]] = {}
     for class_doc in classes:
         class_id = str(class_doc.get('_id'))
-        course_id = str(class_doc.get('course_id') or '')
-        year_id = str(class_doc.get('year_id') or '')
-        if not class_id or not course_id or not year_id:
+        if not class_id:
             continue
 
-        course = course_by_id.get(course_id)
-        year = year_by_id.get(year_id)
-        if not course or not year:
-            continue
+        raw_program_id = str(class_doc.get('program_id') or '')
+        raw_batch_id = str(class_doc.get('batch_id') or '')
+        raw_semester_id = str(class_doc.get('semester_id') or '')
 
-        course_node = tree.setdefault(
-            course_id,
+        program_doc = program_by_id.get(raw_program_id) if raw_program_id else None
+        if program_doc:
+            program_key = raw_program_id
+            program_name = program_doc.get('name') or 'Program'
+            program_legacy = False
+        else:
+            program_key = f'unassigned-program:{class_id}'
+            program_name = 'Unassigned Program'
+            program_legacy = True
+
+        program_node = tree.setdefault(
+            program_key,
             {
-                'id': course_id,
-                'name': course.get('name') or 'Course',
-                'years': {},
+                'id': raw_program_id or program_key,
+                'name': program_name,
+                'is_legacy': program_legacy,
+                'batches': {},
             },
         )
-        year_node = course_node['years'].setdefault(
-            year_id,
+
+        batch_doc = batch_by_id.get(raw_batch_id) if raw_batch_id else None
+        if batch_doc:
+            batch_key = raw_batch_id
+            batch_name = batch_doc.get('name') or batch_doc.get('academic_span_label') or batch_doc.get('code') or 'Batch'
+            batch_legacy = False
+        else:
+            batch_key = f'unassigned-batch:{class_id}'
+            batch_name = 'Unassigned Batch'
+            batch_legacy = True
+
+        batch_node = program_node['batches'].setdefault(
+            batch_key,
             {
-                'id': year_id,
-                'name': year.get('label') or f"Year {year.get('year_number')}",
+                'id': raw_batch_id or batch_key,
+                'name': batch_name,
+                'is_legacy': batch_legacy,
+                'semesters': {},
+                'classes': [],
+            },
+        )
+
+        semester_doc = semester_by_id.get(raw_semester_id) if raw_semester_id else None
+        if semester_doc:
+            semester_key = raw_semester_id
+            semester_name = semester_doc.get('label') or f"Semester {semester_doc.get('semester_number')}"
+            semester_legacy = False
+        else:
+            semester_key = f'unassigned-semester:{batch_key}'
+            semester_name = 'Sections'
+            semester_legacy = True
+
+        semester_node = batch_node['semesters'].setdefault(
+            semester_key,
+            {
+                'id': raw_semester_id or semester_key,
+                'name': semester_name,
+                'is_legacy': semester_legacy,
                 'classes': [],
             },
         )
@@ -709,36 +776,52 @@ async def academic_structure(
                     }
                 )
 
-        year_node['classes'].append(
-            {
-                'id': class_id,
-                'name': class_doc.get('name') or class_id,
-                'coordinator': teacher_name,
-                'students': student_items,
-                'subjects': subject_items,
-            }
-        )
+        class_item = {
+            'id': class_id,
+            'name': class_doc.get('name') or class_id,
+            'coordinator': teacher_name,
+            'students': student_items,
+            'subjects': subject_items,
+        }
+        semester_node['classes'].append(class_item)
+        batch_node['classes'].append(class_item)
 
-    course_items = []
-    for course in tree.values():
-        year_items = []
-        for year in course['years'].values():
-            year_items.append(
+    program_items = []
+    for program in tree.values():
+        batch_items = []
+        for batch in program['batches'].values():
+            semester_items = []
+            for semester in batch['semesters'].values():
+                semester_items.append(
+                    {
+                        'id': semester['id'],
+                        'name': semester['name'],
+                        'is_legacy': semester['is_legacy'],
+                        'classes': semester['classes'],
+                    }
+                )
+            semester_items.sort(key=lambda item: str(item.get('name') or ''))
+            batch_items.append(
                 {
-                    'id': year['id'],
-                    'name': year['name'],
-                    'classes': year['classes'],
+                    'id': batch['id'],
+                    'name': batch['name'],
+                    'is_legacy': batch['is_legacy'],
+                    'classes': batch['classes'],
+                    'semesters': semester_items,
                 }
             )
-        year_items.sort(key=lambda item: str(item.get('name') or ''))
-        course_items.append(
+        batch_items.sort(key=lambda item: str(item.get('name') or ''))
+        program_items.append(
             {
-                'id': course['id'],
-                'name': course['name'],
-                'years': year_items,
+                'id': program['id'],
+                'name': program['name'],
+                'is_legacy': program['is_legacy'],
+                'batches': batch_items,
+                # Compatibility alias for older clients that still expect course -> year -> classes.
+                'years': batch_items,
             }
         )
-    course_items.sort(key=lambda item: str(item.get('name') or ''))
+    program_items.sort(key=lambda item: str(item.get('name') or ''))
 
     payload = {
         'university': {
@@ -746,7 +829,8 @@ async def academic_structure(
             'name': settings.app_name,
             'location': 'Indore, India',
         },
-        'courses': course_items,
+        'programs': program_items,
+        'courses': program_items,
         'pagination': {
             'page': page,
             'page_size': page_size,

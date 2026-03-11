@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
-from test_auth import _setup_fake_db
+from test_auth import _create_section_payload, _seed_canonical_structure, _setup_fake_db
 
 
 def _register_and_login(client: TestClient, *, full_name: str, email: str, role: str, password: str = "password123", extended_roles: list[str] | None = None):
@@ -21,25 +21,17 @@ def _register_and_login(client: TestClient, *, full_name: str, email: str, role:
 
 
 def _create_class_stack(client: TestClient, headers: dict, suffix: str):
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": f"BTECH {suffix}", "code": f"BT{suffix}", "description": "desc"},
-        headers=headers,
-    )
-    assert course.status_code == 201
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 4, "label": "Fourth Year"},
-        headers=headers,
-    )
-    assert year.status_code == 201
+    from app.api.v1.endpoints import auth as auth_endpoint
+
+    fake_db = auth_endpoint.db
+    structure = _seed_canonical_structure(fake_db, suffix=suffix, semester_number=7)
     class_row = client.post(
-        "/api/v1/classes/",
-        json={"course_id": course.json()["id"], "year_id": year.json()["id"], "name": f"CSE-{suffix}"},
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name=f"CSE-{suffix}"),
         headers=headers,
     )
     assert class_row.status_code == 201
-    return course.json(), year.json(), class_row.json()
+    return structure, class_row.json()
 
 
 def test_timetable_template_must_be_same_class() -> None:
@@ -57,17 +49,17 @@ def test_timetable_template_must_be_same_class() -> None:
         extended_roles=["class_coordinator"],
     )
 
-    _course_a, _year_a, class_a = _create_class_stack(client, admin_headers, "A1")
-    _course_b, _year_b, class_b = _create_class_stack(client, admin_headers, "B1")
+    _structure_a, class_a = _create_class_stack(client, admin_headers, "A1")
+    _structure_b, class_b = _create_class_stack(client, admin_headers, "B1")
 
     # Force ownership of both classes in fake DB to specifically test same-class template guard.
     client.put(
-        f"/api/v1/classes/{class_a['id']}",
+        f"/api/v1/sections/{class_a['id']}",
         json={"class_coordinator_user_id": teacher["id"]},
         headers=admin_headers,
     )
     client.put(
-        f"/api/v1/classes/{class_b['id']}",
+        f"/api/v1/sections/{class_b['id']}",
         json={"class_coordinator_user_id": teacher["id"]},
         headers=admin_headers,
     )
@@ -137,9 +129,9 @@ def test_timetable_subject_teacher_mapping_enforced() -> None:
         extended_roles=["class_coordinator"],
     )
 
-    _course, _year, class_row = _create_class_stack(client, admin_headers, "MAP")
+    _structure, class_row = _create_class_stack(client, admin_headers, "MAP")
     set_coord = client.put(
-        f"/api/v1/classes/{class_row['id']}",
+        f"/api/v1/sections/{class_row['id']}",
         json={"class_coordinator_user_id": teacher_one["id"]},
         headers=admin_headers,
     )
@@ -214,11 +206,11 @@ def test_student_timetable_skips_inactive_class_enrollment() -> None:
         role="student",
     )
 
-    _course_a, _year_a, class_old = _create_class_stack(client, admin_headers, "OLD")
-    _course_b, _year_b, class_new = _create_class_stack(client, admin_headers, "NEW")
+    _structure_a, class_old = _create_class_stack(client, admin_headers, "OLD")
+    _structure_b, class_new = _create_class_stack(client, admin_headers, "NEW")
 
-    client.put(f"/api/v1/classes/{class_old['id']}", json={"class_coordinator_user_id": teacher["id"]}, headers=admin_headers)
-    client.put(f"/api/v1/classes/{class_new['id']}", json={"class_coordinator_user_id": teacher["id"]}, headers=admin_headers)
+    client.put(f"/api/v1/sections/{class_old['id']}", json={"class_coordinator_user_id": teacher["id"]}, headers=admin_headers)
+    client.put(f"/api/v1/sections/{class_new['id']}", json={"class_coordinator_user_id": teacher["id"]}, headers=admin_headers)
 
     subject = client.post(
         "/api/v1/subjects/",

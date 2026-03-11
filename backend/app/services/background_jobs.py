@@ -10,8 +10,8 @@ from app.services.analytics_snapshot import compute_platform_snapshot
 from app.services.notifications import create_notification
 
 
-async def _class_ids_for_year(year_id: str) -> list[str]:
-    rows = await db.classes.find({"year_id": year_id, "is_active": True}, {"_id": 1}).to_list(length=5000)
+async def _class_ids_for_batch(batch_id: str) -> list[str]:
+    rows = await db.classes.find({"batch_id": batch_id, "is_active": True}, {"_id": 1}).to_list(length=5000)
     return [str(item.get("_id")) for item in rows if item.get("_id")]
 
 
@@ -48,8 +48,8 @@ async def _target_user_ids_for_notice(notice: dict[str, Any]) -> list[str]:
         return [str(row.get("_id")) for row in rows if row.get("_id")]
     if scope == "class" and scope_ref_id:
         return await _student_user_ids_for_class_ids([scope_ref_id])
-    if scope == "year" and scope_ref_id:
-        class_ids = await _class_ids_for_year(scope_ref_id)
+    if scope == "batch" and scope_ref_id:
+        class_ids = await _class_ids_for_batch(scope_ref_id)
         return await _student_user_ids_for_class_ids(class_ids)
     if scope == "subject" and scope_ref_id:
         return await _student_user_ids_for_subject(scope_ref_id)

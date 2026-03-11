@@ -9,13 +9,19 @@ from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.programs import program_public
 from app.schemas.program import ProgramCreate, ProgramOut, ProgramUpdate
+from app.services.academic_batching import (
+    SEMESTERS_PER_YEAR,
+    build_batch_document,
+    build_batch_identity,
+    build_semester_document,
+    resolve_program_academic_context,
+)
 from app.services.audit import log_destructive_action_event
 
 router = APIRouter()
 
 MIN_DURATION_YEARS = 3
 MAX_DURATION_YEARS = 5
-SEMESTERS_PER_YEAR = 2
 AUTO_BATCH_START_YEAR = 2022
 
 
@@ -53,29 +59,49 @@ async def _program_has_enrolled_semester_students(program_id: str) -> bool:
 
 async def _sync_program_semesters(program_id: str, total_semesters: int) -> None:
     now = datetime.now(timezone.utc)
-    batches = await db.batches.find({"program_id": program_id}, {"_id": 1}).to_list(length=5000)
+    batches = await db.batches.find({"program_id": program_id}).to_list(length=5000)
     for batch in batches:
         batch_id = str(batch["_id"])
-        existing = await db.semesters.find({"batch_id": batch_id}, {"_id": 1, "semester_number": 1, "is_active": 1}).to_list(length=200)
+        existing = await db.semesters.find(
+            {"batch_id": batch_id},
+            {"_id": 1, "semester_number": 1, "is_active": 1, "label": 1},
+        ).to_list(length=200)
         by_number = {int(item.get("semester_number")): item for item in existing if item.get("semester_number") is not None}
 
         # Ensure expected semesters exist and are active.
         for semester_number in range(1, total_semesters + 1):
             current = by_number.get(semester_number)
+            semester_payload = build_semester_document(
+                batch={
+                    **batch,
+                    "id": batch_id,
+                },
+                semester_number=semester_number,
+                now=now,
+            )
             if not current:
-                await db.semesters.insert_one(
-                    {
-                        "batch_id": batch_id,
-                        "semester_number": semester_number,
-                        "label": f"Semester {semester_number}",
-                        "is_active": True,
-                        "created_at": now,
-                    }
-                )
-            elif not current.get("is_active", True):
+                await db.semesters.insert_one(semester_payload)
+            else:
+                update_fields = {
+                    "faculty_id": semester_payload.get("faculty_id"),
+                    "department_id": semester_payload.get("department_id"),
+                    "program_id": semester_payload.get("program_id"),
+                    "specialization_id": semester_payload.get("specialization_id"),
+                    "academic_year_start": semester_payload.get("academic_year_start"),
+                    "academic_year_end": semester_payload.get("academic_year_end"),
+                    "academic_year_label": semester_payload.get("academic_year_label"),
+                    "university_name": semester_payload.get("university_name"),
+                    "university_code": semester_payload.get("university_code"),
+                    "updated_at": now,
+                }
+                current_label = str(current.get("label") or "").strip()
+                if not current_label or current_label.startswith("Semester "):
+                    update_fields["label"] = semester_payload.get("label")
+                if not current.get("is_active", True):
+                    update_fields["is_active"] = True
                 await db.semesters.update_one(
                     {"_id": current["_id"]},
-                    {"$set": {"is_active": True, "updated_at": now}},
+                    {"$set": update_fields},
                 )
 
         # Archive semesters beyond configured total.
@@ -85,16 +111,16 @@ async def _sync_program_semesters(program_id: str, total_semesters: int) -> None
         )
 
 
-def _build_auto_batch_identity(start_year: int, duration_years: int) -> tuple[str, str, int]:
-    end_year = start_year + duration_years
-    start_short = str(start_year)[-2:]
-    end_short = str(end_year)[-2:]
-    return f"B{start_year}", f"B{start_short}-{end_short}", end_year
-
-
 async def _seed_program_batches(program_id: str, duration_years: int) -> int:
+    if getattr(db, "batches", None) is None or getattr(db, "semesters", None) is None:
+        return 0
+
     now = datetime.now(timezone.utc)
     current_year = now.year
+    program = await db.programs.find_one({"_id": parse_object_id(program_id)})
+    if not program:
+        return 0
+    program_context = await resolve_program_academic_context(db, program=program)
     existing = await db.batches.find(
         {"program_id": program_id, "specialization_id": None},
         {"_id": 1, "start_year": 1},
@@ -105,19 +131,24 @@ async def _seed_program_batches(program_id: str, duration_years: int) -> int:
     for start_year in range(AUTO_BATCH_START_YEAR, current_year + 1):
         if start_year in existing_start_years:
             continue
-        name, code, end_year = _build_auto_batch_identity(start_year, duration_years)
+        end_year = start_year + duration_years
+        name, code = build_batch_identity(
+            program_batch_prefix=program_context.get("program_batch_prefix"),
+            start_year=start_year,
+            end_year=end_year,
+            university_code=program_context.get("university_code"),
+        )
         batch_docs.append(
-            {
-                "program_id": program_id,
-                "specialization_id": None,
-                "name": name,
-                "code": code,
-                "start_year": start_year,
-                "end_year": end_year,
-                "is_active": True,
-                "auto_generated": True,
-                "created_at": now,
-            }
+            build_batch_document(
+                program_context=program_context,
+                specialization_id=None,
+                name=name,
+                code=code,
+                start_year=start_year,
+                end_year=end_year,
+                now=now,
+                auto_generated=True,
+            )
         )
 
     if not batch_docs:
@@ -125,17 +156,18 @@ async def _seed_program_batches(program_id: str, duration_years: int) -> int:
 
     result = await db.batches.insert_many(batch_docs)
     semester_docs: list[dict[str, Any]] = []
-    for batch_id in result.inserted_ids:
+    for batch_id, batch_doc in zip(result.inserted_ids, batch_docs):
         batch_id_str = str(batch_id)
         for semester_number in range(1, duration_years * SEMESTERS_PER_YEAR + 1):
             semester_docs.append(
-                {
-                    "batch_id": batch_id_str,
-                    "semester_number": semester_number,
-                    "label": f"Semester {semester_number}",
-                    "is_active": True,
-                    "created_at": now,
-                }
+                build_semester_document(
+                    batch={
+                        **batch_doc,
+                        "id": batch_id_str,
+                    },
+                    semester_number=semester_number,
+                    now=now,
+                )
             )
     if semester_docs:
         await db.semesters.insert_many(semester_docs)
@@ -144,6 +176,10 @@ async def _seed_program_batches(program_id: str, duration_years: int) -> int:
 
 async def _sync_auto_generated_batches(program_id: str, duration_years: int) -> None:
     now = datetime.now(timezone.utc)
+    program = await db.programs.find_one({"_id": parse_object_id(program_id)})
+    if not program:
+        return
+    program_context = await resolve_program_academic_context(db, program=program)
     rows = await db.batches.find(
         {"program_id": program_id, "specialization_id": None, "auto_generated": True},
         {"_id": 1, "start_year": 1},
@@ -153,7 +189,13 @@ async def _sync_auto_generated_batches(program_id: str, duration_years: int) -> 
         start_year = row.get("start_year")
         if start_year is None:
             continue
-        name, code, end_year = _build_auto_batch_identity(int(start_year), duration_years)
+        end_year = int(start_year) + duration_years
+        name, code = build_batch_identity(
+            program_batch_prefix=program_context.get("program_batch_prefix"),
+            start_year=int(start_year),
+            end_year=end_year,
+            university_code=program_context.get("university_code"),
+        )
         await db.batches.update_one(
             {"_id": row["_id"]},
             {
@@ -161,6 +203,11 @@ async def _sync_auto_generated_batches(program_id: str, duration_years: int) -> 
                     "name": name,
                     "code": code,
                     "end_year": end_year,
+                    "academic_span_label": f"{int(start_year)}-{end_year}",
+                    "faculty_id": program_context.get("faculty_id"),
+                    "department_id": program_context.get("department_id"),
+                    "university_name": program_context.get("university_name"),
+                    "university_code": program_context.get("university_code"),
                     "updated_at": now,
                 }
             },
@@ -178,7 +225,16 @@ async def _seed_all_program_batches() -> dict[str, int]:
         if not program.get("_id"):
             continue
         duration_years = _validate_duration_years(int(program.get("duration_years") or 4))
-        created = await _seed_program_batches(str(program["_id"]), duration_years)
+        existing_rows = await db.batches.find(
+            {"program_id": str(program["_id"]), "specialization_id": None, "auto_generated": True},
+            {"_id": 1},
+        ).to_list(length=1000)
+        existing_count = len(existing_rows)
+        await _sync_auto_generated_batches(str(program["_id"]), duration_years)
+        total_rows = await db.batches.count_documents(
+            {"program_id": str(program["_id"]), "specialization_id": None, "auto_generated": True}
+        )
+        created = max(0, int(total_rows) - existing_count)
         program_count += 1
         batch_count += created
     return {"program_count": program_count, "batch_count": batch_count}

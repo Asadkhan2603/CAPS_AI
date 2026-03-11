@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 NoticePriority = Literal['normal', 'urgent']
-NoticeScope = Literal['college', 'year', 'class', 'section', 'subject']
+NoticeScope = Literal['college', 'batch', 'class', 'section', 'subject']
 
 
 class NoticeCreate(BaseModel):

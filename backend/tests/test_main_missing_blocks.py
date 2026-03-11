@@ -2,7 +2,7 @@ from bson import ObjectId
 from fastapi.testclient import TestClient
 
 from app.main import app
-from tests.test_auth import _setup_fake_db
+from tests.test_auth import _create_section_payload, _seed_canonical_structure, _setup_fake_db
 
 
 def _admin_headers(client: TestClient, email: str) -> dict:
@@ -420,24 +420,14 @@ def test_similarity_threshold_alerts_generate_logs_notifications_and_scope_views
     assert coordinator_teacher.status_code == 201
     assert plain_teacher.status_code == 201
 
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BCA", "code": "BCA-SIM", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="SIMA")
     class_item = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "BCA FY",
-            "class_coordinator_user_id": coordinator_teacher.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="BCA FY",
+            class_coordinator_user_id=coordinator_teacher.json()["id"],
+        ),
         headers=admin_headers,
     )
     assert class_item.status_code == 201
@@ -899,3 +889,4 @@ def test_student_cannot_access_ai_chat_endpoints() -> None:
 
     blocked_history = client.get("/api/v1/ai/history/s1/e1", headers=student_headers)
     assert blocked_history.status_code == 403
+

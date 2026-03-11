@@ -30,7 +30,7 @@ export default function AnnouncementsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [showCreate, setShowCreate] = useState(false);
-  const [years, setYears] = useState([]);
+  const [batches, setBatches] = useState([]);
   const [sections, setSections] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [noticeReadVersion, setNoticeReadVersion] = useState(0);
@@ -43,13 +43,13 @@ export default function AnnouncementsPage() {
   );
 
   async function loadLookups() {
-    const [yearsRes, sectionsRes, subjectsRes] = await Promise.allSettled([
-      apiClient.get('/years/', { params: { skip: 0, limit: 100 } }),
+    const [batchesRes, sectionsRes, subjectsRes] = await Promise.allSettled([
+      apiClient.get('/batches/', { params: { skip: 0, limit: 100 } }),
       apiClient.get('/sections/', { params: { skip: 0, limit: 100 } }),
       apiClient.get('/subjects/', { params: { skip: 0, limit: 100 } })
     ]);
 
-    setYears(yearsRes.status === 'fulfilled' ? yearsRes.value.data || [] : []);
+    setBatches(batchesRes.status === 'fulfilled' ? batchesRes.value.data || [] : []);
     setSections(sectionsRes.status === 'fulfilled' ? sectionsRes.value.data || [] : []);
     setSubjects(subjectsRes.status === 'fulfilled' ? subjectsRes.value.data || [] : []);
   }
@@ -94,8 +94,8 @@ export default function AnnouncementsPage() {
 
   const audienceNameById = useMemo(() => {
     const map = {};
-    years.forEach((item) => {
-      map[item.id] = item.label || `Year ${item.year_number}`;
+    batches.forEach((item) => {
+      map[item.id] = item.name || item.academic_span_label || item.code || 'Batch';
     });
     sections.forEach((item) => {
       map[item.id] = `${item.name}${item.faculty_name ? ` (${item.faculty_name})` : ''}`;
@@ -104,7 +104,7 @@ export default function AnnouncementsPage() {
       map[item.id] = `${item.name}${item.code ? ` (${item.code})` : ''}`;
     });
     return map;
-  }, [sections, subjects, years]);
+  }, [batches, sections, subjects]);
 
   const audienceOptions = useMemo(() => {
     const options = [];
@@ -124,18 +124,18 @@ export default function AnnouncementsPage() {
       options.push(item);
     }
 
-    const allowYear = role === 'admin' || (role === 'teacher' && extensions.includes('year_head'));
+    const allowBatch = role === 'admin' || (role === 'teacher' && extensions.includes('year_head'));
     const allowClass = role === 'admin' || (role === 'teacher' && extensions.includes('class_coordinator'));
     const allowSubject = role === 'admin' || role === 'teacher';
 
-    if (allowYear) {
-      years.forEach((item) => {
-        const label = item.label || `Year ${item.year_number}`;
+    if (allowBatch) {
+      batches.forEach((item) => {
+        const label = item.name || item.academic_span_label || item.code || 'Batch';
         const option = {
-          key: `year:${item.id}`,
+          key: `batch:${item.id}`,
           label,
-          searchText: `${label} year ${item.year_number}`.toLowerCase(),
-          scope: 'year',
+          searchText: `${label} batch ${item.code || ''}`.toLowerCase(),
+          scope: 'batch',
           scopeRefId: item.id
         };
         if (!seen.has(option.key)) {
@@ -180,7 +180,7 @@ export default function AnnouncementsPage() {
     }
 
     return options.sort((a, b) => a.label.localeCompare(b.label));
-  }, [sections, subjects, user?.extended_roles, user?.role, years]);
+  }, [batches, sections, subjects, user?.extended_roles, user?.role]);
 
   const visibleNotices = useMemo(() => {
     const now = Date.now();

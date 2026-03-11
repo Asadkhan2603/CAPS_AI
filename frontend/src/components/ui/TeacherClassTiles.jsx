@@ -27,7 +27,7 @@ export default function TeacherClassTiles({ items = [] }) {
               <div>
                 <p className="text-base font-semibold">{tile.class_name}</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Semester: {tile.semester_id || tile.year_id || '-'}
+                  Semester: {tile.semester_id || '-'}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Subjects: {(tile.subjects || []).join(', ') || '-'}</p>
               </div>

@@ -1,14 +1,17 @@
 import { Home, ChevronRight } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
+import { getWorkspaceHomeItemPath } from '../../config/navigationGroups';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function Breadcrumb() {
   const location = useLocation();
+  const { user } = useAuth();
   const segments = location.pathname.split('/').filter(Boolean);
 
   return (
     <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
       <Home size={14} />
-      <Link to="/dashboard" className="hover:text-brand-600">Dashboard</Link>
+      <Link to={getWorkspaceHomeItemPath(user)} className="hover:text-brand-600">Dashboard</Link>
       {segments
         .filter((seg) => seg !== 'dashboard')
         .map((segment) => (

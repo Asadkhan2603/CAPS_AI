@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, BookOpenCheck, ChartLine, FileText, Sparkles, ArrowRight, CircleCheck, Clock3, ShieldAlert, CalendarClock, Download, BookOpen } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bell, BookOpenCheck, ChartLine, FileText, Sparkles, ArrowRight, Clock3, ShieldAlert, CalendarClock } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import { Link } from 'react-router-dom';
 import StatCard from '../components/ui/StatCard';
 import Card from '../components/ui/Card';
@@ -8,6 +8,7 @@ import Alert from '../components/ui/Alert';
 import Badge from '../components/ui/Badge';
 import TeacherClassTiles from '../components/ui/TeacherClassTiles';
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../hooks/useTheme';
 import { useToast } from '../hooks/useToast';
 import { apiClient } from '../services/apiClient';
 import { getTeacherSectionsAnalytics } from '../services/sectionsApi';
@@ -25,14 +26,23 @@ const performanceData = [
 ];
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+function isTruthyEligibility(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    return ['1', 'true', 'yes', 'eligible', 'active', 'enabled'].includes(value.trim().toLowerCase());
+  }
+  return false;
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { isDark } = useTheme();
   const { pushToast } = useToast();
   const [showNotice, setShowNotice] = useState(true);
   const [summary, setSummary] = useState({});
   const [teacherTiles, setTeacherTiles] = useState([]);
   const [urgentNotices, setUrgentNotices] = useState([]);
-  const [studentEvaluations, setStudentEvaluations] = useState([]);
   const [studentAssignments, setStudentAssignments] = useState([]);
   const [studentSubmissions, setStudentSubmissions] = useState([]);
   const [studentClassSlots, setStudentClassSlots] = useState([]);
@@ -59,9 +69,9 @@ export default function DashboardPage() {
       return [
         { to: '/submissions', label: 'My Submissions' },
         { to: '/evaluations', label: 'My Evaluations' },
-        { to: '/clubs', label: 'Clubs Hub' },
-        { to: '/communication/announcements', label: 'Notices' },
-        { to: '/history', label: 'My History' }
+        { to: '/attendance-records', label: 'Attendance' },
+        { to: '/communication/announcements', label: 'Announcements' },
+        { to: '/profile', label: 'My Profile' }
       ];
     }
     return [
@@ -84,6 +94,22 @@ export default function DashboardPage() {
     };
   }, [user]);
 
+  const hasInternshipEligibilityHint = useMemo(() => {
+    const profile = user?.profile || {};
+    const roleScope = user?.role_scope || {};
+    const candidates = [
+      profile.internship_eligible,
+      profile.is_internship_eligible,
+      profile.has_internship,
+      profile.internship_enabled,
+      profile.internship_status,
+      roleScope.internship_eligible,
+      roleScope.internship?.eligible,
+      roleScope.student?.internship_eligible
+    ];
+    return candidates.some(isTruthyEligibility);
+  }, [user]);
+
   async function loadDashboardData(silent = false) {
     if (!silent) {
       setLoading(true);
@@ -92,9 +118,6 @@ export default function DashboardPage() {
       const teacherTilesRequest = user?.role === 'teacher'
         ? getTeacherSectionsAnalytics()
         : Promise.resolve({ data: { items: [] } });
-      const studentEvaluationsRequest = user?.role === 'student'
-        ? apiClient.get('/evaluations/', { params: { skip: 0, limit: 5 } })
-        : Promise.resolve({ data: [] });
       const studentAssignmentsRequest = user?.role === 'student'
         ? apiClient.get('/assignments/', { params: { skip: 0, limit: 300 } })
         : Promise.resolve({ data: [] });
@@ -114,7 +137,6 @@ export default function DashboardPage() {
         summaryResp,
         tilesResp,
         noticesResp,
-        studentEvaluationsResp,
         studentAssignmentsResp,
         studentSubmissionsResp,
         studentClassSlotsResp,
@@ -125,7 +147,6 @@ export default function DashboardPage() {
           apiClient.get('/analytics/summary'),
           teacherTilesRequest,
           apiClient.get('/notices/', { params: { priority: 'urgent', limit: 3 } }),
-          studentEvaluationsRequest,
           studentAssignmentsRequest,
           studentSubmissionsRequest,
           studentClassSlotsRequest,
@@ -136,7 +157,6 @@ export default function DashboardPage() {
       setSummary(summaryResp.status === 'fulfilled' ? summaryResp.value.data?.summary || {} : {});
       setTeacherTiles(tilesResp.status === 'fulfilled' ? tilesResp.value.data?.items || [] : []);
       setUrgentNotices(noticesResp.status === 'fulfilled' ? noticesResp.value.data || [] : []);
-      setStudentEvaluations(studentEvaluationsResp.status === 'fulfilled' ? studentEvaluationsResp.value.data || [] : []);
       setStudentAssignments(studentAssignmentsResp.status === 'fulfilled' ? studentAssignmentsResp.value.data || [] : []);
       setStudentSubmissions(studentSubmissionsResp.status === 'fulfilled' ? studentSubmissionsResp.value.data || [] : []);
       setStudentClassSlots(studentClassSlotsResp.status === 'fulfilled' ? studentClassSlotsResp.value.data || [] : []);
@@ -147,7 +167,6 @@ export default function DashboardPage() {
       setSummary({});
       setTeacherTiles([]);
       setUrgentNotices([]);
-      setStudentEvaluations([]);
       setStudentAssignments([]);
       setStudentSubmissions([]);
       setStudentClassSlots([]);
@@ -223,47 +242,6 @@ export default function DashboardPage() {
       withAccess({ title: 'Similarity Alerts', value: value('my_similarity_flags'), hint: 'Open analytics', to: '/analytics', featureKey: 'analytics' })
     ];
   }, [summary, urgentNotices.length, user]);
-
-  const studentSubjectTrendByMonth = useMemo(() => {
-    if (user?.role !== 'student') return { data: [], subjects: [] };
-    const assignmentById = new Map(studentAssignments.map((item) => [item.id, item]));
-    const monthSubjectAgg = new Map();
-    const subjectTotals = new Map();
-
-    studentEvaluations.forEach((evaluation) => {
-      const submission = studentSubmissions.find((item) => item.id === evaluation.submission_id);
-      const assignment = submission ? assignmentById.get(submission.assignment_id) : null;
-      const subject = assignment?.subject_id || 'Unassigned';
-      const month = evaluation?.created_at
-        ? new Date(evaluation.created_at).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
-        : 'Unknown';
-      const key = `${month}::${subject}`;
-      if (!monthSubjectAgg.has(key)) {
-        monthSubjectAgg.set(key, { month, subject, total: 0, count: 0 });
-      }
-      const node = monthSubjectAgg.get(key);
-      node.total += Number(evaluation?.grand_total || 0);
-      node.count += 1;
-      subjectTotals.set(subject, (subjectTotals.get(subject) || 0) + 1);
-    });
-
-    const topSubjects = Array.from(subjectTotals.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4)
-      .map((item) => item[0]);
-
-    const monthMap = new Map();
-    for (const node of monthSubjectAgg.values()) {
-      if (!topSubjects.includes(node.subject)) continue;
-      if (!monthMap.has(node.month)) monthMap.set(node.month, { month: node.month });
-      monthMap.get(node.month)[node.subject] = Number((node.total / node.count).toFixed(2));
-    }
-
-    return {
-      data: Array.from(monthMap.values()),
-      subjects: topSubjects
-    };
-  }, [studentAssignments, studentEvaluations, studentSubmissions, user?.role]);
 
   const studentDeadlines = useMemo(() => {
     if (user?.role !== 'student') return [];
@@ -349,50 +327,44 @@ export default function DashboardPage() {
     return { label: 'Closed session', detail: `Start: ${inAt} | End: ${outAt}` };
   }, [internshipStatus]);
 
-  function exportCsv(filename, rows) {
-    if (!rows.length) {
-      pushToast({ title: 'No data', description: 'Nothing to export right now.', variant: 'info' });
-      return;
-    }
-    const headers = Object.keys(rows[0]);
-    const body = rows.map((row) => headers.map((h) => JSON.stringify(row[h] ?? '')).join(',')).join('\n');
-    const csv = `${headers.join(',')}\n${body}`;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  }
+  const chartChrome = useMemo(
+    () => ({
+      grid: isDark ? 'rgba(148,163,184,0.14)' : 'rgba(148,163,184,0.28)',
+      axis: isDark ? '#94a3b8' : '#64748b',
+      tooltipBg: isDark ? 'rgba(15,23,42,0.96)' : 'rgba(255,255,255,0.98)',
+      tooltipBorder: isDark ? 'rgba(51,65,85,0.95)' : 'rgba(203,213,225,0.95)',
+      tooltipText: isDark ? '#e2e8f0' : '#0f172a'
+    }),
+    [isDark]
+  );
+
+  const showInternshipCard = user?.role === 'student' && (hasInternshipEligibilityHint || internshipStatus !== null);
 
   if (user?.role === 'student') {
     return (
       <div className="space-y-5 page-fade">
-        <div className="rounded-3xl border border-slate-200 bg-gradient-to-r from-sky-50 to-indigo-50 p-5 dark:border-slate-800 dark:from-slate-900 dark:to-slate-900">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
+        <div className="rounded-3xl border border-slate-200 bg-gradient-to-r from-sky-50 to-indigo-50 px-5 py-4 dark:border-slate-800 dark:from-slate-900 dark:to-slate-900">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Student Workspace</p>
               <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">Welcome back, {user?.full_name?.split(' ')[0] || 'Student'}</h1>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Track submissions, notices, and evaluations in one place.</p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-slate-500">Department</p>
-                  <p className="mt-0.5 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.department}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900">
+                  <span className="text-slate-500">Department</span>
+                  <span className="ml-2 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.department}</span>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-slate-500">Branch</p>
-                  <p className="mt-0.5 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.branch}</p>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900">
+                  <span className="text-slate-500">Branch</span>
+                  <span className="ml-2 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.branch}</span>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-slate-500">Enrollment</p>
-                  <p className="mt-0.5 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.enrollment}</p>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900">
+                  <span className="text-slate-500">Enrollment</span>
+                  <span className="ml-2 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.enrollment}</span>
                 </div>
               </div>
             </div>
-            <Link to="/communication/announcements" className="btn-secondary relative">
+            <Link to="/communication/announcements" className="btn-secondary relative self-start md:self-center">
               <Bell size={16} /> Notices
               {urgentNotices.length > 0 ? (
                 <span className="ml-1 rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-semibold text-white">
@@ -426,50 +398,24 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
+        {urgentNotices.length > 0 ? (
+          <Card>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Urgent Notices</h2>
               <Link to="/communication/announcements" className="text-xs font-semibold text-brand-700 dark:text-brand-300">View all</Link>
             </div>
             <div className="space-y-2">
-              {urgentNotices.length === 0 ? (
-                <p className="text-sm text-slate-500">No urgent notices right now.</p>
-              ) : (
-                urgentNotices.map((notice) => (
-                  <div key={notice.id} className="rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-900/40 dark:bg-rose-950/25">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">{notice.title}</p>
-                      <Badge variant="danger">Urgent</Badge>
-                    </div>
-                    <p className="mt-1 text-sm text-rose-700/90 dark:text-rose-200">{notice.message}</p>
-                  </div>
-                ))
-              )}
+              {urgentNotices.slice(0, 2).map((notice) => (
+                <div key={notice.id} className="rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-900/40 dark:bg-rose-950/25">
+                  <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">{notice.title}</p>
+                  <p className="mt-1 text-sm text-rose-700/90 dark:text-rose-200">{notice.message}</p>
+                </div>
+              ))}
             </div>
           </Card>
+        ) : null}
 
-          <Card>
-            <h2 className="text-lg font-semibold">Recent Evaluation Status</h2>
-            <div className="mt-3 space-y-2">
-              {studentEvaluations.length === 0 ? (
-                <p className="text-sm text-slate-500">No evaluations available yet.</p>
-              ) : (
-                studentEvaluations.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                    <p className="text-sm font-semibold">Grade: {item.grade || '-'}</p>
-                    <p className="mt-1 text-xs text-slate-500">Total: {item.grand_total ?? 0}</p>
-                    <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-                      <CircleCheck size={12} /> {item.is_finalized ? 'Finalized' : 'In Progress'}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-4 xl:grid-cols-2">
           <Card>
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Today Timetable</h2>
@@ -497,7 +443,7 @@ export default function DashboardPage() {
             </div>
           </Card>
 
-          <Card className="xl:col-span-2">
+          <Card>
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Deadlines Calendar</h2>
               <Link to="/submissions" className="text-xs font-semibold text-brand-700 dark:text-brand-300">Open submissions</Link>
@@ -541,111 +487,32 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        <Card>
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Internship Attendance</h2>
-            <span className="text-xs text-slate-500">{internshipSummary.label}</span>
-          </div>
-          <p className="text-sm text-slate-500">{internshipSummary.detail}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className="btn-primary"
-              onClick={() => handleInternshipAction('clock_in')}
-              disabled={internshipBusy || internshipStatus?.status === 'active'}
-            >
-              {internshipBusy ? 'Working...' : 'Clock In'}
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={() => handleInternshipAction('clock_out')}
-              disabled={internshipBusy || internshipStatus?.status !== 'active'}
-            >
-              {internshipBusy ? 'Working...' : 'Clock Out'}
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-slate-500">Active sessions auto-close after 9 hours.</p>
-        </Card>
-
-        <div className="grid gap-4 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Performance Trend By Subject Over Time</h2>
-              <span className="inline-flex items-center gap-1 text-xs text-slate-500"><BookOpen size={12} /> Based on evaluations</span>
-            </div>
-            <div className="h-72">
-              {studentSubjectTrendByMonth.data.length === 0 ? (
-                <p className="text-sm text-slate-500">Not enough evaluation data for trend chart yet.</p>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={studentSubjectTrendByMonth.data}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    {studentSubjectTrendByMonth.subjects.map((subject, index) => (
-                      <Line
-                        key={subject}
-                        type="monotone"
-                        dataKey={subject}
-                        stroke={['#4f46e5', '#0ea5e9', '#16a34a', '#f97316'][index % 4]}
-                        strokeWidth={2}
-                        dot={{ r: 3 }}
-                      />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </Card>
-
+        {showInternshipCard ? (
           <Card>
-            <h2 className="text-lg font-semibold">Download Center</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Export your records as CSV.</p>
-            <div className="mt-3 space-y-2">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Internship Attendance</h2>
+              <span className="text-xs text-slate-500">{internshipSummary.label}</span>
+            </div>
+            <p className="text-sm text-slate-500">{internshipSummary.detail}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
-                className="btn-secondary w-full justify-between"
-                onClick={() =>
-                  exportCsv('my-submissions.csv', studentSubmissions.map((item) => ({
-                    assignment_id: item.assignment_id,
-                    filename: item.original_filename,
-                    status: item.status,
-                    ai_status: item.ai_status,
-                    created_at: item.created_at
-                  })))
-                }
+                className="btn-primary"
+                onClick={() => handleInternshipAction('clock_in')}
+                disabled={internshipBusy || internshipStatus?.status === 'active'}
               >
-                Export Submissions <Download size={14} />
+                {internshipBusy ? 'Working...' : 'Clock In'}
               </button>
               <button
-                className="btn-secondary w-full justify-between"
-                onClick={() =>
-                  exportCsv('my-evaluations.csv', studentEvaluations.map((item) => ({
-                    submission_id: item.submission_id,
-                    grand_total: item.grand_total,
-                    grade: item.grade,
-                    finalized: item.is_finalized,
-                    created_at: item.created_at
-                  })))
-                }
+                className="btn-secondary"
+                onClick={() => handleInternshipAction('clock_out')}
+                disabled={internshipBusy || internshipStatus?.status !== 'active'}
               >
-                Export Evaluations <Download size={14} />
-              </button>
-              <button
-                className="btn-secondary w-full justify-between"
-                onClick={() =>
-                  exportCsv('my-deadlines.csv', studentDeadlines.map((item) => ({
-                    assignment: item.title,
-                    due_date: item.dueDate,
-                    urgency: item.urgency
-                  })))
-                }
-              >
-                Export Deadlines <Download size={14} />
+                {internshipBusy ? 'Working...' : 'Clock Out'}
               </button>
             </div>
+            <p className="mt-2 text-xs text-slate-500">Active sessions auto-close after 9 hours.</p>
           </Card>
-        </div>
+        ) : null}
 
         <Card>
           <h2 className="text-lg font-semibold">Quick Actions</h2>
@@ -702,9 +569,24 @@ export default function DashboardPage() {
                     <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                <XAxis dataKey="month" />
-                <Tooltip />
+                <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fill: chartChrome.axis, fontSize: 12 }}
+                  axisLine={{ stroke: chartChrome.grid }}
+                  tickLine={{ stroke: chartChrome.grid }}
+                />
+                <Tooltip
+                  cursor={{ stroke: chartChrome.grid, strokeWidth: 1 }}
+                  contentStyle={{
+                    background: chartChrome.tooltipBg,
+                    borderColor: chartChrome.tooltipBorder,
+                    borderRadius: '1rem',
+                    color: chartChrome.tooltipText
+                  }}
+                  labelStyle={{ color: chartChrome.tooltipText, fontWeight: 600 }}
+                  itemStyle={{ color: chartChrome.tooltipText }}
+                />
                 <Area type="monotone" dataKey="avg" stroke="#4f46e5" fill="url(#avgGradient)" strokeWidth={2.5} />
               </AreaChart>
             </ResponsiveContainer>

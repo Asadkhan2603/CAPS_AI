@@ -19,8 +19,17 @@ class SemesterUpdate(BaseModel):
 class SemesterOut(BaseModel):
     id: str
     batch_id: str
+    faculty_id: str | None = None
+    department_id: str | None = None
+    program_id: str | None = None
+    specialization_id: str | None = None
     semester_number: int
     label: str
+    academic_year_start: int | None = None
+    academic_year_end: int | None = None
+    academic_year_label: str | None = None
+    university_name: str | None = None
+    university_code: str | None = None
     is_active: bool = True
     deleted_at: datetime | None = None
     deleted_by: str | None = None

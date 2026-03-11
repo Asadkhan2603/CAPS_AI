@@ -11,30 +11,41 @@ from app.api.v1.endpoints import analytics as analytics_endpoint
 from app.api.v1.endpoints import audit_logs as audit_logs_endpoint
 from app.api.v1.endpoints import club_events as club_events_endpoint
 from app.api.v1.endpoints import clubs as clubs_endpoint
+from app.api.v1.endpoints import departments as departments_endpoint
 from app.api.v1.endpoints import enrollments as enrollments_endpoint
 from app.api.v1.endpoints import event_registrations as event_registrations_endpoint
+from app.api.v1.endpoints import faculties as faculties_endpoint
 from app.api.v1.endpoints import auth as auth_endpoint
 from app.api.v1.endpoints import classes as classes_endpoint
-from app.api.v1.endpoints import courses as courses_endpoint
 from app.api.v1.endpoints import evaluations as evaluations_endpoint
 from app.api.v1.endpoints import notices as notices_endpoint
 from app.api.v1.endpoints import notifications as notifications_endpoint
+from app.api.v1.endpoints import programs as programs_endpoint
 from app.api.v1.endpoints import review_tickets as review_tickets_endpoint
+from app.api.v1.endpoints import batches as batches_endpoint
+from app.api.v1.endpoints import semesters as semesters_endpoint
 from app.api.v1.endpoints import similarity as similarity_endpoint
 from app.api.v1.endpoints import students as students_endpoint
 from app.api.v1.endpoints import submissions as submissions_endpoint
 from app.api.v1.endpoints import timetables as timetables_endpoint
 from app.api.v1.endpoints import subjects as subjects_endpoint
 from app.api.v1.endpoints import users as users_endpoint
-from app.api.v1.endpoints import years as years_endpoint
 from app.core import security as security_core
+from app.services import ai_runtime as ai_runtime_service
 from app.services import audit as audit_service
 from app.services import notifications as notifications_service
+from app.services import similarity_pipeline as similarity_pipeline_service
+from app.services import submission_ai as submission_ai_service
 
 
 @dataclass
 class InsertOneResult:
     inserted_id: ObjectId
+
+
+@dataclass
+class InsertManyResult:
+    inserted_ids: List[ObjectId]
 
 
 class FakeCursor:
@@ -102,6 +113,14 @@ class FakeUsersCollection:
         saved = {**document, "_id": inserted_id}
         self.items.append(saved)
         return InsertOneResult(inserted_id=inserted_id)
+
+    async def insert_many(self, documents: List[Dict[str, Any]]) -> InsertManyResult:
+        inserted_ids: List[ObjectId] = []
+        for document in documents:
+            inserted_id = ObjectId()
+            inserted_ids.append(inserted_id)
+            self.items.append({**document, "_id": inserted_id})
+        return InsertManyResult(inserted_ids=inserted_ids)
 
     def find(self, query: Dict[str, Any], projection: Dict[str, Any] | None = None) -> FakeCursor:
         return FakeCursor([item for item in self.items if _matches_query(item, query)])
@@ -190,6 +209,12 @@ def _matches_query(item: Dict[str, Any], query: Dict[str, Any]) -> bool:
 class FakeDB:
     def __init__(self) -> None:
         self.users = FakeUsersCollection()
+        self.faculties = FakeUsersCollection()
+        self.departments = FakeUsersCollection()
+        self.programs = FakeUsersCollection()
+        self.specializations = FakeUsersCollection()
+        self.batches = FakeUsersCollection()
+        self.semesters = FakeUsersCollection()
         self.courses = FakeUsersCollection()
         self.years = FakeUsersCollection()
         self.classes = FakeUsersCollection()
@@ -199,6 +224,7 @@ class FakeDB:
         self.submissions = FakeUsersCollection()
         self.ai_evaluation_chats = FakeUsersCollection()
         self.ai_evaluation_runs = FakeUsersCollection()
+        self.ai_jobs = FakeUsersCollection()
         self.evaluations = FakeUsersCollection()
         self.similarity_logs = FakeUsersCollection()
         self.notifications = FakeUsersCollection()
@@ -211,14 +237,18 @@ class FakeDB:
         self.review_tickets = FakeUsersCollection()
         self.timetables = FakeUsersCollection()
         self.timetable_subject_teacher_maps = FakeUsersCollection()
+        self.settings = FakeUsersCollection()
 
 
 def _setup_fake_db() -> FakeDB:
     fake_db = FakeDB()
     auth_endpoint.db = fake_db
     users_endpoint.db = fake_db
-    courses_endpoint.db = fake_db
-    years_endpoint.db = fake_db
+    faculties_endpoint.db = fake_db
+    departments_endpoint.db = fake_db
+    programs_endpoint.db = fake_db
+    batches_endpoint.db = fake_db
+    semesters_endpoint.db = fake_db
     classes_endpoint.db = fake_db
     students_endpoint.db = fake_db
     subjects_endpoint.db = fake_db
@@ -239,8 +269,115 @@ def _setup_fake_db() -> FakeDB:
     timetables_endpoint.db = fake_db
     notifications_service.db = fake_db
     audit_service.db = fake_db
+    ai_runtime_service.db = fake_db
+    similarity_pipeline_service.db = fake_db
+    submission_ai_service.db = fake_db
     security_core.db = fake_db
     return fake_db
+
+
+def _seed_canonical_structure(
+    fake_db: FakeDB,
+    *,
+    suffix: str,
+    duration_years: int = 4,
+    start_year: int = 2024,
+    semester_number: int = 1,
+) -> dict[str, str | int]:
+    faculty_id = ObjectId()
+    department_id = ObjectId()
+    program_id = ObjectId()
+    batch_id = ObjectId()
+    semester_id = ObjectId()
+    end_year = start_year + duration_years
+
+    fake_db.faculties.items.append(
+        {
+            "_id": faculty_id,
+            "name": f"Faculty {suffix}",
+            "code": f"FAC{suffix}",
+            "is_active": True,
+        }
+    )
+    fake_db.departments.items.append(
+        {
+            "_id": department_id,
+            "name": f"Department {suffix}",
+            "code": f"DEP{suffix}",
+            "faculty_id": str(faculty_id),
+            "is_active": True,
+        }
+    )
+    fake_db.programs.items.append(
+        {
+            "_id": program_id,
+            "name": f"Program {suffix}",
+            "code": f"PROG{suffix}",
+            "department_id": str(department_id),
+            "duration_years": duration_years,
+            "total_semesters": duration_years * 2,
+            "is_active": True,
+        }
+    )
+    fake_db.batches.items.append(
+        {
+            "_id": batch_id,
+            "faculty_id": str(faculty_id),
+            "department_id": str(department_id),
+            "program_id": str(program_id),
+            "specialization_id": None,
+            "name": f"Batch {start_year}-{end_year}",
+            "code": f"PROG{suffix}-B{str(start_year)[-2:]}-{str(end_year)[-2:]}",
+            "start_year": start_year,
+            "end_year": end_year,
+            "academic_span_label": f"{start_year}-{end_year}",
+            "is_active": True,
+        }
+    )
+    fake_db.semesters.items.append(
+        {
+            "_id": semester_id,
+            "batch_id": str(batch_id),
+            "faculty_id": str(faculty_id),
+            "department_id": str(department_id),
+            "program_id": str(program_id),
+            "specialization_id": None,
+            "semester_number": semester_number,
+            "label": f"Semester {semester_number}",
+            "is_active": True,
+        }
+    )
+
+    return {
+        "faculty_id": str(faculty_id),
+        "department_id": str(department_id),
+        "program_id": str(program_id),
+        "batch_id": str(batch_id),
+        "semester_id": str(semester_id),
+        "start_year": start_year,
+        "end_year": end_year,
+    }
+
+
+def _create_section_payload(
+    structure: dict[str, str | int],
+    *,
+    name: str,
+    class_coordinator_user_id: str | None = None,
+    **overrides,
+) -> dict[str, str]:
+    payload = {
+        "faculty_id": str(structure["faculty_id"]),
+        "department_id": str(structure["department_id"]),
+        "program_id": str(structure["program_id"]),
+        "batch_id": str(structure["batch_id"]),
+        "semester_id": str(structure["semester_id"]),
+        "name": name,
+    }
+    if class_coordinator_user_id:
+        payload["class_coordinator_user_id"] = class_coordinator_user_id
+    payload.update({key: value for key, value in overrides.items() if value is not None})
+    return payload
 
 
 def test_register_login_me_and_admin_users_flow() -> None:
@@ -540,8 +677,8 @@ def test_non_teacher_cannot_have_extended_roles() -> None:
     assert register.status_code == 400
 
 
-def test_admin_can_create_courses_years_and_classes() -> None:
-    _setup_fake_db()
+def test_admin_can_create_canonical_sections() -> None:
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     register = client.post(
@@ -560,36 +697,17 @@ def test_admin_can_create_courses_years_and_classes() -> None:
     )
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BCA", "code": "BCA", "description": "Bachelor course"},
-        headers=headers,
-    )
-    assert course.status_code == 201
-    course_id = course.json()["id"]
-
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course_id, "year_number": 1, "label": "First Year"},
-        headers=headers,
-    )
-    assert year.status_code == 201
-    year_id = year.json()["id"]
+    structure = _seed_canonical_structure(fake_db, suffix="ADM6")
 
     class_item = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course_id,
-            "year_id": year_id,
-            "name": "BCA FY",
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="BCA FY"),
         headers=headers,
     )
     assert class_item.status_code == 201
 
 
-def test_student_cannot_create_course() -> None:
+def test_legacy_course_api_is_removed() -> None:
     _setup_fake_db()
     client = TestClient(app)
 
@@ -615,7 +733,7 @@ def test_student_cannot_create_course() -> None:
         json={"name": "MCA", "code": "MCA", "description": "Master course"},
         headers=headers,
     )
-    assert course.status_code == 403
+    assert course.status_code == 404
 
 
 def test_student_can_upload_and_list_own_submissions() -> None:
@@ -724,7 +842,7 @@ def test_student_cannot_view_others_submission() -> None:
     assert response.status_code == 403
 
 
-def test_year_create_requires_valid_course_id() -> None:
+def test_legacy_year_api_is_removed() -> None:
     _setup_fake_db()
     client = TestClient(app)
 
@@ -749,12 +867,11 @@ def test_year_create_requires_valid_course_id() -> None:
         json={"course_id": str(ObjectId()), "year_number": 1, "label": "First Year"},
         headers=headers,
     )
-    assert create.status_code == 400
-    assert create.json()["detail"] == "Course not found for provided course_id"
+    assert create.status_code == 404
 
 
-def test_course_and_subject_code_must_be_unique() -> None:
-    _setup_fake_db()
+def test_program_and_subject_code_must_be_unique() -> None:
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     register = client.post(
@@ -772,20 +889,32 @@ def test_course_and_subject_code_must_be_unique() -> None:
         json={"email": "admin_unique_codes@example.com", "password": "password123"},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    faculty = client.post(
+        "/api/v1/faculties/",
+        json={"name": "Faculty Unique", "code": "FACUNI"},
+        headers=headers,
+    )
+    assert faculty.status_code == 201
+    department = client.post(
+        "/api/v1/departments/",
+        json={"name": "Department Unique", "code": "DEPUNI", "faculty_id": faculty.json()["id"]},
+        headers=headers,
+    )
+    assert department.status_code == 201
 
-    first_course = client.post(
-        "/api/v1/courses/",
-        json={"name": "Course A", "code": "CSE101", "description": "A"},
+    first_program = client.post(
+        "/api/v1/programs/",
+        json={"name": "Program A", "code": "CSE101", "department_id": department.json()["id"], "duration_years": 4},
         headers=headers,
     )
-    assert first_course.status_code == 201
-    duplicate_course = client.post(
-        "/api/v1/courses/",
-        json={"name": "Course B", "code": "cse101", "description": "B"},
+    assert first_program.status_code == 201
+    duplicate_program = client.post(
+        "/api/v1/programs/",
+        json={"name": "Program B", "code": "cse101", "department_id": department.json()["id"], "duration_years": 4},
         headers=headers,
     )
-    assert duplicate_course.status_code == 400
-    assert duplicate_course.json()["detail"] == "Course code already exists"
+    assert duplicate_program.status_code == 400
+    assert duplicate_program.json()["detail"] == "Program code already exists"
 
     first_subject = client.post(
         "/api/v1/subjects/",
@@ -802,8 +931,8 @@ def test_course_and_subject_code_must_be_unique() -> None:
     assert duplicate_subject.json()["detail"] == "Subject code already exists"
 
 
-def test_class_create_requires_matching_course_and_year() -> None:
-    _setup_fake_db()
+def test_class_create_requires_matching_batch_and_program() -> None:
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     register = client.post(
@@ -821,42 +950,24 @@ def test_class_create_requires_matching_course_and_year() -> None:
         json={"email": "admin_class_validate@example.com", "password": "password123"},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-
-    course_one = client.post(
-        "/api/v1/courses/",
-        json={"name": "Course One", "code": "CO1", "description": "One"},
-        headers=headers,
-    )
-    assert course_one.status_code == 201
-    course_two = client.post(
-        "/api/v1/courses/",
-        json={"name": "Course Two", "code": "CO2", "description": "Two"},
-        headers=headers,
-    )
-    assert course_two.status_code == 201
-
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course_one.json()["id"], "year_number": 1, "label": "FY"},
-        headers=headers,
-    )
-    assert year.status_code == 201
+    structure_one = _seed_canonical_structure(fake_db, suffix="CO1")
+    structure_two = _seed_canonical_structure(fake_db, suffix="CO2")
 
     mismatch = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course_two.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "Invalid Class",
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure_two,
+            name="Invalid Class",
+            batch_id=str(structure_one["batch_id"]),
+        ),
         headers=headers,
     )
     assert mismatch.status_code == 400
-    assert mismatch.json()["detail"] == "year_id does not belong to provided course_id"
+    assert mismatch.json()["detail"] == "batch_id does not belong to provided program_id"
 
 
 def test_student_create_requires_valid_class_and_unique_roll_number() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     register = client.post(
@@ -888,21 +999,10 @@ def test_student_create_requires_valid_class_and_unique_roll_number() -> None:
     assert bad_class.status_code == 400
     assert bad_class.json()["detail"] == "Class not found for provided class_id"
 
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BCA", "code": "BCA01", "description": "Course"},
-        headers=headers,
-    )
-    assert course.status_code == 201
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "Year 1"},
-        headers=headers,
-    )
-    assert year.status_code == 201
+    structure = _seed_canonical_structure(fake_db, suffix="STU1")
     class_item = client.post(
-        "/api/v1/classes/",
-        json={"course_id": course.json()["id"], "year_id": year.json()["id"], "name": "BCA Y1"},
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="BCA Y1"),
         headers=headers,
     )
     assert class_item.status_code == 201
@@ -973,7 +1073,7 @@ def test_admin_can_assign_teacher_extension_roles() -> None:
 
 
 def test_class_coordinator_enrollment_permissions_enforced() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -1014,35 +1114,23 @@ def test_class_coordinator_enrollment_permissions_enforced() -> None:
         json={"email": "admin_enroll_flow@example.com", "password": "password123"},
     )
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BTech", "code": "BT1", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="ENR1")
     class_one = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "Class One",
-            "class_coordinator_user_id": teacher_one.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="Class One",
+            class_coordinator_user_id=teacher_one.json()["id"],
+        ),
         headers=admin_headers,
     )
     class_two = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "Class Two",
-            "class_coordinator_user_id": teacher_two.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="Class Two",
+            class_coordinator_user_id=teacher_two.json()["id"],
+        ),
         headers=admin_headers,
     )
     student = client.post(
@@ -1078,7 +1166,7 @@ def test_class_coordinator_enrollment_permissions_enforced() -> None:
 
 
 def test_year_head_can_enroll_students_across_classes() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -1119,25 +1207,14 @@ def test_year_head_can_enroll_students_across_classes() -> None:
         json={"email": "admin_yearhead_enroll@example.com", "password": "password123"},
     )
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BSc", "code": "BSC1", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="YHEN")
     class_item = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "General Class",
-            "class_coordinator_user_id": coordinator.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="General Class",
+            class_coordinator_user_id=coordinator.json()["id"],
+        ),
         headers=admin_headers,
     )
     student = client.post(
@@ -1390,7 +1467,7 @@ def test_student_cannot_tamper_submission_ai_fields() -> None:
 
 
 def test_class_coordinator_cannot_list_other_class_enrollments() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -1441,35 +1518,23 @@ def test_class_coordinator_cannot_list_other_class_enrollments() -> None:
         json={"email": "admin_enrollment_scope@example.com", "password": "password123"},
     )
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BCA", "code": "BCA2", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="E302")
     class_one = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "Class One",
-            "class_coordinator_user_id": coordinator_one.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="Class One",
+            class_coordinator_user_id=coordinator_one.json()["id"],
+        ),
         headers=admin_headers,
     )
     class_two = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "Class Two",
-            "class_coordinator_user_id": coordinator_two.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="Class Two",
+            class_coordinator_user_id=coordinator_two.json()["id"],
+        ),
         headers=admin_headers,
     )
     student_doc = client.post(
@@ -1506,8 +1571,8 @@ def test_class_coordinator_cannot_list_other_class_enrollments() -> None:
     assert body[0]["class_id"] == class_one.json()["id"]
 
 
-def test_students_receive_scoped_notices_for_their_class_year_and_subject() -> None:
-    _setup_fake_db()
+def test_students_receive_scoped_notices_for_their_class_batch_and_subject() -> None:
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -1536,23 +1601,10 @@ def test_students_receive_scoped_notices_for_their_class_year_and_subject() -> N
         json={"email": "admin_notice_scope@example.com", "password": "password123"},
     )
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BTech", "code": "BTNOT", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 2, "label": "Second Year"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="NTSC", start_year=2023, semester_number=3)
     class_item = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "BTech Y2 A",
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="BTech Y2 A"),
         headers=admin_headers,
     )
     subject = client.post(
@@ -1581,8 +1633,6 @@ def test_students_receive_scoped_notices_for_their_class_year_and_subject() -> N
         },
         headers=admin_headers,
     )
-    assert course.status_code == 201
-    assert year.status_code == 201
     assert class_item.status_code == 201
     assert subject.status_code == 201
     assert student_profile.status_code == 201
@@ -1609,14 +1659,14 @@ def test_students_receive_scoped_notices_for_their_class_year_and_subject() -> N
         },
         headers=admin_headers,
     )
-    year_notice = client.post(
+    batch_notice = client.post(
         "/api/v1/notices/",
         json={
-            "title": "Year Internal",
-            "message": "Year-only announcement",
+            "title": "Batch Internal",
+            "message": "Batch-only announcement",
             "priority": "normal",
-            "scope": "year",
-            "scope_ref_id": year.json()["id"],
+            "scope": "batch",
+            "scope_ref_id": str(structure["batch_id"]),
         },
         headers=admin_headers,
     )
@@ -1633,7 +1683,7 @@ def test_students_receive_scoped_notices_for_their_class_year_and_subject() -> N
     )
     assert college_notice.status_code == 201
     assert class_notice.status_code == 201
-    assert year_notice.status_code == 201
+    assert batch_notice.status_code == 201
     assert subject_notice.status_code == 201
 
     student_login = client.post(
@@ -1647,12 +1697,12 @@ def test_students_receive_scoped_notices_for_their_class_year_and_subject() -> N
     titles = {item["title"] for item in body}
     assert "Campus Update" in titles
     assert "Class Internal" in titles
-    assert "Year Internal" in titles
+    assert "Batch Internal" in titles
     assert "Subject Internal" in titles
 
 
 def test_teacher_cannot_read_other_teacher_class_by_id() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -1692,25 +1742,14 @@ def test_teacher_cannot_read_other_teacher_class_by_id() -> None:
         json={"email": "admin_class_read_scope@example.com", "password": "password123"},
     )
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BTech", "code": "BTCLS", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "First Year"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="READ")
     class_item = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "BTech Y1 A",
-            "class_coordinator_user_id": teacher_owner.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="BTech Y1 A",
+            class_coordinator_user_id=teacher_owner.json()["id"],
+        ),
         headers=admin_headers,
     )
     assert class_item.status_code == 201
@@ -1720,7 +1759,7 @@ def test_teacher_cannot_read_other_teacher_class_by_id() -> None:
         json={"email": "owner_class_read_scope@example.com", "password": "password123"},
     )
     owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
-    owner_get = client.get(f"/api/v1/classes/{class_item.json()['id']}", headers=owner_headers)
+    owner_get = client.get(f"/api/v1/sections/{class_item.json()['id']}", headers=owner_headers)
     assert owner_get.status_code == 200
 
     other_login = client.post(
@@ -1728,13 +1767,13 @@ def test_teacher_cannot_read_other_teacher_class_by_id() -> None:
         json={"email": "other_class_read_scope@example.com", "password": "password123"},
     )
     other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
-    denied = client.get(f"/api/v1/classes/{class_item.json()['id']}", headers=other_headers)
+    denied = client.get(f"/api/v1/sections/{class_item.json()['id']}", headers=other_headers)
     assert denied.status_code == 403
     assert denied.json()["detail"] == "Not allowed to view this class"
 
 
 def test_teacher_notice_scope_requires_owned_class_and_valid_scope_ref() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -1780,35 +1819,23 @@ def test_teacher_notice_scope_requires_owned_class_and_valid_scope_ref() -> None
         json={"email": "teacher_notice_validate@example.com", "password": "password123"},
     )
     teacher_headers = {"Authorization": f"Bearer {teacher_login.json()['access_token']}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BCA", "code": "BCANOT", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="NOTV")
     own_class = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "BCA FY A",
-            "class_coordinator_user_id": teacher.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="BCA FY A",
+            class_coordinator_user_id=teacher.json()["id"],
+        ),
         headers=admin_headers,
     )
     other_class = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "BCA FY B",
-            "class_coordinator_user_id": other_teacher.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="BCA FY B",
+            class_coordinator_user_id=other_teacher.json()["id"],
+        ),
         headers=admin_headers,
     )
     assert own_class.status_code == 201
@@ -1854,7 +1881,7 @@ def test_teacher_notice_scope_requires_owned_class_and_valid_scope_ref() -> None
 
 
 def test_teacher_submission_listing_applies_scope_before_pagination() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -1919,30 +1946,19 @@ def test_teacher_submission_listing_applies_scope_before_pagination() -> None:
         json={"email": "student_submission_paging@example.com", "password": "password123"},
     )
     student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BSc", "code": "BSCSUB", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="SPAG")
     class_one = client.post(
-        "/api/v1/classes/",
-        json={"course_id": course.json()["id"], "year_id": year.json()["id"], "name": "Class One"},
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Class One"),
         headers=admin_headers,
     )
     class_two = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "Class Two",
-            "class_coordinator_user_id": teacher_coordinator.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="Class Two",
+            class_coordinator_user_id=teacher_coordinator.json()["id"],
+        ),
         headers=admin_headers,
     )
     assert class_one.status_code == 201
@@ -1984,7 +2000,7 @@ def test_teacher_submission_listing_applies_scope_before_pagination() -> None:
 
 
 def test_teacher_enrollment_listing_applies_scope_before_pagination() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -2019,30 +2035,19 @@ def test_teacher_enrollment_listing_applies_scope_before_pagination() -> None:
         json={"email": "coord_enrollment_paging@example.com", "password": "password123"},
     )
     coord_headers = {"Authorization": f"Bearer {coord_login.json()['access_token']}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BCom", "code": "BCOMENR", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 1, "label": "FY"},
-        headers=admin_headers,
-    )
+    structure = _seed_canonical_structure(fake_db, suffix="ENPG")
     class_one = client.post(
-        "/api/v1/classes/",
-        json={"course_id": course.json()["id"], "year_id": year.json()["id"], "name": "Class One"},
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Class One"),
         headers=admin_headers,
     )
     class_two = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "Class Two",
-            "class_coordinator_user_id": coordinator.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="Class Two",
+            class_coordinator_user_id=coordinator.json()["id"],
+        ),
         headers=admin_headers,
     )
     student_one = client.post(
@@ -2464,7 +2469,7 @@ def test_club_coordinator_can_archive_club_event() -> None:
 
 
 def test_teacher_without_coordinator_classes_gets_empty_academic_structure() -> None:
-    _setup_fake_db()
+    fake_db = _setup_fake_db()
     client = TestClient(app)
 
     admin = client.post(
@@ -2503,27 +2508,16 @@ def test_teacher_without_coordinator_classes_gets_empty_academic_structure() -> 
         json={"email": "admin_structure_scope@example.com", "password": "password123"},
     )
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
-
-    course = client.post(
-        "/api/v1/courses/",
-        json={"name": "BTech", "code": "BTSC", "description": "desc"},
-        headers=admin_headers,
-    )
-    year = client.post(
-        "/api/v1/years/",
-        json={"course_id": course.json()["id"], "year_number": 2, "label": "2nd Year"},
-        headers=admin_headers,
-    )
+    structure_seed = _seed_canonical_structure(fake_db, suffix="STRU", semester_number=3)
     class_item = client.post(
-        "/api/v1/classes/",
-        json={
-            "course_id": course.json()["id"],
-            "year_id": year.json()["id"],
-            "name": "Computer Science Engineering",
-            "faculty_name": "Faculty of Engineering",
-            "branch_name": "Computer Science Engineering",
-            "class_coordinator_user_id": teacher_owner.json()["id"],
-        },
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure_seed,
+            name="Computer Science Engineering",
+            faculty_name="Faculty of Engineering",
+            branch_name="Computer Science Engineering",
+            class_coordinator_user_id=teacher_owner.json()["id"],
+        ),
         headers=admin_headers,
     )
     assert class_item.status_code == 201
@@ -2584,4 +2578,5 @@ def test_user_cannot_access_other_user_avatar() -> None:
     denied = client.get(f"/api/v1/auth/profile/avatar/{target_user_id}", headers=two_headers)
     assert denied.status_code == 403
     assert denied.json()["detail"] == "Not allowed to view this avatar"
+
 

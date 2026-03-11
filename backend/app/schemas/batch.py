@@ -24,12 +24,18 @@ class BatchUpdate(BaseModel):
 
 class BatchOut(BaseModel):
     id: str
+    faculty_id: str | None = None
+    department_id: str | None = None
     program_id: str
     specialization_id: str | None = None
     name: str
     code: str
     start_year: int | None = None
     end_year: int | None = None
+    academic_span_label: str | None = None
+    university_name: str | None = None
+    university_code: str | None = None
+    auto_generated: bool = False
     is_active: bool = True
     deleted_at: datetime | None = None
     deleted_by: str | None = None

@@ -170,9 +170,7 @@ export default function ProfilePage() {
     try {
       const multipart = new FormData();
       multipart.append('file', file);
-      await apiClient.post('/auth/profile/avatar', multipart, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      await apiClient.post('/auth/profile/avatar', multipart);
       await refreshUser();
       pushToast({ title: 'Photo updated', description: 'Profile photo uploaded successfully.', variant: 'success' });
     } catch (err) {

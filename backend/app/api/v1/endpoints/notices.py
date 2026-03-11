@@ -31,7 +31,7 @@ def _can_publish_scope(current_user: dict, scope: str) -> bool:
     extensions = current_user.get('extended_roles', [])
     if normalized_scope == 'college':
         return False
-    if normalized_scope == 'year':
+    if normalized_scope == 'batch':
         return 'year_head' in extensions
     if normalized_scope == 'class':
         return 'class_coordinator' in extensions
@@ -47,13 +47,13 @@ async def _validate_scope_ref_access(current_user: dict, scope: str, scope_ref_i
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='scope_ref_id must be empty for college scope')
         return None
 
-    if normalized_scope in {'year', 'class', 'subject'} and not scope_ref_id:
+    if normalized_scope in {'batch', 'class', 'subject'} and not scope_ref_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='scope_ref_id is required for this scope')
 
-    if normalized_scope == 'year':
-        year = await db.years.find_one({'_id': parse_object_id(scope_ref_id)})
-        if not year:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Year not found for provided scope_ref_id')
+    if normalized_scope == 'batch':
+        batch = await db.batches.find_one({'_id': parse_object_id(scope_ref_id)})
+        if not batch:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Batch not found for provided scope_ref_id')
         return scope_ref_id
 
     if normalized_scope == 'class':
@@ -93,14 +93,14 @@ async def _student_scope_visibility_ids(current_user: dict) -> tuple[set[str], s
             if class_id:
                 class_ids.add(class_id)
 
-    year_ids: set[str] = set()
+    batch_ids: set[str] = set()
     if class_ids:
         class_object_ids = [ObjectId(class_id) for class_id in class_ids if ObjectId.is_valid(class_id)]
         classes = await db.classes.find({'_id': {'$in': class_object_ids}}).to_list(length=2000) if class_object_ids else []
         for class_doc in classes:
-            year_id = class_doc.get('year_id')
-            if year_id:
-                year_ids.add(year_id)
+            batch_id = class_doc.get('batch_id')
+            if batch_id:
+                batch_ids.add(batch_id)
 
     subject_ids: set[str] = set()
     if class_ids:
@@ -110,7 +110,7 @@ async def _student_scope_visibility_ids(current_user: dict) -> tuple[set[str], s
             if subject_id:
                 subject_ids.add(subject_id)
 
-    return class_ids, year_ids, subject_ids
+    return class_ids, batch_ids, subject_ids
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -201,7 +201,7 @@ async def list_notices(
         items = [item for item in items if not _to_aware_utc(item.get('expires_at')) or _to_aware_utc(item.get('expires_at')) > now]
 
     if current_user.get('role') == 'student':
-        class_ids, year_ids, subject_ids = await _student_scope_visibility_ids(current_user)
+        class_ids, batch_ids, subject_ids = await _student_scope_visibility_ids(current_user)
         scoped_items = []
         for item in items:
             item_scope = item.get('scope')
@@ -212,7 +212,7 @@ async def list_notices(
             if item_scope == 'class' and scope_ref_id and scope_ref_id in class_ids:
                 scoped_items.append(item)
                 continue
-            if item_scope == 'year' and scope_ref_id and scope_ref_id in year_ids:
+            if item_scope == 'batch' and scope_ref_id and scope_ref_id in batch_ids:
                 scoped_items.append(item)
                 continue
             if item_scope == 'subject' and scope_ref_id and scope_ref_id in subject_ids:

@@ -11,7 +11,6 @@ from app.api.v1.endpoints import (
     assignments,
     audit_logs,
     batches,
-    branches,
     branding,
     club_events,
     clubs,
@@ -22,7 +21,6 @@ from app.api.v1.endpoints import (
     auth,
     classes,
     class_slots,
-    courses,
     course_offerings,
     evaluations,
     notices,
@@ -37,7 +35,6 @@ from app.api.v1.endpoints import (
     submissions,
     timetables,
     users,
-    years,
     programs,
 )
 
@@ -46,20 +43,12 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 # Canonical academic model:
 # Faculty -> Department -> Program -> Specialization -> Batch -> Semester -> Section
-# Legacy compatibility modules retained for backward compatibility:
-# Course -> Year and Department -> Branch
-api_router.include_router(courses.router, prefix="/courses", tags=["courses", "legacy-academic"], deprecated=True)
 api_router.include_router(programs.router, prefix="/programs", tags=["programs"])
 api_router.include_router(departments.router, prefix="/departments", tags=["departments"])
 api_router.include_router(faculties.router, prefix="/faculties", tags=["faculties"])
-api_router.include_router(branches.router, prefix="/branches", tags=["branches", "legacy-academic"], deprecated=True)
 api_router.include_router(specializations.router, prefix="/specializations", tags=["specializations"])
-api_router.include_router(years.router, prefix="/years", tags=["years", "legacy-academic"], deprecated=True)
 api_router.include_router(batches.router, prefix="/batches", tags=["batches"])
 api_router.include_router(semesters.router, prefix="/semesters", tags=["semesters"])
-# Canonical section endpoint is /sections.
-# /classes is a legacy compatibility alias and should be treated as deprecated for new clients.
-api_router.include_router(classes.router, prefix="/classes", tags=["classes", "legacy-academic"], deprecated=True)
 api_router.include_router(classes.router, prefix="/sections", tags=["sections"])
 api_router.include_router(students.router, prefix="/students", tags=["students"])
 api_router.include_router(groups.router, prefix="/groups", tags=["groups"])

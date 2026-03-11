@@ -39,9 +39,6 @@ describe('canAccessFeature', () => {
     expect(canAccessFeature(superAdmin, FEATURE_ACCESS.faculties)).toBe(true);
     expect(canAccessFeature(academicAdmin, FEATURE_ACCESS.departments)).toBe(true);
     expect(canAccessFeature(departmentAdmin, FEATURE_ACCESS.departments)).toBe(false);
-    expect(canAccessFeature(departmentAdmin, FEATURE_ACCESS.courses)).toBe(false);
-    expect(canAccessFeature(departmentAdmin, FEATURE_ACCESS.years)).toBe(false);
-    expect(canAccessFeature(departmentAdmin, FEATURE_ACCESS.branches)).toBe(false);
   });
 
   it('matches backend admin policy for canonical lower-hierarchy setup modules', () => {

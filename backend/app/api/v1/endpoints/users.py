@@ -123,8 +123,6 @@ async def update_user_extension_roles(
                 class_scope["department_id"] = class_doc.get("department_id")
                 class_scope["program_id"] = class_doc.get("program_id")
                 class_scope["specialization_id"] = class_doc.get("specialization_id")
-                class_scope["course_id"] = class_doc.get("course_id")
-                class_scope["year_id"] = class_doc.get("year_id")
                 class_scope["batch_id"] = class_doc.get("batch_id")
                 class_scope["semester_id"] = class_doc.get("semester_id")
                 role_scope["class_coordinator"] = class_scope

@@ -363,7 +363,7 @@ async def evaluate_with_ai(
         student_answer = submission.get("extracted_text") or submission.get("notes") or ""
 
     runtime_settings = await get_ai_runtime_settings()
-    ai_response, ai_error, ai_metadata = await run_in_threadpool(
+    ai_result = await run_in_threadpool(
         generate_evaluation_chat_reply,
         teacher_message=payload.teacher_message,
         question_text=payload.question_text,
@@ -371,6 +371,18 @@ async def evaluate_with_ai(
         rubric=payload.rubric,
         runtime_settings=runtime_settings,
     )
+    if isinstance(ai_result, tuple):
+        if len(ai_result) == 3:
+            ai_response, ai_error, ai_metadata = ai_result
+        elif len(ai_result) == 2:
+            ai_response, ai_error = ai_result
+            ai_metadata = {}
+        else:
+            raise ValueError("generate_evaluation_chat_reply returned an unexpected tuple shape")
+    else:
+        ai_response = str(ai_result)
+        ai_error = None
+        ai_metadata = {}
     now = datetime.now(timezone.utc)
     thread = await db.ai_evaluation_chats.find_one({"student_id": student_id, "exam_id": exam_id})
     teacher_message_doc = {

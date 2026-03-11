@@ -57,3 +57,6 @@ frontend/.env.production.local
 frontend_backup_*/
 frontend_before_replace_*/
 frontend_phase*_attempt_*/
+
+
+docs/

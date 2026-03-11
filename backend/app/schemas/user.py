@@ -46,8 +46,6 @@ class ClassCoordinatorScope(BaseModel):
     program_id: str | None = None
     specialization_id: str | None = None
     department_code: str | None = Field(default=None, max_length=60)
-    course_id: str | None = None
-    year_id: str | None = None
     batch_id: str | None = None
     semester_id: str | None = None
     class_id: str | None = None

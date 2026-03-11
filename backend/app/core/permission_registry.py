@@ -33,9 +33,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, set[str]]] = {
     "batches.manage": _admin_rule("super_admin", "admin", "academic_admin", "department_admin"),
     "semesters.manage": _admin_rule("super_admin", "admin", "academic_admin", "department_admin"),
     "sections.manage": _admin_rule("super_admin", "admin", "academic_admin", "department_admin"),
-    "courses.manage": _admin_rule("super_admin", "admin", "academic_admin"),
-    "years.manage": _admin_rule("super_admin", "admin", "academic_admin"),
-    "branches.manage": _admin_rule("super_admin", "admin", "academic_admin"),
     "clubs.manage": {
         "roles": {"admin", "teacher"},
         "admin_types": {"super_admin", "admin"},
@@ -99,29 +96,5 @@ ACADEMIC_ROUTE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "POST": "sections.manage",
         "PUT": "sections.manage",
         "DELETE": "sections.manage",
-    },
-    "/classes": {
-        "GET": "role:admin|teacher",
-        "POST": "sections.manage (legacy alias)",
-        "PUT": "sections.manage (legacy alias)",
-        "DELETE": "sections.manage (legacy alias)",
-    },
-    "/courses": {
-        "GET": "role:admin|teacher",
-        "POST": "courses.manage (legacy module)",
-        "PUT": "courses.manage (legacy module)",
-        "DELETE": "courses.manage (legacy module)",
-    },
-    "/years": {
-        "GET": "role:admin|teacher",
-        "POST": "years.manage (legacy module)",
-        "PUT": "years.manage (legacy module)",
-        "DELETE": "years.manage (legacy module)",
-    },
-    "/branches": {
-        "GET": "role:admin|teacher",
-        "POST": "branches.manage (legacy module)",
-        "PUT": "branches.manage (legacy module)",
-        "DELETE": "branches.manage (legacy module)",
     },
 }

@@ -470,6 +470,7 @@ export default function EntityManager({
   }
 
   function closeDeleteReviewPrompt() {
+    setDeleteError('');
     setDeleteReviewPromptOpen(false);
     setDeleteReviewTarget(null);
     setDeleteReviewPromptConfig(deleteReviewConfig);
@@ -602,23 +603,9 @@ export default function EntityManager({
               </select>
             </div>
           </div>
-          {enableDelete && deleteReviewConfig.enabled ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
-                <p>{deleteReviewConfig.helpText}</p>
-                <FormInput
-                  label={deleteReviewConfig.label}
-                  value={deleteReviewId}
-                  placeholder={deleteReviewConfig.placeholder}
-                  onChange={(e) => setDeleteReviewId(e.target.value)}
-                />
-              </div>
-            </div>
-          ) : null}
-
           {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-          {deleteError ? <p className="text-sm text-rose-600">{deleteError}</p> : null}
+          {deleteError && !deleteReviewPromptOpen ? <p className="text-sm text-rose-600">{deleteError}</p> : null}
           <Table
             columns={columns}
             data={rows}

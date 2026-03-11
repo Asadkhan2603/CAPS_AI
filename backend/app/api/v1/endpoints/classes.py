@@ -15,14 +15,64 @@ from app.services.governance import enforce_review_approval
 router = APIRouter()
 
 
+async def _validate_section_relations(
+    *,
+    faculty_id: str | None,
+    department_id: str | None,
+    program_id: str | None,
+    specialization_id: str | None,
+    batch_id: str | None,
+    semester_id: str | None,
+) -> None:
+    if faculty_id:
+        faculty = await db.faculties.find_one({'_id': parse_object_id(faculty_id)})
+        if not faculty:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Faculty not found for provided faculty_id')
+
+    if department_id:
+        department = await db.departments.find_one({'_id': parse_object_id(department_id)})
+        if not department:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Department not found for provided department_id')
+        if faculty_id and department.get('faculty_id') != faculty_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='department_id does not belong to provided faculty_id')
+
+    if program_id:
+        program = await db.programs.find_one({'_id': parse_object_id(program_id)})
+        if not program:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Program not found for provided program_id')
+        if department_id and program.get('department_id') != department_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='program_id does not belong to provided department_id')
+
+    if specialization_id:
+        specialization = await db.specializations.find_one({'_id': parse_object_id(specialization_id)})
+        if not specialization:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Specialization not found for provided specialization_id')
+        if program_id and specialization.get('program_id') != program_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='specialization_id does not belong to provided program_id')
+
+    batch = None
+    if batch_id:
+        batch = await db.batches.find_one({'_id': parse_object_id(batch_id)})
+        if not batch:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Batch not found for provided batch_id')
+        if program_id and batch.get('program_id') != program_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='batch_id does not belong to provided program_id')
+        if specialization_id and batch.get('specialization_id') and batch.get('specialization_id') != specialization_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='batch_id does not belong to provided specialization_id')
+
+    if semester_id:
+        semester = await db.semesters.find_one({'_id': parse_object_id(semester_id)})
+        if not semester:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Semester not found for provided semester_id')
+        if batch_id and semester.get('batch_id') != batch_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='semester_id does not belong to provided batch_id')
+
 @router.get('/', response_model=List[ClassOut])
 async def list_classes(
     faculty_id: str | None = Query(default=None),
     department_id: str | None = Query(default=None),
     program_id: str | None = Query(default=None),
     specialization_id: str | None = Query(default=None),
-    course_id: str | None = Query(default=None),
-    year_id: str | None = Query(default=None),
     batch_id: str | None = Query(default=None),
     semester_id: str | None = Query(default=None),
     faculty_name: str | None = Query(default=None),
@@ -42,10 +92,6 @@ async def list_classes(
         query['program_id'] = program_id
     if specialization_id:
         query['specialization_id'] = specialization_id
-    if course_id:
-        query['course_id'] = course_id
-    if year_id:
-        query['year_id'] = year_id
     if batch_id:
         query['batch_id'] = batch_id
     if semester_id:
@@ -85,61 +131,20 @@ async def create_class(
     payload: ClassCreate,
     _current_user=Depends(require_permission("sections.manage")),
 ) -> ClassOut:
-    if payload.faculty_id:
-        faculty = await db.faculties.find_one({'_id': parse_object_id(payload.faculty_id)})
-        if not faculty:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Faculty not found for provided faculty_id')
-
-    if payload.department_id:
-        department = await db.departments.find_one({'_id': parse_object_id(payload.department_id)})
-        if not department:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Department not found for provided department_id')
-        if payload.faculty_id and department.get('faculty_id') != payload.faculty_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='department_id does not belong to provided faculty_id')
-
-    if payload.program_id:
-        program = await db.programs.find_one({'_id': parse_object_id(payload.program_id)})
-        if not program:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Program not found for provided program_id')
-        if payload.department_id and program.get('department_id') != payload.department_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='program_id does not belong to provided department_id')
-
-    if payload.specialization_id:
-        specialization = await db.specializations.find_one({'_id': parse_object_id(payload.specialization_id)})
-        if not specialization:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Specialization not found for provided specialization_id')
-        if payload.program_id and specialization.get('program_id') != payload.program_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='specialization_id does not belong to provided program_id')
-
-    if payload.course_id:
-        course = await db.courses.find_one({'_id': parse_object_id(payload.course_id)})
-        if not course:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Course not found for provided course_id')
-
-    if payload.year_id:
-        year = await db.years.find_one({'_id': parse_object_id(payload.year_id)})
-        if not year:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Year not found for provided year_id')
-        if payload.course_id and year.get('course_id') != payload.course_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='year_id does not belong to provided course_id')
-    if payload.batch_id:
-        batch = await db.batches.find_one({'_id': parse_object_id(payload.batch_id)})
-        if not batch:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Batch not found for provided batch_id')
-    if payload.semester_id:
-        semester = await db.semesters.find_one({'_id': parse_object_id(payload.semester_id)})
-        if not semester:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Semester not found for provided semester_id')
-        if payload.batch_id and semester.get('batch_id') != payload.batch_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='semester_id does not belong to provided batch_id')
+    await _validate_section_relations(
+        faculty_id=payload.faculty_id,
+        department_id=payload.department_id,
+        program_id=payload.program_id,
+        specialization_id=payload.specialization_id,
+        batch_id=payload.batch_id,
+        semester_id=payload.semester_id,
+    )
 
     document = {
         'faculty_id': payload.faculty_id,
         'department_id': payload.department_id,
         'program_id': payload.program_id,
         'specialization_id': payload.specialization_id,
-        'course_id': payload.course_id,
-        'year_id': payload.year_id,
         'batch_id': payload.batch_id,
         'semester_id': payload.semester_id,
         'name': payload.name.strip(),
@@ -179,60 +184,16 @@ async def update_class(
     target_department_id = update_data.get('department_id', current.get('department_id'))
     target_program_id = update_data.get('program_id', current.get('program_id'))
     target_specialization_id = update_data.get('specialization_id', current.get('specialization_id'))
-    target_course_id = update_data.get('course_id', current.get('course_id'))
-    target_year_id = update_data.get('year_id', current.get('year_id'))
     target_batch_id = update_data.get('batch_id', current.get('batch_id'))
     target_semester_id = update_data.get('semester_id', current.get('semester_id'))
-    if target_faculty_id:
-        faculty = await db.faculties.find_one({'_id': parse_object_id(target_faculty_id)})
-        if not faculty:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Faculty not found for provided faculty_id')
-    if target_department_id:
-        department = await db.departments.find_one({'_id': parse_object_id(target_department_id)})
-        if not department:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Department not found for provided department_id')
-        if target_faculty_id and department.get('faculty_id') != target_faculty_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='department_id does not belong to provided faculty_id')
-    if target_program_id:
-        program = await db.programs.find_one({'_id': parse_object_id(target_program_id)})
-        if not program:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Program not found for provided program_id')
-        if target_department_id and program.get('department_id') != target_department_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='program_id does not belong to provided department_id')
-    if target_specialization_id:
-        specialization = await db.specializations.find_one({'_id': parse_object_id(target_specialization_id)})
-        if not specialization:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Specialization not found for provided specialization_id')
-        if target_program_id and specialization.get('program_id') != target_program_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='specialization_id does not belong to provided program_id')
-    if target_course_id and target_year_id:
-        course = await db.courses.find_one({'_id': parse_object_id(target_course_id)})
-        if not course:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail='Course not found for provided course_id',
-            )
-        year = await db.years.find_one({'_id': parse_object_id(target_year_id)})
-        if not year:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail='Year not found for provided year_id',
-            )
-        if year.get('course_id') != target_course_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail='year_id does not belong to provided course_id',
-            )
-    if target_batch_id:
-        batch = await db.batches.find_one({'_id': parse_object_id(target_batch_id)})
-        if not batch:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Batch not found for provided batch_id')
-    if target_semester_id:
-        semester = await db.semesters.find_one({'_id': parse_object_id(target_semester_id)})
-        if not semester:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Semester not found for provided semester_id')
-        if target_batch_id and semester.get('batch_id') != target_batch_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='semester_id does not belong to provided batch_id')
+    await _validate_section_relations(
+        faculty_id=target_faculty_id,
+        department_id=target_department_id,
+        program_id=target_program_id,
+        specialization_id=target_specialization_id,
+        batch_id=target_batch_id,
+        semester_id=target_semester_id,
+    )
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')

@@ -157,7 +157,7 @@ export default function TimetablePage() {
 
   const selectedClassName = useMemo(() => {
     const item = classes.find((it) => it.id === selectedClassId);
-    return item ? `${item.name}${item.branch_name ? ` (${item.branch_name})` : ''}` : '-';
+    return item ? item.name : '-';
   }, [classes, selectedClassId]);
 
   const studentOfferingMap = useMemo(

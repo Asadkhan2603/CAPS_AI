@@ -178,8 +178,7 @@ export default function ClassesPage() {
         semester_id: form.semester_id || null,
         name: form.name,
         class_coordinator_user_id: form.class_coordinator_user_id || null,
-        faculty_name: facultyNameById[form.faculty_id] || null,
-        branch_name: programNameById[form.program_id] || null
+        faculty_name: facultyNameById[form.faculty_id] || null
       });
       pushToast({ title: 'Created', description: 'Section created successfully.', variant: 'success' });
       setForm({

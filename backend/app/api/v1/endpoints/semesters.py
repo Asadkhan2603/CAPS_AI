@@ -9,6 +9,7 @@ from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.semesters import semester_public
 from app.schemas.semester_item import SemesterCreate, SemesterOut, SemesterUpdate
+from app.services.academic_batching import build_semester_academic_year
 from app.services.audit import log_destructive_action_event
 
 router = APIRouter()
@@ -58,10 +59,23 @@ async def create_semester(
     duplicate = await db.semesters.find_one({"batch_id": payload.batch_id, "semester_number": payload.semester_number})
     if duplicate:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Semester already exists for this batch")
+    academic_year_start, academic_year_end, academic_year_label = build_semester_academic_year(
+        batch_start_year=batch.get("start_year"),
+        semester_number=payload.semester_number,
+    )
     document = {
         "batch_id": payload.batch_id,
+        "faculty_id": batch.get("faculty_id"),
+        "department_id": batch.get("department_id"),
+        "program_id": batch.get("program_id"),
+        "specialization_id": batch.get("specialization_id"),
         "semester_number": payload.semester_number,
         "label": payload.label.strip(),
+        "academic_year_start": academic_year_start,
+        "academic_year_end": academic_year_end,
+        "academic_year_label": academic_year_label,
+        "university_name": batch.get("university_name"),
+        "university_code": batch.get("university_code"),
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
     }
@@ -85,10 +99,24 @@ async def update_semester(
         update_data["label"] = update_data["label"].strip()
     target_batch_id = update_data.get("batch_id", current.get("batch_id"))
     target_sem_number = update_data.get("semester_number", current.get("semester_number"))
+    batch = None
     if target_batch_id:
         batch = await db.batches.find_one({"_id": parse_object_id(target_batch_id)})
         if not batch:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch not found for provided batch_id")
+        academic_year_start, academic_year_end, academic_year_label = build_semester_academic_year(
+            batch_start_year=batch.get("start_year"),
+            semester_number=int(target_sem_number),
+        )
+        update_data["faculty_id"] = batch.get("faculty_id")
+        update_data["department_id"] = batch.get("department_id")
+        update_data["program_id"] = batch.get("program_id")
+        update_data["specialization_id"] = batch.get("specialization_id")
+        update_data["academic_year_start"] = academic_year_start
+        update_data["academic_year_end"] = academic_year_end
+        update_data["academic_year_label"] = academic_year_label
+        update_data["university_name"] = batch.get("university_name")
+        update_data["university_code"] = batch.get("university_code")
     duplicate = await db.semesters.find_one({"batch_id": target_batch_id, "semester_number": target_sem_number})
     if duplicate and duplicate.get("_id") != semester_obj_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Semester already exists for this batch")

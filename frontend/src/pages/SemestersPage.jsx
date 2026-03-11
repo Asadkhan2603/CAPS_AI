@@ -46,7 +46,9 @@ export default function SemestersPage() {
     () => [
       { key: 'batch_id', label: 'Batch', render: (row) => batchNameById[row.batch_id] || row.batch_id || '-' },
       { key: 'semester_number', label: 'Semester' },
-      { key: 'label', label: 'Label' }
+      { key: 'label', label: 'Label' },
+      { key: 'academic_year_label', label: 'Academic Year', render: (row) => row.academic_year_label || '-' },
+      { key: 'university_code', label: 'University', render: (row) => row.university_code || row.university_name || '-' }
     ],
     [batchNameById]
   );

@@ -6,10 +6,8 @@ import { apiClient } from '../../services/apiClient';
 import { formatApiError } from '../../utils/apiError';
 
 const collections = [
-  'courses',
   'departments',
   'branches',
-  'years',
   'classes',
   'notices',
   'notifications',
@@ -32,7 +30,7 @@ export default function AdminRecoveryPage() {
     setLoading(true);
     setError('');
     try {
-      const response = await apiClient.get('/admin/recovery', { params: { collection, limit: 200 } });
+      const response = await apiClient.get('/admin/recovery/', { params: { collection, limit: 200 } });
       setRows(response.data?.items?.[collection] || []);
       setSummary(response.data?.summary || {});
     } catch (err) {

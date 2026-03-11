@@ -1,4 +1,5 @@
 import asyncio
+import re
 from types import SimpleNamespace
 
 from bson import ObjectId
@@ -10,6 +11,7 @@ from app.api.v1.endpoints import programs as programs_endpoint
 from app.schemas.batch import BatchCreate
 from app.schemas.class_item import ClassCreate
 from app.schemas.program import ProgramUpdate
+from app.services.academic_batching import build_batch_identity, build_program_batch_prefix
 from app.services import governance as governance_service
 
 
@@ -56,6 +58,11 @@ def _matches(document, query):
     for key, expected in query.items():
         actual = document.get(key)
         if isinstance(expected, dict):
+            if "$regex" in expected:
+                pattern = expected["$regex"]
+                flags = re.IGNORECASE if "i" in str(expected.get("$options", "")) else 0
+                if re.fullmatch(pattern.strip("^$"), str(actual or ""), flags=flags) is None:
+                    return False
             if "$gt" in expected and not (actual is not None and actual > expected["$gt"]):
                 return False
             if "$nin" in expected and actual in expected["$nin"]:
@@ -129,10 +136,33 @@ class _SettingsCollection:
         return None
 
 
+def test_build_program_batch_prefix_uses_course_name_before_specialization() -> None:
+    assert build_program_batch_prefix(program_name="B.Sc. (Hons)", program_code="SCI-P01") == "B.Sc."
+    assert build_program_batch_prefix(program_name="B.Tech - CSE", program_code="ENG-P01") == "B.Tech"
+
+
+def test_build_batch_identity_uses_program_display_prefix() -> None:
+    name, code = build_batch_identity(program_batch_prefix="B.Sc.", start_year=2022, end_year=2026)
+
+    assert name == "Batch 2022-2026"
+    assert code == "B.Sc.-B22-26"
+
+
 def test_sync_program_semesters_creates_missing_reactivates_inactive_and_archives_extra(monkeypatch) -> None:
     batch_id = ObjectId()
     fake_db = SimpleNamespace(
-        batches=_MemoryCollection([{"_id": batch_id, "program_id": "program-1"}]),
+        batches=_MemoryCollection(
+            [
+                {
+                    "_id": batch_id,
+                    "program_id": "program-1",
+                    "start_year": 2024,
+                    "department_id": "department-1",
+                    "university_name": "Medi-Caps University",
+                    "university_code": "MEDICAPS",
+                }
+            ]
+        ),
         semesters=_MemoryCollection(
             [
                 {"_id": ObjectId(), "batch_id": str(batch_id), "semester_number": 1, "label": "Semester 1", "is_active": True},
@@ -148,8 +178,12 @@ def test_sync_program_semesters_creates_missing_reactivates_inactive_and_archive
     by_number = {item["semester_number"]: item for item in fake_db.semesters.items}
     assert sorted(by_number) == [1, 2, 3, 4, 5]
     assert by_number[2]["is_active"] is True
-    assert by_number[3]["label"] == "Semester 3"
-    assert by_number[4]["label"] == "Semester 4"
+    assert by_number[1]["label"] == "Semester 1 (2024-2025)"
+    assert by_number[2]["label"] == "Semester 2 (2024-2025)"
+    assert by_number[3]["label"] == "Semester 3 (2025-2026)"
+    assert by_number[4]["label"] == "Semester 4 (2025-2026)"
+    assert by_number[3]["academic_year_label"] == "2025-2026"
+    assert by_number[3]["university_code"] == "MEDICAPS"
     assert by_number[5]["is_active"] is False
 
 
@@ -187,6 +221,7 @@ def test_update_program_rejects_duration_change_when_students_are_enrolled(monke
 
 def test_create_batch_generates_semesters_from_program_duration(monkeypatch) -> None:
     program_id = ObjectId()
+    department_id = ObjectId()
     fake_bdb = SimpleNamespace(
         programs=_MemoryCollection(
             [
@@ -194,9 +229,21 @@ def test_create_batch_generates_semesters_from_program_duration(monkeypatch) -> 
                     "_id": program_id,
                     "name": "B.Tech - CSE",
                     "code": "FOENG-D03-P01",
+                    "department_id": str(department_id),
                     "duration_years": 4,
                     "total_semesters": 8,
                     "is_active": True,
+                }
+            ]
+        ),
+        departments=_MemoryCollection(
+            [
+                {
+                    "_id": department_id,
+                    "name": "Computer Science",
+                    "code": "FOENG-D03",
+                    "university_name": "Medi-Caps University",
+                    "university_code": "MEDICAPS",
                 }
             ]
         ),
@@ -222,10 +269,15 @@ def test_create_batch_generates_semesters_from_program_duration(monkeypatch) -> 
 
     assert result.code == "BT-24"
     assert result.start_year == 2024
-    assert result.end_year == 2027
+    assert result.end_year == 2028
+    assert result.academic_span_label == "2024-2028"
+    assert result.university_code == "MEDICAPS"
     semester_numbers = [item["semester_number"] for item in fake_bdb.semesters.items]
     assert semester_numbers == [1, 2, 3, 4, 5, 6, 7, 8]
     assert all(item["batch_id"] == result.id for item in fake_bdb.semesters.items)
+    assert fake_bdb.semesters.items[0]["label"] == "Semester 1 (2024-2025)"
+    assert fake_bdb.semesters.items[-1]["label"] == "Semester 8 (2027-2028)"
+    assert fake_bdb.semesters.items[0]["academic_year_label"] == "2024-2025"
 
 
 @pytest.mark.parametrize(
