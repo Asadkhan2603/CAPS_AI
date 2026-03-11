@@ -67,6 +67,7 @@ async def _validate_section_relations(
         if batch_id and semester.get('batch_id') != batch_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='semester_id does not belong to provided batch_id')
 
+
 @router.get('/', response_model=List[ClassOut])
 async def list_classes(
     faculty_id: str | None = Query(default=None),
