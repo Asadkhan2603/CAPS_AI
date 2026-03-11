@@ -26,32 +26,39 @@ async def preview_target(
         raise HTTPException(status_code=400, detail='scope_ref_id is required for selected scope')
 
     if scope == 'batch':
-        class_rows = await db.classes.find({'batch_id': scope_ref_id}).to_list(length=5000)
-        class_ids = [str(item.get('_id')) for item in class_rows if item.get('_id')]
-        student_ids = set()
+        class_ids = [str(item) for item in await db.classes.distinct('_id', {'batch_id': scope_ref_id, 'is_active': True}) if item]
+        student_ids: set[str] = set()
         if class_ids:
-            enrollment_rows = await db.enrollments.find({'class_id': {'$in': class_ids}}).to_list(length=20000)
-            for row in enrollment_rows:
-                if row.get('student_id'):
-                    student_ids.add(row.get('student_id'))
+            student_ids = {
+                value
+                for value in await db.enrollments.distinct('student_id', {'class_id': {'$in': class_ids}})
+                if isinstance(value, str) and value
+            }
         return {'scope': 'batch', 'matched_users': len(student_ids), 'estimated_reach': len(student_ids)}
 
     if scope == 'class':
         parse_object_id(scope_ref_id)
-        enrollment_rows = await db.enrollments.find({'class_id': scope_ref_id}).to_list(length=10000)
-        student_ids = {row.get('student_id') for row in enrollment_rows if row.get('student_id')}
+        student_ids = {
+            value
+            for value in await db.enrollments.distinct('student_id', {'class_id': scope_ref_id})
+            if isinstance(value, str) and value
+        }
         return {'scope': 'class', 'matched_users': len(student_ids), 'estimated_reach': len(student_ids)}
 
     if scope == 'subject':
         parse_object_id(scope_ref_id)
-        assignment_rows = await db.assignments.find({'subject_id': scope_ref_id}).to_list(length=5000)
-        class_ids = {row.get('class_id') for row in assignment_rows if row.get('class_id')}
-        student_ids = set()
+        class_ids = {
+            value
+            for value in await db.assignments.distinct('class_id', {'subject_id': scope_ref_id})
+            if isinstance(value, str) and value
+        }
+        student_ids: set[str] = set()
         if class_ids:
-            enrollment_rows = await db.enrollments.find({'class_id': {'$in': list(class_ids)}}).to_list(length=20000)
-            for row in enrollment_rows:
-                if row.get('student_id'):
-                    student_ids.add(row.get('student_id'))
+            student_ids = {
+                value
+                for value in await db.enrollments.distinct('student_id', {'class_id': {'$in': list(class_ids)}})
+                if isinstance(value, str) and value
+            }
         return {'scope': 'subject', 'matched_users': len(student_ids), 'estimated_reach': len(student_ids)}
 
     raise HTTPException(status_code=400, detail='Unsupported scope')

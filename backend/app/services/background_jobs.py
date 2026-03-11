@@ -7,45 +7,57 @@ from bson import ObjectId
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.services.analytics_snapshot import compute_platform_snapshot
-from app.services.notifications import create_notification
+from app.services.notifications import create_notifications_bulk
 
 
 async def _class_ids_for_batch(batch_id: str) -> list[str]:
-    rows = await db.classes.find({"batch_id": batch_id, "is_active": True}, {"_id": 1}).to_list(length=5000)
-    return [str(item.get("_id")) for item in rows if item.get("_id")]
+    class_object_ids = await db.classes.distinct("_id", {"batch_id": batch_id, "is_active": True})
+    return [str(item) for item in class_object_ids if item]
 
 
 async def _student_user_ids_for_class_ids(class_ids: Iterable[str]) -> list[str]:
     class_ids = [class_id for class_id in class_ids if class_id]
     if not class_ids:
         return []
-    enrollments = await db.enrollments.find({"class_id": {"$in": class_ids}}).to_list(length=20000)
-    student_ids = sorted({row.get("student_id") for row in enrollments if row.get("student_id")})
+    student_ids = sorted(
+        {
+            value
+            for value in await db.enrollments.distinct("student_id", {"class_id": {"$in": class_ids}})
+            if isinstance(value, str) and value
+        }
+    )
     if not student_ids:
         return []
     student_object_ids = [parse_object_id(sid) for sid in student_ids if ObjectId.is_valid(sid)]
     if not student_object_ids:
         return []
-    student_rows = await db.students.find({"_id": {"$in": student_object_ids}}, {"email": 1}).to_list(length=len(student_object_ids))
-    emails = sorted({(row.get("email") or "").strip().lower() for row in student_rows if row.get("email")})
+    emails = sorted(
+        {
+            value.strip().lower()
+            for value in await db.students.distinct("email", {"_id": {"$in": student_object_ids}})
+            if isinstance(value, str) and value.strip()
+        }
+    )
     if not emails:
         return []
-    users = await db.users.find({"email": {"$in": emails}}, {"_id": 1}).to_list(length=len(emails))
-    return [str(user.get("_id")) for user in users if user.get("_id")]
+    user_object_ids = await db.users.distinct("_id", {"email": {"$in": emails}, "is_active": True})
+    return [str(item) for item in user_object_ids if item]
 
 
 async def _student_user_ids_for_subject(subject_id: str) -> list[str]:
-    assignments = await db.assignments.find({"subject_id": subject_id}, {"class_id": 1}).to_list(length=5000)
-    class_ids = sorted({row.get("class_id") for row in assignments if row.get("class_id")})
+    class_ids = sorted(
+        {
+            value
+            for value in await db.assignments.distinct("class_id", {"subject_id": subject_id})
+            if isinstance(value, str) and value
+        }
+    )
     return await _student_user_ids_for_class_ids(class_ids)
 
 
 async def _target_user_ids_for_notice(notice: dict[str, Any]) -> list[str]:
     scope = notice.get("scope")
     scope_ref_id = notice.get("scope_ref_id")
-    if scope == "college":
-        rows = await db.users.find({"is_active": True}, {"_id": 1}).to_list(length=50000)
-        return [str(row.get("_id")) for row in rows if row.get("_id")]
     if scope == "class" and scope_ref_id:
         return await _student_user_ids_for_class_ids([scope_ref_id])
     if scope == "batch" and scope_ref_id:
@@ -61,24 +73,60 @@ async def fanout_notice_notifications(notice_id: str) -> None:
         notice = await db.notices.find_one({"_id": parse_object_id(notice_id), "is_active": True})
         if not notice:
             return
-        target_user_ids = await _target_user_ids_for_notice(notice)
-        if not target_user_ids:
-            return
-        for user_id in target_user_ids:
-            await create_notification(
+        scope = notice.get("scope")
+        target_user_ids: list[str] = []
+
+        if scope == "college":
+            # Stream recipients in chunks to avoid loading entire user base into memory.
+            cursor = db.users.find({"is_active": True}, {"_id": 1}).batch_size(2000)
+            buffered_ids: list[str] = []
+            inserted = 0
+            async for user in cursor:
+                user_id = user.get("_id")
+                if not user_id:
+                    continue
+                buffered_ids.append(str(user_id))
+                if len(buffered_ids) >= 2000:
+                    inserted += await create_notifications_bulk(
+                        title=notice.get("title") or "Announcement",
+                        message=notice.get("message") or "",
+                        priority=notice.get("priority") or "normal",
+                        scope="notice",
+                        target_user_ids=buffered_ids,
+                        created_by=notice.get("created_by"),
+                        batch_size=1000,
+                    )
+                    buffered_ids = []
+            if buffered_ids:
+                inserted += await create_notifications_bulk(
+                    title=notice.get("title") or "Announcement",
+                    message=notice.get("message") or "",
+                    priority=notice.get("priority") or "normal",
+                    scope="notice",
+                    target_user_ids=buffered_ids,
+                    created_by=notice.get("created_by"),
+                    batch_size=1000,
+                )
+            fanout_count = inserted
+        else:
+            target_user_ids = await _target_user_ids_for_notice(notice)
+            if not target_user_ids:
+                return
+            fanout_count = await create_notifications_bulk(
                 title=notice.get("title") or "Announcement",
                 message=notice.get("message") or "",
                 priority=notice.get("priority") or "normal",
                 scope="notice",
-                target_user_id=user_id,
+                target_user_ids=target_user_ids,
                 created_by=notice.get("created_by"),
+                batch_size=1000,
             )
         await db.notices.update_one(
             {"_id": notice["_id"]},
             {
                 "$set": {
                     "fanout_dispatched_at": datetime.now(timezone.utc),
-                    "fanout_count": len(target_user_ids),
+                    "fanout_count": fanout_count,
                 }
             },
         )
