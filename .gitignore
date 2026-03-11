@@ -58,5 +58,8 @@ frontend_backup_*/
 frontend_before_replace_*/
 frontend_phase*_attempt_*/
 
+# Local build artifacts
+out/
 
+# Docs (ignore generated/local copies)
 docs/
