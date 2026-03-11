@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import re
+from typing import Any
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -10,6 +12,17 @@ from app.models.class_slots import class_slot_public
 from app.schemas.class_slot import ClassSlotCreate, ClassSlotOut, ClassSlotUpdate
 
 router = APIRouter()
+
+
+async def _distinct_strings(collection: Any, field: str, query: dict[str, Any], *, fallback_length: int) -> list[str]:
+    distinct = getattr(collection, "distinct", None)
+    if callable(distinct):
+        try:
+            return sorted({str(value) for value in await distinct(field, query) if value is not None})
+        except Exception:
+            pass
+    rows = await collection.find(query, {field: 1}).to_list(length=fallback_length)
+    return sorted({str(item.get(field)) for item in rows if item.get(field) is not None})
 
 
 def _time_to_minutes(value: str) -> int:
@@ -51,14 +64,27 @@ async def _validate_slot_conflicts(
     if _time_to_minutes(start_time) >= _time_to_minutes(end_time):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_time must be before end_time")
 
-    query = {"day": day, "is_active": True}
-    rows = await db.class_slots.find(query).to_list(length=5000)
-    offering_ids = sorted({row.get("course_offering_id") for row in rows if row.get("course_offering_id")})
-    offerings = await db.course_offerings.find(
-        {"_id": {"$in": [parse_object_id(value) for value in offering_ids]}},
-        {"teacher_user_id": 1},
-    ).to_list(length=5000) if offering_ids else []
-    offering_map = {str(item.get("_id")): item for item in offerings if item.get("_id")}
+    teacher_user_id = offering.get("teacher_user_id")
+    teacher_offering_ids = (
+        await _distinct_strings(
+            db.course_offerings,
+            "_id",
+            {"teacher_user_id": teacher_user_id, "is_active": True},
+            fallback_length=5000,
+        )
+        if teacher_user_id
+        else []
+    )
+
+    or_filters: list[dict[str, Any]] = [
+        {"room_code": {"$regex": f"^{re.escape(room_code.strip())}$", "$options": "i"}}
+    ]
+    if teacher_offering_ids:
+        or_filters.append({"course_offering_id": {"$in": teacher_offering_ids}})
+    rows = await db.class_slots.find(
+        {"day": day, "is_active": True, "$or": or_filters},
+        {"course_offering_id": 1, "room_code": 1, "start_time": 1, "end_time": 1},
+    ).to_list(length=5000)
 
     for row in rows:
         if slot_id and str(row.get("_id")) == slot_id:
@@ -66,10 +92,7 @@ async def _validate_slot_conflicts(
         if not _overlaps(start_time, end_time, row.get("start_time"), row.get("end_time")):
             continue
 
-        other_offering = offering_map.get(row.get("course_offering_id"))
-        if not other_offering:
-            continue
-        if other_offering.get("teacher_user_id") == offering.get("teacher_user_id"):
+        if row.get("course_offering_id") in teacher_offering_ids:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Teacher conflict on selected day/time")
         if (row.get("room_code") or "").strip().lower() == room_code.strip().lower():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Room conflict on selected day/time")
@@ -94,8 +117,12 @@ async def list_class_slots(
         query["is_active"] = is_active
 
     if section_id:
-        offerings = await db.course_offerings.find({"section_id": section_id, "is_active": True}, {"_id": 1}).to_list(length=5000)
-        offering_ids = [str(item["_id"]) for item in offerings if item.get("_id")]
+        offering_ids = await _distinct_strings(
+            db.course_offerings,
+            "_id",
+            {"section_id": section_id, "is_active": True},
+            fallback_length=5000,
+        )
         if not offering_ids:
             return []
         query["course_offering_id"] = {"$in": offering_ids}
@@ -104,15 +131,16 @@ async def list_class_slots(
         student = await db.students.find_one({"email": current_user.get("email"), "is_active": True})
         if not student or not student.get("class_id"):
             return []
-        student_offerings = await db.course_offerings.find(
+        ids = await _distinct_strings(
+            db.course_offerings,
+            "_id",
             {
                 "section_id": student["class_id"],
                 "is_active": True,
                 "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
             },
-            {"_id": 1},
-        ).to_list(length=5000)
-        ids = [str(item["_id"]) for item in student_offerings if item.get("_id")]
+            fallback_length=5000,
+        )
         if not ids:
             return []
         query["course_offering_id"] = {"$in": ids}
@@ -128,15 +156,16 @@ async def my_slots(
     student = await db.students.find_one({"email": current_user.get("email"), "is_active": True})
     if not student or not student.get("class_id"):
         return []
-    offerings = await db.course_offerings.find(
+    ids = await _distinct_strings(
+        db.course_offerings,
+        "_id",
         {
             "section_id": student["class_id"],
             "is_active": True,
             "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
         },
-        {"_id": 1},
-    ).to_list(length=5000)
-    ids = [str(item["_id"]) for item in offerings if item.get("_id")]
+        fallback_length=5000,
+    )
     if not ids:
         return []
     rows = await db.class_slots.find({"course_offering_id": {"$in": ids}, "is_active": True}).to_list(length=5000)
