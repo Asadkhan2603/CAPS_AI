@@ -64,6 +64,8 @@ def main() -> int:
 
     with TestClient(app) as client:
         headers = _admin_headers(client, "admin_perf_smoke@example.com")
+        teacher_headers = _role_headers(client, "teacher_perf_smoke@example.com", role="teacher")
+        student_headers = _role_headers(client, "student_perf_smoke@example.com", role="student")
 
         for index in range(40):
             fake_db.audit_logs.items.append(
@@ -81,6 +83,21 @@ def main() -> int:
 
         client.get("/health")
         client.get("/api/v1/admin/system/health", headers=headers)
+        assignment = client.post(
+            "/api/v1/assignments/",
+            json={"title": "Perf Smoke Assignment", "description": "Perf smoke", "total_marks": 100},
+            headers=teacher_headers,
+        )
+        _assert_ok(assignment, expected_status=201)
+        assignment_id = assignment.json()["id"]
+        submission = client.post(
+            "/api/v1/submissions/upload",
+            data={"assignment_id": assignment_id, "notes": "perf smoke"},
+            files={"file": ("perf.txt", b"performance smoke submission", "text/plain")},
+            headers=student_headers,
+        )
+        _assert_ok(submission, expected_status=201)
+        submission_id = submission.json()["id"]
 
         health_metric = timed_run(
             "health_check",
@@ -102,8 +119,16 @@ def main() -> int:
                 )
             ),
         )
+        teacher_submission_list_metric = timed_run(
+            "teacher_submission_list",
+            15,
+            lambda: _assert_submission_list(
+                client.get(f"/api/v1/submissions/?assignment_id={assignment_id}", headers=teacher_headers),
+                expected_submission_id=submission_id,
+            ),
+        )
 
-    metrics = [health_metric, system_health_metric, login_metric]
+    metrics = [health_metric, system_health_metric, login_metric, teacher_submission_list_metric]
     for metric in metrics:
         print(
             f"{metric['label']}: avg={metric['avg_ms']:.2f}ms "
@@ -125,13 +150,44 @@ def main() -> int:
         p95_ms=float(os.getenv("PERF_SMOKE_LOGIN_P95_MS", "260")),
         avg_ms=float(os.getenv("PERF_SMOKE_LOGIN_AVG_MS", "180")),
     )
+    assert_threshold(
+        teacher_submission_list_metric,
+        p95_ms=float(os.getenv("PERF_SMOKE_TEACHER_SUBMISSION_LIST_P95_MS", "220")),
+        avg_ms=float(os.getenv("PERF_SMOKE_TEACHER_SUBMISSION_LIST_AVG_MS", "120")),
+    )
 
     print("Performance smoke checks passed.")
     return 0
 
 
-def _assert_ok(response) -> None:
-    assert response.status_code == 200, response.text
+def _assert_ok(response, *, expected_status: int = 200) -> None:
+    assert response.status_code == expected_status, response.text
+
+
+def _assert_submission_list(response, *, expected_submission_id: str) -> None:
+    _assert_ok(response)
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert any(item.get("id") == expected_submission_id for item in payload)
+
+
+def _role_headers(client: TestClient, email: str, *, role: str) -> dict[str, str]:
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": f"{role.title()} Perf User",
+            "email": email,
+            "password": "password123",
+            "role": role,
+        },
+    )
+    _assert_ok(register, expected_status=201)
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "password123"},
+    )
+    _assert_ok(login)
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 if __name__ == "__main__":

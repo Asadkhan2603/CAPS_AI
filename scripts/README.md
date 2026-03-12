@@ -56,7 +56,9 @@ Utility scripts for local setup, safety checks, and canonical academic data seed
 - `python scripts/migrate_scheduler_lock_schema_version.py`
   - Backfills `schema_version` on `scheduler_locks`.
 - `python scripts/perf_smoke.py`
-  - Runs an in-process backend performance smoke gate against `/health`, `/auth/login`, and `/admin/system/health`.
+  - Runs an in-process backend performance smoke gate against `/health`, `/auth/login`, `/admin/system/health`, and an authenticated teacher submission-list workflow.
+- `python scripts/ai_capacity_baseline.py`
+  - Emits the current AI and similarity capacity baseline derived from runtime settings and scheduler behavior.
   - Supports dry-run by default and `--apply` for persistence.
   - Current target version: `1`.
 

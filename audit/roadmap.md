@@ -146,6 +146,6 @@ Status: `Completed`
 
 ### Phase 4 (Continuous): Scale Readiness
 Status: `In Progress`
-1. Load/perf regression tests in CI/CD. (in progress: backend performance smoke gate added in current branch for `/health`, `/auth/login`, and `/admin/system/health`)
-2. Capacity planning for AI and similarity workloads.
+1. Load/perf regression tests in CI/CD. (in progress: backend performance smoke gate added in current branch for `/health`, `/auth/login`, `/admin/system/health`, and an authenticated teacher submission-list workflow)
+2. Capacity planning for AI and similarity workloads. (in progress: runtime-derived baseline added in `scripts/ai_capacity_baseline.py` and documented in `docs/guides/ai-capacity-planning.md`)
 3. Release governance with risk budgets and rollback criteria.

@@ -84,6 +84,22 @@ Status:
   - student-facing UI keeps detailed AI score/feedback hidden and only exposes process-level AI status
 - validation baseline: backend flake8, backend safety checks, backend tests, and frontend build passing after refactor
 
+## Phase 4 Capacity Baseline (Started)
+
+Phase 4 capacity planning is now started with a runtime-derived baseline instead of a speculative estimate.
+
+Current baseline artifacts:
+
+- [ai_capacity_baseline.py](/scripts/ai_capacity_baseline.py)
+- [ai-capacity-planning.md](/docs/guides/ai-capacity-planning.md)
+
+Current operating assumptions captured there:
+
+- single-leader scheduler processes AI jobs
+- default AI job pickup ceiling is `18` jobs per minute
+- similarity runs cap at `1000` assignment-local candidates
+- fallback protects correctness but is still an operator signal for provider-health or throughput pressure
+
 ## Gap Analysis
 
 ## Gap 1: Evaluation AI trace exists but is weakly exposed

@@ -16,6 +16,7 @@ This file is the root entry point for the documentation tree under `docs/`.
 - [Deployment](./guides/deployment.md)
 - [Frontend Architecture](./guides/frontend-architecture.md)
 - [Governance Workflows](./guides/governance-workflows.md)
+- [AI Capacity Planning](./guides/ai-capacity-planning.md)
 - [Mongo Versioning](./guides/mongo-versioning.md)
 - [Testing](./guides/testing.md)
 

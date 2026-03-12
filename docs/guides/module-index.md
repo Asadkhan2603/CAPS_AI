@@ -177,6 +177,7 @@ Department
 - [Deployment](./deployment.md)
 - [Frontend Architecture](./frontend-architecture.md)
 - [Governance Workflows](./governance-workflows.md)
+- [AI Capacity Planning](./ai-capacity-planning.md)
 - [Mongo Versioning](./mongo-versioning.md)
 - [Testing](./testing.md)
 
