@@ -83,10 +83,12 @@ Debt impact:
   - notice fanout batching and high-limit query reduction completed
   - teacher-scope query hot paths reduced with `distinct` + safe fallback patterns
   - remaining open item: endpoint/scheduler observability metrics and alerting
-- Phase 2 (structural refactor): backend refactor implementation completed in current branch (pending merge/push).
+- Phase 2 (structural refactor): completed in `7d3c52c` plus frontend policy UX follow-up in current branch.
   - shared access-control utilities extracted into services
   - monolithic `ai.py` and `evaluations.py` split into submodules
   - service-layer orchestration added for AI runtime, AI ops, AI chat, evaluation workflows, and access-policy checks
+  - teacher fallback indicators added to AI review surfaces
+  - student AI disclosure policy made explicit in submissions/evaluations UI
 
 ### Phase 0 (0-1 week): Stabilize and Secure
 Status: `Completed`
@@ -101,7 +103,7 @@ Status: `Mostly Completed`
 3. Add endpoint and scheduler observability metrics with alerting (open).
 
 ### Phase 2 (3-6 weeks): Structural Refactor
-Status: `Completed (Backend) / Pending (Frontend policy UX follow-up)`
+Status: `Completed`
 
 Workstream A: Shared access-control and governance utilities
 1. Create a centralized access policy service for teacher/admin scope checks. (completed)
@@ -110,7 +112,7 @@ Workstream A: Shared access-control and governance utilities
    - `backend/app/api/v1/endpoints/evaluations.py`
    - `backend/app/api/v1/endpoints/similarity.py`
    - `backend/app/api/v1/endpoints/submissions.py`
-3. Consolidate governance delete-approval enforcement wrappers for academic modules. (partially complete; further standardization pending)
+3. Consolidate governance delete-approval enforcement wrappers for academic modules. (partially complete; further standardization pending outside AI Phase 2 scope)
 
 Workstream B: Split monolithic endpoint files
 1. Split `backend/app/api/v1/endpoints/ai.py` into role-focused submodules: (completed)
@@ -120,12 +122,12 @@ Workstream B: Split monolithic endpoint files
 2. Split `backend/app/api/v1/endpoints/evaluations.py` into: (completed)
    - CRUD and grade workflows
    - AI preview/refresh/trace workflows
-3. Add router composition tests to guarantee path and permission parity. (covered by existing backend test suite; explicit dedicated composition tests still optional)
+3. Add router composition tests to guarantee path and permission parity. (covered by existing backend test suite; explicit dedicated composition tests remain optional)
 
 Workstream C: Service-layer introduction (AI/academic/communication)
 1. Move non-HTTP business logic from endpoints into services. (completed for AI/evaluation/submission/similarity domains)
 2. Keep endpoint handlers thin (validation, auth, response mapping only). (completed for AI and evaluations; improved for submissions/similarity)
-3. Define explicit command/query boundaries per domain. (partially complete; expanded command/query contracts can continue in Phase 3)
+3. Define explicit command/query boundaries per domain. (completed for AI Phase 2 target modules; broader rollout can continue in Phase 3)
 
 Phase 2 acceptance gates
 1. No API path changes and no role-regression in route tests.

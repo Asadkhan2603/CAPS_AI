@@ -50,6 +50,10 @@ function formatTraceTimestamp(value) {
   return date.toLocaleString();
 }
 
+function isFallbackStatus(status) {
+  return status === 'fallback';
+}
+
 export default function EvaluateSubmissionPage() {
   const { submissionId } = useParams();
   const navigate = useNavigate();
@@ -346,6 +350,9 @@ export default function EvaluateSubmissionPage() {
 
             <Card className="space-y-3">
               <h2 className="text-lg font-semibold">Marks Input</h2>
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                Fallback mode means CAPS AI used deterministic backup guidance instead of the primary AI provider. Final grading still requires teacher judgment.
+              </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <FormInput label="Attendance %" type="number" value={marks.attendance_percent} onChange={(e) => setMarks((p) => ({ ...p, attendance_percent: Number(e.target.value) }))} />
                 <FormInput label="Skill (0-2.5)" type="number" step="0.1" value={marks.skill} onChange={(e) => setMarks((p) => ({ ...p, skill: Number(e.target.value) }))} />
@@ -378,6 +385,11 @@ export default function EvaluateSubmissionPage() {
                       {evaluation.ai_confidence != null ? `${Math.round(evaluation.ai_confidence * 100)}%` : '-'}
                     </p>
                   </div>
+                  {isFallbackStatus(evaluation.ai_status) ? (
+                    <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                      This saved evaluation is in fallback mode. Verify the recommendation against the submission before finalizing marks.
+                    </p>
+                  ) : null}
                   <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
                     {evaluation.ai_feedback || 'No stored AI feedback yet. Save or refresh the evaluation to persist AI insight.'}
                   </p>
@@ -411,6 +423,11 @@ export default function EvaluateSubmissionPage() {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
                   <p className="text-sm font-semibold">AI Insight Preview</p>
                   <p className="mt-1 text-xs text-slate-500">Grade: {aiPreview.grade} | Total: {aiPreview.grand_total} | AI Score: {aiPreview.ai_score ?? '-'}</p>
+                  {isFallbackStatus(aiPreview.ai_status) ? (
+                    <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                      Preview generated in fallback mode. Use it as backup guidance, not as an automatic grading decision.
+                    </p>
+                  ) : null}
                   <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{aiPreview.ai_feedback || aiPreview.ai_insight?.summary}</p>
                   {(aiPreview.ai_insight?.strengths || []).length ? (
                     <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">Strengths: {(aiPreview.ai_insight?.strengths || []).join(' | ')}</p>

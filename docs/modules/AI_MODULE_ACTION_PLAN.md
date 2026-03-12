@@ -41,7 +41,7 @@ Completed audit tasks reflected in codebase:
 Open from prior phases:
 - endpoint/scheduler observability metrics and alerting remain open from Phase 1
 
-## Phase 2 Refactor Plan (Started)
+## Phase 2 Refactor Plan (Completed)
 
 Goal:
 - reduce AI endpoint complexity and remove duplicated access-control logic without changing external API contracts
@@ -79,8 +79,12 @@ Phase 2 Definition of Done:
 
 Status:
 
-- backend implementation completed on 2026-03-11 (pending merge/push state may vary by branch)
-- validation baseline: backend flake8, backend safety checks, and backend tests passing after refactor
+- backend implementation completed on 2026-03-11 in `7d3c52c`
+- frontend policy UX completed on 2026-03-12
+  - teacher fallback-mode indicators added to evaluation/submission review screens
+  - student disclosure text added to submissions/evaluations surfaces
+  - student-facing UI keeps detailed AI score/feedback hidden and only exposes process-level AI status
+- validation baseline: backend flake8, backend safety checks, backend tests, and frontend build passing after refactor
 
 ## Gap Analysis
 

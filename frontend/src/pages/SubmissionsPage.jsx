@@ -11,6 +11,14 @@ import { useToast } from '../hooks/useToast';
 import { useAuth } from '../hooks/useAuth';
 import { formatApiError } from '../utils/apiError';
 
+function aiStatusVariant(status) {
+  if (status === 'completed' || status === 'success') return 'success';
+  if (status === 'failed') return 'danger';
+  if (status === 'running') return 'info';
+  if (status === 'pending' || status === 'queued' || status === 'fallback') return 'warning';
+  return 'default';
+}
+
 export default function SubmissionsPage() {
   const navigate = useNavigate();
   const { pushToast } = useToast();
@@ -52,7 +60,11 @@ export default function SubmissionsPage() {
         { key: 'original_filename', label: 'File' },
         { key: 'file_size_bytes', label: 'Size (bytes)' },
         { key: 'status', label: 'Status' },
-        { key: 'ai_status', label: 'AI Status' },
+        {
+          key: 'ai_status',
+          label: 'AI Status',
+          render: (row) => <Badge variant={aiStatusVariant(row.ai_status)}>{row.ai_status || 'pending'}</Badge>
+        },
         { key: 'ai_score', label: 'AI Score', render: (row) => (row.ai_score ?? '-') },
         { key: 'ai_provider', label: 'AI Provider', render: (row) => row.ai_provider || '-' },
         {
@@ -288,6 +300,9 @@ export default function SubmissionsPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Upload assignment files, track review progress, and monitor AI status.
           </p>
+          <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200">
+            AI review status is a processing signal only. Published marks and academic decisions come from teacher review, not from raw AI output.
+          </p>
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -383,6 +398,9 @@ export default function SubmissionsPage() {
           </div>
 
           {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Students can see AI processing state here, but detailed AI score and feedback stay in internal review flows.
+          </p>
           <Table columns={studentColumns} data={studentVisibleRows} />
         </Card>
       </div>
@@ -407,6 +425,11 @@ export default function SubmissionsPage() {
             </button>
           ) : null}
         </div>
+        {(user?.role === 'teacher' || user?.role === 'admin') ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+            `fallback` means the system returned a deterministic backup result because the primary AI provider was unavailable or not used. Review those cases before finalizing marks.
+          </p>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-3">
           <FormInput
             as="select"

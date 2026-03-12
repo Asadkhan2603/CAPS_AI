@@ -20,6 +20,15 @@ function formatTraceTimestamp(value) {
   return date.toLocaleString();
 }
 
+function aiStatusVariant(status) {
+  if (status === 'completed' || status === 'success') return 'success';
+  if (status === 'fallback') return 'warning';
+  if (status === 'failed') return 'danger';
+  if (status === 'running') return 'info';
+  if (status === 'pending' || status === 'queued') return 'warning';
+  return 'default';
+}
+
 export default function EvaluationsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -155,7 +164,7 @@ export default function EvaluationsPage() {
         key: 'ai_status',
         label: 'AI Status',
         render: (row) => (
-          <Badge variant={row.ai_status === 'success' ? 'success' : row.ai_status === 'fallback' ? 'warning' : 'default'}>
+          <Badge variant={aiStatusVariant(row.ai_status)}>
             {row.ai_status || 'pending'}
           </Badge>
         )
@@ -363,6 +372,9 @@ export default function EvaluationsPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">
             View grades, feedback status, and finalized result history.
           </p>
+          <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200">
+            Published grades and remarks are teacher-reviewed. Internal AI scoring signals are intentionally not shown in the student evaluation view.
+          </p>
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-3">
@@ -434,6 +446,12 @@ export default function EvaluationsPage() {
           remarks: payload.remarks || null
         })}
       />
+      <Card className="space-y-2">
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Teacher/Admin AI review policy</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          `fallback` indicates backup grading guidance was used instead of the primary provider. Treat fallback output as assistive input and confirm final marks before publishing.
+        </p>
+      </Card>
 
       <Modal
         open={traceModalOpen}

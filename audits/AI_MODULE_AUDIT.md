@@ -137,7 +137,6 @@ Completed from repository audit roadmap:
 
 Open:
 - observability metrics and alerting for AI endpoints/jobs remain open from Phase 1
-- frontend policy UX alignment (teacher fallback indicator + student disclosure/visibility policy) remains open
 
 ## Phase 2 Refactor Planning Snapshot
 
@@ -175,16 +174,16 @@ Validation status:
 - backend tests passed (`85 passed`)
 
 Remaining:
-- teacher/student-facing policy UX refinements and explicit observability dashboards
+- explicit observability dashboards and alerting for AI endpoints/jobs
 
 ## Teacher and Student Fix Suggestions
 Teacher:
 - Expand AI Operations scope for year_head/class_coordinator if those roles need broader visibility.
-- Provide explicit indicator in UI when AI responses are fallback mode.
+- Explicit fallback indicators are now present in teacher AI review screens.
 
 Student:
-- Add AI-generated disclaimer in submissions/evaluations UI.
-- If needed, hide ai_feedback and ai_score for students in evaluation responses.
+- AI-generated disclosure text is now present in submissions/evaluations UI.
+- Student-facing UI keeps detailed ai_feedback and ai_score hidden while preserving teacher-reviewed marks visibility.
 
 ## Files Reviewed
 Backend:
