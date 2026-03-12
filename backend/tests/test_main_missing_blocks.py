@@ -1024,6 +1024,43 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
         observability_state.reset()
 
 
+def test_admin_system_health_normalizes_naive_scheduler_lock_datetimes() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_system_lock_tz@example.com")
+
+    original_scheduler_state = (
+        app_scheduler._enabled,
+        app_scheduler._running,
+        app_scheduler._is_leader,
+    )
+    try:
+        app_scheduler._enabled = True
+        app_scheduler._running = True
+        app_scheduler._is_leader = True
+        naive_expires_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(tzinfo=None)
+        naive_heartbeat_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).replace(tzinfo=None)
+        fake_db.scheduler_locks.items.append(
+            {
+                "_id": app_scheduler.status()["lock_id"],
+                "owner_id": "scheduler-test-node",
+                "expires_at": naive_expires_at,
+                "heartbeat_at": naive_heartbeat_at,
+            }
+        )
+
+        response = client.get("/api/v1/admin/system/health", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scheduler_lock"]["owner_id"] == "scheduler-test-node"
+        assert body["scheduler_lock"]["is_stale"] is True
+        assert body["scheduler_lock"]["expires_at"].endswith(("Z", "+00:00"))
+        assert body["scheduler_lock"]["heartbeat_at"].endswith(("Z", "+00:00"))
+    finally:
+        app_scheduler._enabled, app_scheduler._running, app_scheduler._is_leader = original_scheduler_state
+        observability_state.reset()
+
+
 def test_system_health_snapshot_pruning_keeps_store_bounded() -> None:
     fake_db = _setup_fake_db()
     original_retention = snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES

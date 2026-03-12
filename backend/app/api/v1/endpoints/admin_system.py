@@ -18,6 +18,24 @@ router = APIRouter()
 _APP_BOOT_TIME = datetime.now(timezone.utc)
 
 
+def _as_utc_datetime(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate.endswith("Z"):
+            candidate = candidate[:-1] + "+00:00"
+        try:
+            value = datetime.fromisoformat(candidate)
+        except ValueError:
+            return None
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @router.get('/health')
 async def admin_system_health(
     _current_user=Depends(require_permission('system.read')),
@@ -49,8 +67,8 @@ async def admin_system_health(
     except Exception:
         scheduler_lock_doc = None
     if scheduler_lock_doc:
-        expires_at = scheduler_lock_doc.get('expires_at')
-        heartbeat_at = scheduler_lock_doc.get('heartbeat_at')
+        expires_at = _as_utc_datetime(scheduler_lock_doc.get('expires_at'))
+        heartbeat_at = _as_utc_datetime(scheduler_lock_doc.get('heartbeat_at'))
         scheduler_lock = {
             'owner_id': scheduler_lock_doc.get('owner_id'),
             'expires_at': expires_at,

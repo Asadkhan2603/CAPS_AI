@@ -41,6 +41,24 @@ def _serialize_dt(value: datetime | None) -> str | None:
     return value.astimezone(timezone.utc).isoformat()
 
 
+def _coerce_utc_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate.endswith("Z"):
+            candidate = candidate[:-1] + "+00:00"
+        try:
+            value = datetime.fromisoformat(candidate)
+        except ValueError:
+            return None
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _percentile(values: list[int], percentile: float) -> int | None:
     if not values:
         return None
@@ -556,7 +574,7 @@ def build_operational_alerts(
                 }
             )
         else:
-            expires_at = scheduler_lock.get("expires_at") if scheduler_lock else None
+            expires_at = _coerce_utc_datetime(scheduler_lock.get("expires_at") if scheduler_lock else None)
             if not expires_at or expires_at <= now:
                 alerts.append(
                     {
