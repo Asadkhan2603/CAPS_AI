@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import BRANCH_SCHEMA_VERSION, DEPARTMENT_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.departments import department_public
@@ -72,6 +73,7 @@ async def create_department(
         'university_code': payload.university_code.strip().upper() if payload.university_code else None,
         'is_active': True,
         'created_at': datetime.now(timezone.utc),
+        'schema_version': DEPARTMENT_SCHEMA_VERSION,
     }
     result = await db.departments.insert_one(document)
     created = await db.departments.find_one({'_id': result.inserted_id})
@@ -109,6 +111,7 @@ async def update_department(
         update_data['university_code'] = update_data['university_code'].strip().upper()
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
+    update_data['schema_version'] = DEPARTMENT_SCHEMA_VERSION
 
     result = await db.departments.update_one({'_id': department_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
@@ -121,6 +124,7 @@ async def update_department(
         branch_set = {'department_name': updated['name']}
         if updated.get('code') != current.get('code'):
             branch_set['department_code'] = updated['code']
+        branch_set['schema_version'] = BRANCH_SCHEMA_VERSION
         await db.branches.update_many(
             {'department_code': current.get('code')},
             {'$set': branch_set},
@@ -159,11 +163,17 @@ async def delete_department(
 
     await db.branches.update_many(
         {'department_code': department.get('code')},
-        build_soft_delete_update(deleted_by=str(current_user.get('_id'))),
+        build_soft_delete_update(
+            deleted_by=str(current_user.get('_id')),
+            extra_fields={"schema_version": BRANCH_SCHEMA_VERSION},
+        ),
     )
     result = await db.departments.update_one(
         {'_id': department_obj_id, 'is_active': True},
-        build_soft_delete_update(deleted_by=str(current_user.get('_id'))),
+        build_soft_delete_update(
+            deleted_by=str(current_user.get('_id')),
+            extra_fields={"schema_version": DEPARTMENT_SCHEMA_VERSION},
+        ),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Department not found')

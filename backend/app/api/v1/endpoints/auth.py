@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import USER_SCHEMA_VERSION
 from app.core.security import (
     get_current_user,
     oauth2_scheme,
@@ -93,6 +94,7 @@ async def change_password(
             "$set": {
                 "hashed_password": get_password_hash(payload.new_password),
                 "must_change_password": False,
+                "schema_version": USER_SCHEMA_VERSION,
             }
         },
     )
@@ -121,6 +123,7 @@ async def update_profile(
     if not set_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No profile fields provided")
 
+    set_data["schema_version"] = USER_SCHEMA_VERSION
     await db.users.update_one({"_id": current_user["_id"]}, {"$set": set_data})
     updated = await db.users.find_one({"_id": current_user["_id"]})
     return UserOut(**user_public(updated))
@@ -155,7 +158,13 @@ async def upload_profile_avatar(
     now = datetime.now(timezone.utc)
     await db.users.update_one(
         {"_id": current_user["_id"]},
-        {"$set": {"avatar_filename": saved_name, "avatar_updated_at": now}},
+        {
+            "$set": {
+                "avatar_filename": saved_name,
+                "avatar_updated_at": now,
+                "schema_version": USER_SCHEMA_VERSION,
+            }
+        },
     )
     updated = await db.users.find_one({"_id": current_user["_id"]})
     return UserOut(**user_public(updated))

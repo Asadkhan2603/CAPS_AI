@@ -110,7 +110,8 @@ All primary APIs are mounted under `/api/v1`.
 Compatibility notes:
 - `/sections` is the canonical public route for section management.
 - The underlying legacy storage artifact is still the `classes` collection and `backend/app/models/classes.py`.
-- Removed public endpoints such as `/courses`, `/years`, and `/branches` are documentation-only legacy references now.
+- Removed public endpoints such as `/courses`, `/years`, and `/branches` are legacy compatibility references only.
+- Admin recovery defaults to canonical collections; retired `courses`, `years`, and `branches` require explicit `include_legacy=true`.
 
 ## Documentation
 

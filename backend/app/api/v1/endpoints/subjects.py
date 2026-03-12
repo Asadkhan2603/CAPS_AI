@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import SUBJECT_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.models.subjects import subject_public
 from app.schemas.subject import SubjectCreate, SubjectOut, SubjectUpdate
@@ -61,6 +62,7 @@ async def create_subject(
         "description": payload.description,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
+        "schema_version": SUBJECT_SCHEMA_VERSION,
     }
     result = await db.subjects.insert_one(document)
     created = await db.subjects.find_one({"_id": result.inserted_id})
@@ -87,7 +89,7 @@ async def update_subject(
 
     result = await db.subjects.update_one(
         {"_id": subject_obj_id},
-        {"$set": update_data},
+        {"$set": {**update_data, "schema_version": SUBJECT_SCHEMA_VERSION}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")

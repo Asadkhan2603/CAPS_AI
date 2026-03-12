@@ -21,3 +21,4 @@ class NotificationOut(BaseModel):
     created_by: str | None = None
     is_read: bool = False
     created_at: datetime | None = None
+    schema_version: int = 1

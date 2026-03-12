@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_roles
+from app.core.schema_versions import NOTIFICATION_SCHEMA_VERSION
 from app.models.notifications import notification_public
 from app.schemas.notification import NotificationCreate, NotificationOut
 from app.services.audit import log_audit_event
@@ -71,6 +72,9 @@ async def mark_notification_read(
     if target_user_id and target_user_id != str(current_user['_id']) and current_user.get('role') != 'admin':
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to mark this notification')
 
-    await db.notifications.update_one({'_id': notification_obj_id}, {'$set': {'is_read': True}})
+    await db.notifications.update_one(
+        {'_id': notification_obj_id},
+        {'$set': {'is_read': True, 'schema_version': NOTIFICATION_SCHEMA_VERSION}},
+    )
     updated = await db.notifications.find_one({'_id': notification_obj_id})
     return NotificationOut(**notification_public(updated))

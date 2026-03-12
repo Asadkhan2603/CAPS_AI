@@ -151,7 +151,7 @@ export default function AnnouncementsPage() {
         const option = {
           key: `class:${item.id}`,
           label,
-          searchText: `${label} section class ${item.branch_name || ''}`.toLowerCase(),
+          searchText: `${label} section class`.toLowerCase(),
           scope: 'section',
           scopeRefId: item.id
         };

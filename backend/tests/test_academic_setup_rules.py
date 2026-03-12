@@ -358,7 +358,6 @@ def test_create_class_validates_cross_entity_ownership(monkeypatch, payload, doc
         "semester_id": None,
         "name": "Section A",
         "faculty_name": None,
-        "branch_name": None,
         "class_coordinator_user_id": None,
     }
     normalized_payload.update(payload)

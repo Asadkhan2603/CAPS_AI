@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable
 
 from app.core.database import db
+from app.core.schema_versions import NOTIFICATION_SCHEMA_VERSION
 
 
 async def create_notification(
@@ -24,6 +25,7 @@ async def create_notification(
         "created_by": created_by,
         "is_read": False,
         "created_at": datetime.now(timezone.utc),
+        "schema_version": NOTIFICATION_SCHEMA_VERSION,
     }
     result = await db.notifications.insert_one(document)
     created = await db.notifications.find_one({"_id": result.inserted_id})
@@ -59,6 +61,7 @@ async def create_notifications_bulk(
                 "created_by": created_by,
                 "is_read": False,
                 "created_at": datetime.now(timezone.utc),
+                "schema_version": NOTIFICATION_SCHEMA_VERSION,
             }
         )
         if len(pending) >= safe_batch_size:

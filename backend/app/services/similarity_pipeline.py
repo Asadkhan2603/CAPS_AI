@@ -7,7 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.schema_versions import SUBMISSION_SCHEMA_VERSION
+from app.core.schema_versions import SIMILARITY_LOG_SCHEMA_VERSION, SUBMISSION_SCHEMA_VERSION
 from app.services.ai_runtime import AI_SIMILARITY_ENGINE_VERSION
 from app.services.notifications import create_notification
 from app.services.similarity_engine import compute_similarity_scores
@@ -121,6 +121,7 @@ async def run_similarity_pipeline(
             "is_flagged": is_flagged,
             "engine_version": AI_SIMILARITY_ENGINE_VERSION,
             "updated_at": datetime.now(timezone.utc),
+            "schema_version": SIMILARITY_LOG_SCHEMA_VERSION,
         }
 
         if existing:

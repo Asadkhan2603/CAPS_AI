@@ -48,3 +48,4 @@ class CourseOfferingOut(BaseModel):
     semester_label: str | None = None
     is_active: bool = True
     created_at: datetime | None = None
+    schema_version: int = 1

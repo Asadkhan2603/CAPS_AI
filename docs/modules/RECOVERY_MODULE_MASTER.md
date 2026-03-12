@@ -73,10 +73,7 @@ Current scope is limited to a fixed allowlist of collections.
 
 Supported recovery collections:
 
-- `courses`
 - `departments`
-- `branches`
-- `years`
 - `classes`
 - `notices`
 - `notifications`
@@ -87,11 +84,17 @@ Supported recovery collections:
 - `evaluations`
 - `review_tickets`
 
+Legacy compatibility collections remain restorable only when explicitly requested:
+
+- `courses`
+- `branches`
+- `years`
+
 Important implication:
 
 - recovery is not generic across all collections
 - only explicitly whitelisted collections can be restored
-- legacy collections remain supported here even though their API routes are retired
+- retired legacy collections are excluded from the default listing unless `include_legacy=true` is supplied
 
 ## 3. Recovery Model
 
@@ -164,17 +167,20 @@ Permission:
 Parameters:
 
 - `collection`
+- `include_legacy`
 - `limit`
 
 Behavior:
 
 - validates requested collection against whitelist
-- when no collection is passed, iterates all supported collections
+- when no collection is passed, iterates canonical recovery collections by default
+- legacy compatibility collections are included only if `include_legacy=true`
 - loads rows using `build_soft_deleted_query(include_legacy_marker=True)`
 - returns:
   - timestamp
   - `items` grouped by collection
   - `summary` counts
+  - `legacy_collections_included`
 
 Returned item fields:
 

@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.database import db
+from app.core.schema_versions import SETTINGS_SCHEMA_VERSION
 
 AI_RUNTIME_SETTINGS_KEY = "ai_runtime_config"
 AI_EVALUATION_PROMPT_VERSION = "submission-eval-v1"
@@ -70,6 +71,7 @@ async def save_ai_runtime_settings(payload: dict[str, Any], *, actor_user_id: st
                 "key": AI_RUNTIME_SETTINGS_KEY,
                 "value": normalized,
                 "updated_by_user_id": actor_user_id,
+                "schema_version": SETTINGS_SCHEMA_VERSION,
             }
         },
         upsert=True,

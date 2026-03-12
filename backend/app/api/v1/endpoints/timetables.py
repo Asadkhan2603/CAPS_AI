@@ -8,7 +8,12 @@ from bson import ObjectId
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import get_current_user, require_roles
+from app.core.schema_versions import (
+    TIMETABLE_SCHEMA_VERSION,
+    TIMETABLE_SUBJECT_TEACHER_MAP_SCHEMA_VERSION,
+    normalize_schema_version,
+)
+from app.core.security import require_roles
 from app.schemas.timetable import (
     DayName,
     ShiftId,
@@ -241,7 +246,6 @@ async def _validate_entries(*, timetable_id: str | None, shift_id: ShiftId, clas
     # Validate conflict against active timetables (draft + published).
     teacher_ids = sorted({entry.get("teacher_user_id") for entry in entries if entry.get("teacher_user_id")})
     raw_room_codes = sorted({(entry.get("room_code") or "").strip() for entry in entries if (entry.get("room_code") or "").strip()})
-    room_codes = sorted({value.lower() for value in raw_room_codes})
     room_codes_query = sorted({variant for value in raw_room_codes for variant in {value, value.lower(), value.upper()}})
     conflict_or_conditions: list[dict[str, Any]] = []
     if teacher_ids:
@@ -304,6 +308,7 @@ async def _upsert_subject_teacher_map(*, class_id: str, entries: list[dict[str, 
                 "$set": {
                     "teacher_user_ids": sorted(teacher_ids),
                     "updated_at": now,
+                    "schema_version": TIMETABLE_SUBJECT_TEACHER_MAP_SCHEMA_VERSION,
                 }
             },
             upsert=True,
@@ -343,6 +348,10 @@ async def _to_out(document: dict) -> TimetableOut:
         created_by_user_id=document.get("created_by_user_id"),
         created_at=document.get("created_at"),
         updated_at=document.get("updated_at"),
+        schema_version=normalize_schema_version(
+            document.get("schema_version"),
+            default=TIMETABLE_SCHEMA_VERSION,
+        ),
     )
 
 
@@ -385,7 +394,7 @@ async def timetable_lookups(
     current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> dict[str, Any]:
     if current_user.get("role") == "admin":
-        classes = await db.classes.find({"is_active": True}, {"name": 1, "faculty_name": 1, "branch_name": 1}).sort("name", 1).to_list(length=500)
+        classes = await db.classes.find({"is_active": True}, {"name": 1, "faculty_name": 1}).sort("name", 1).to_list(length=500)
     else:
         scoped_class_id = (
             (current_user.get("role_scope") or {})
@@ -400,7 +409,7 @@ async def timetable_lookups(
             query["_id"] = parse_object_id(scoped_class_id)
         classes = await db.classes.find(
             query,
-            {"name": 1, "faculty_name": 1, "branch_name": 1},
+            {"name": 1, "faculty_name": 1},
         ).sort("name", 1).to_list(length=500)
 
     subjects = await db.subjects.find({"is_active": True}, {"name": 1, "code": 1}).sort("name", 1).to_list(length=2000)
@@ -415,7 +424,6 @@ async def timetable_lookups(
                 "id": str(item["_id"]),
                 "name": item.get("name"),
                 "faculty_name": item.get("faculty_name"),
-                "branch_name": item.get("branch_name"),
             }
             for item in classes
             if item.get("_id")
@@ -485,6 +493,7 @@ async def create_timetable(
         "created_by_user_id": str(current_user.get("_id")),
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
+        "schema_version": TIMETABLE_SCHEMA_VERSION,
     }
     result = await db.timetables.insert_one(document)
     await _upsert_subject_teacher_map(class_id=payload.class_id, entries=entries)
@@ -571,6 +580,7 @@ async def update_timetable(
                 "days": days,
                 "entries": entries,
                 "updated_at": datetime.now(timezone.utc),
+                "schema_version": TIMETABLE_SCHEMA_VERSION,
             }
         },
     )
@@ -608,7 +618,13 @@ async def publish_timetable(
             "status": "published",
             "is_active": True,
         },
-        {"$set": {"is_active": False, "archived_at": datetime.now(timezone.utc)}},
+        {
+            "$set": {
+                "is_active": False,
+                "archived_at": datetime.now(timezone.utc),
+                "schema_version": TIMETABLE_SCHEMA_VERSION,
+            }
+        },
     )
     await db.timetables.update_one(
         {"_id": timetable["_id"]},
@@ -618,6 +634,7 @@ async def publish_timetable(
                 "published_at": datetime.now(timezone.utc),
                 "published_by_user_id": str(current_user.get("_id")),
                 "updated_at": datetime.now(timezone.utc),
+                "schema_version": TIMETABLE_SCHEMA_VERSION,
             }
         },
     )
@@ -638,7 +655,13 @@ async def set_timetable_lock(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Timetable not found")
     await db.timetables.update_one(
         {"_id": timetable["_id"]},
-        {"$set": {"admin_locked": payload.admin_locked, "updated_at": datetime.now(timezone.utc)}},
+        {
+            "$set": {
+                "admin_locked": payload.admin_locked,
+                "updated_at": datetime.now(timezone.utc),
+                "schema_version": TIMETABLE_SCHEMA_VERSION,
+            }
+        },
     )
     updated = await db.timetables.find_one({"_id": timetable["_id"]})
     return await _to_out(updated)

@@ -871,7 +871,7 @@ def test_legacy_year_api_is_removed() -> None:
 
 
 def test_program_and_subject_code_must_be_unique() -> None:
-    fake_db = _setup_fake_db()
+    _setup_fake_db()
     client = TestClient(app)
 
     register = client.post(
@@ -2515,7 +2515,6 @@ def test_teacher_without_coordinator_classes_gets_empty_academic_structure() -> 
             structure_seed,
             name="Computer Science Engineering",
             faculty_name="Faculty of Engineering",
-            branch_name="Computer Science Engineering",
             class_coordinator_user_id=teacher_owner.json()["id"],
         ),
         headers=admin_headers,
@@ -2529,7 +2528,7 @@ def test_teacher_without_coordinator_classes_gets_empty_academic_structure() -> 
     other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
     structure = client.get("/api/v1/analytics/academic-structure", headers=other_headers)
     assert structure.status_code == 200
-    assert structure.json()["courses"] == []
+    assert structure.json()["programs"] == []
 
 
 def test_user_cannot_access_other_user_avatar() -> None:

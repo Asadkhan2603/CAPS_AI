@@ -6,6 +6,7 @@ from typing import Any, Iterable
 from bson import ObjectId
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import NOTICE_SCHEMA_VERSION
 from app.services.analytics_snapshot import compute_platform_snapshot
 from app.services.notifications import create_notifications_bulk
 
@@ -127,6 +128,7 @@ async def fanout_notice_notifications(notice_id: str) -> None:
                 "$set": {
                     "fanout_dispatched_at": datetime.now(timezone.utc),
                     "fanout_count": fanout_count,
+                    "schema_version": NOTICE_SCHEMA_VERSION,
                 }
             },
         )

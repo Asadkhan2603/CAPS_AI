@@ -7,6 +7,7 @@ import logging
 from typing import Any, Dict
 
 from app.core.database import db
+from app.core.schema_versions import AUDIT_LOG_SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ async def log_audit_event(
         "user_agent": user_agent,
         "severity": severity,
         "created_at": created_at,
+        "schema_version": AUDIT_LOG_SCHEMA_VERSION,
     }
     result = await db.audit_logs.insert_one(document)
     created = await db.audit_logs.find_one({"_id": result.inserted_id})
@@ -60,6 +62,7 @@ async def log_audit_event(
                     "detail": detail,
                     "severity": severity,
                     "created_at": created_at.isoformat(),
+                    "schema_version": AUDIT_LOG_SCHEMA_VERSION,
                     "previous_hash": previous_hash,
                 },
                 sort_keys=True,

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import CLUB_EVENT_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.club_events import club_event_public
 from app.schemas.club_event import ClubEventCreate, ClubEventOut, ClubEventUpdate
@@ -101,6 +102,7 @@ async def create_club_event(
         "result_summary": None,
         "created_by": str(current_user["_id"]),
         "created_at": datetime.now(timezone.utc),
+        "schema_version": CLUB_EVENT_SCHEMA_VERSION,
     }
     result = await db.club_events.insert_one(document)
     created = await db.club_events.find_one({"_id": result.inserted_id})
@@ -164,7 +166,10 @@ async def update_club_event(
                 detail="Payment amount is required when payment is enabled",
             )
 
-    await db.club_events.update_one({"_id": event_obj_id}, {"$set": update_data})
+    await db.club_events.update_one(
+        {"_id": event_obj_id},
+        {"$set": {**update_data, "schema_version": CLUB_EVENT_SCHEMA_VERSION}},
+    )
     updated = await db.club_events.find_one({"_id": event_obj_id})
     return ClubEventOut(**club_event_public(updated))
 
@@ -187,6 +192,7 @@ async def delete_club_event(
                 "status": "archived",
                 "deleted_at": datetime.now(timezone.utc),
                 "deleted_by": str(current_user["_id"]),
+                "schema_version": CLUB_EVENT_SCHEMA_VERSION,
             }
         },
     )

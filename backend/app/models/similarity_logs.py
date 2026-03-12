@@ -1,4 +1,6 @@
-﻿from typing import Any, Dict
+from typing import Any, Dict
+
+from app.core.schema_versions import SIMILARITY_LOG_SCHEMA_VERSION, normalize_schema_version
 
 
 def similarity_log_public(document: Dict[str, Any]) -> Dict[str, Any]:
@@ -16,4 +18,8 @@ def similarity_log_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "is_flagged": document.get("is_flagged", False),
         "engine_version": document.get("engine_version"),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=SIMILARITY_LOG_SCHEMA_VERSION,
+        ),
     }

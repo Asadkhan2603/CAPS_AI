@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import ASSIGNMENT_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.assignments import assignment_public
 from app.schemas.assignment import (
@@ -115,6 +116,7 @@ async def create_assignment(
         "plagiarism_enabled": payload.plagiarism_enabled,
         "created_by": str(current_user.get("_id")),
         "created_at": datetime.now(timezone.utc),
+        "schema_version": ASSIGNMENT_SCHEMA_VERSION,
     }
     result = await db.assignments.insert_one(document)
     created = await db.assignments.find_one({"_id": result.inserted_id})
@@ -142,7 +144,7 @@ async def update_assignment(
 
     result = await db.assignments.update_one(
         {"_id": assignment_obj_id},
-        {"$set": update_data},
+        {"$set": {**update_data, "schema_version": ASSIGNMENT_SCHEMA_VERSION}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
@@ -171,7 +173,12 @@ async def toggle_assignment_plagiarism(
 
     await db.assignments.update_one(
         {"_id": assignment_obj_id},
-        {"$set": {"plagiarism_enabled": payload.plagiarism_enabled}},
+        {
+            "$set": {
+                "plagiarism_enabled": payload.plagiarism_enabled,
+                "schema_version": ASSIGNMENT_SCHEMA_VERSION,
+            }
+        },
     )
     updated = await db.assignments.find_one({"_id": assignment_obj_id})
     await log_audit_event(
@@ -198,7 +205,15 @@ async def delete_assignment(
 
     result = await db.assignments.update_one(
         {"_id": assignment_obj_id, "is_deleted": {"$in": [False, None]}},
-        {"$set": {"is_deleted": True, "is_active": False, "deleted_at": datetime.now(timezone.utc), "deleted_by": str(current_user.get("_id"))}},
+        {
+            "$set": {
+                "is_deleted": True,
+                "is_active": False,
+                "deleted_at": datetime.now(timezone.utc),
+                "deleted_by": str(current_user.get("_id")),
+                "schema_version": ASSIGNMENT_SCHEMA_VERSION,
+            }
+        },
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")

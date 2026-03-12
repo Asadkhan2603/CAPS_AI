@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.security import require_roles
+from app.core.schema_versions import SETTINGS_SCHEMA_VERSION
 
 router = APIRouter()
 
@@ -85,6 +86,7 @@ async def upload_logo(
                 "size_bytes": size,
                 "updated_at": now,
                 "updated_by": str(current_user["_id"]),
+                "schema_version": SETTINGS_SCHEMA_VERSION,
             }
         },
         upsert=True,

@@ -42,7 +42,7 @@ Campus operations:
 ## Compatibility Notes
 
 - `classes.py` backs the canonical `/sections` API. The file and collection name are legacy compatibility artifacts.
-- Legacy `course_id`, `year_id`, and `branch_name` fields may still appear in serialized academic documents for migration compatibility.
+- Legacy `branch_name` may still appear in serialized section documents for historical-row compatibility.
 - AI-related serializers expose persisted runtime metadata such as `ai_status`, `ai_provider`, `ai_prompt_version`, and `ai_runtime_snapshot`.
 
 ## Scope Boundary

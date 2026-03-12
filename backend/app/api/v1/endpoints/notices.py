@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Qu
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import NOTICE_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.notices import notice_public
 from app.schemas.notice import NoticeCreate, NoticeOut
@@ -294,6 +295,7 @@ async def create_notice(
             'created_by': str(current_user['_id']),
             'is_active': True,
             'created_at': datetime.now(timezone.utc),
+            'schema_version': NOTICE_SCHEMA_VERSION,
         }
         result = await db.notices.insert_one(document)
         created = await db.notices.find_one({'_id': result.inserted_id})
@@ -340,7 +342,15 @@ async def delete_notice(
 
     await db.notices.update_one(
         {'_id': notice_obj_id},
-        {'$set': {'is_active': False, 'is_deleted': True, 'deleted_at': datetime.now(timezone.utc), 'deleted_by': str(current_user['_id'])}},
+        {
+            '$set': {
+                'is_active': False,
+                'is_deleted': True,
+                'deleted_at': datetime.now(timezone.utc),
+                'deleted_by': str(current_user['_id']),
+                'schema_version': NOTICE_SCHEMA_VERSION,
+            }
+        },
     )
     await log_audit_event(
         actor_user_id=str(current_user['_id']),

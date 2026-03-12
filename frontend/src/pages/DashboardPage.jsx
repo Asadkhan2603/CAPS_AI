@@ -89,7 +89,7 @@ export default function DashboardPage() {
     const enrollment = profile.enrollment_number || (email.includes('@') ? email.split('@')[0] : user?.id) || '-';
     return {
       department: profile.department || '-',
-      branch: profile.branch || profile.branch_name || '-',
+      academicTrack: profile.branch || profile.specialization || profile.program || '-',
       enrollment
     };
   }, [user]);
@@ -355,8 +355,8 @@ export default function DashboardPage() {
                   <span className="ml-2 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.department}</span>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900">
-                  <span className="text-slate-500">Branch</span>
-                  <span className="ml-2 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.branch}</span>
+                  <span className="text-slate-500">Academic Track</span>
+                  <span className="ml-2 font-semibold text-slate-800 dark:text-slate-100">{studentIdentity.academicTrack}</span>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900">
                   <span className="text-slate-500">Enrollment</span>

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import SEMESTER_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.semesters import semester_public
@@ -79,6 +80,7 @@ async def create_semester(
         "university_code": batch.get("university_code"),
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
+        "schema_version": SEMESTER_SCHEMA_VERSION,
     }
     result = await db.semesters.insert_one(document)
     created = await db.semesters.find_one({"_id": result.inserted_id})
@@ -123,6 +125,7 @@ async def update_semester(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Semester already exists for this batch")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    update_data["schema_version"] = SEMESTER_SCHEMA_VERSION
     result = await db.semesters.update_one({"_id": semester_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
@@ -156,7 +159,10 @@ async def delete_semester(
     ))
     result = await db.semesters.update_one(
         {"_id": parse_object_id(semester_id), "is_active": True},
-        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
+        build_soft_delete_update(
+            deleted_by=str(current_user.get("_id")),
+            extra_fields={"schema_version": SEMESTER_SCHEMA_VERSION},
+        ),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")

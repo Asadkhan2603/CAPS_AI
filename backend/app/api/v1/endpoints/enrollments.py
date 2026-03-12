@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import ENROLLMENT_SCHEMA_VERSION
 from app.core.security import require_admin_or_teacher_extensions
 from app.models.enrollments import enrollment_public
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentOut
@@ -131,6 +132,7 @@ async def create_enrollment(
         "student_roll_number": student.get("roll_number"),
         "assigned_by_user_id": str(current_user["_id"]),
         "created_at": datetime.now(timezone.utc),
+        "schema_version": ENROLLMENT_SCHEMA_VERSION,
     }
     result = await db.enrollments.insert_one(document)
     created = await db.enrollments.find_one({"_id": result.inserted_id})

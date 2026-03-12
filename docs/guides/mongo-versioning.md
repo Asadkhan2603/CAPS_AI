@@ -14,7 +14,7 @@ The application uses MongoDB collections directly with serializer helpers and se
 
 Compatibility examples already present in runtime:
 - `classes` collection backs the canonical `/sections` API
-- academic records may still contain `course_id`, `year_id`, and `branch_name`
+- academic records may still contain legacy compatibility fields such as `branch_name` on historical section rows
 - AI documents persist evolving metadata such as `ai_prompt_version` and `ai_runtime_snapshot`
 
 ## Strategy
@@ -26,12 +26,11 @@ For collections with active evolution pressure, introduce:
 - `migrated_at`
 - `migrated_by` when changes are administrative
 
-Initial candidates:
-- `classes`
-- `submissions`
-- `evaluations`
-- `similarity_logs`
-- `settings`
+Current status:
+- the active collection-target sweep is complete for current write-path collections
+- new writes now stamp `schema_version`
+- dry-run and `--apply` backfill scripts exist under `scripts/`
+- versioned collections now include academic setup, academics, AI, governance, communication, clubs, timetables, and users
 
 ### 2. Use idempotent migration scripts
 
@@ -72,16 +71,17 @@ Recommended output fields:
 - `skipped`
 - `failed`
 
-## Immediate Phase 3 Targets
+## Current Runtime Baseline
 
-1. Academic legacy normalization
-   - continue from `scripts/migrate_academic_soft_delete.py`
-   - add version markers where records are normalized
-2. Section storage rename planning
-   - document the path from `classes` storage to a future canonical `sections` collection, if adopted
-3. AI metadata stability
-   - keep `ai_prompt_version` and `ai_runtime_snapshot`
-   - add version markers if AI payload shape changes materially
+Completed baseline:
+1. Version markers exist across the active write-path sweep
+2. Collection-specific backfill scripts are documented in [scripts/README.md](/scripts/README.md)
+3. Legacy academic compatibility remains read-oriented only where still needed for historical rows
+
+Remaining follow-up work:
+1. decide whether the `classes` collection should stay as the long-term storage name for canonical sections
+2. introduce `schema_version` increments above `1` only when a collection shape actually changes again
+3. keep compatibility readers narrow and explicitly documented
 
 ## Validation Checklist
 
@@ -90,3 +90,4 @@ Recommended output fields:
 - before/after document examples are documented
 - affected endpoints still pass tests
 - compatibility notes are updated in `README.md` and module docs
+- scripts inventory is updated in `scripts/README.md`

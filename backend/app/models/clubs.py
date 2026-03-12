@@ -1,5 +1,12 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import (
+    CLUB_APPLICATION_SCHEMA_VERSION,
+    CLUB_MEMBER_SCHEMA_VERSION,
+    CLUB_SCHEMA_VERSION,
+    normalize_schema_version,
+)
+
 
 def club_public(document: Dict[str, Any]) -> Dict[str, Any]:
     status = document.get("status")
@@ -31,6 +38,10 @@ def club_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": document.get("created_at"),
         "updated_at": document.get("updated_at"),
         "archived_at": document.get("archived_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=CLUB_SCHEMA_VERSION,
+        ),
         # Legacy field preserved for old UI paths.
         "is_active": document.get("is_active", status in {"active", "registration_closed"}),
     }
@@ -47,6 +58,10 @@ def club_member_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "status": document.get("status", "active"),
         "joined_at": document.get("joined_at"),
         "left_at": document.get("left_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=CLUB_MEMBER_SCHEMA_VERSION,
+        ),
     }
 
 
@@ -61,4 +76,8 @@ def club_application_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "applied_at": document.get("applied_at"),
         "reviewed_by": document.get("reviewed_by"),
         "reviewed_at": document.get("reviewed_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=CLUB_APPLICATION_SCHEMA_VERSION,
+        ),
     }

@@ -127,8 +127,6 @@ Key fields:
 - `department_id`
 - `program_id`
 - `specialization_id`
-- `course_id`
-- `year_id`
 - `batch_id`
 - `semester_id`
 - `name`
@@ -146,18 +144,14 @@ Relations:
 - `department_id -> departments._id`
 - `program_id -> programs._id`
 - `specialization_id -> specializations._id`
-- `course_id -> courses._id` (legacy compatibility)
-- `year_id -> years._id` (legacy compatibility)
 - `batch_id -> batches._id`
 - `semester_id -> semesters._id`
 - `class_coordinator_user_id -> users._id`
 
 Important semantic note:
 
-- `course_id` and `year_id` are legacy linkage fields
 - `batch_id` and `semester_id` are canonical linkage fields
-
-This means the collection currently supports both academic models at once.
+- `branch_name` may still exist on historical rows as read-only compatibility output
 
 ### 3.2 Denormalized display fields
 
@@ -168,9 +162,9 @@ The record also stores:
 
 These are display-oriented denormalized fields.
 
-Important issue:
+Current compatibility rule:
 
-- `branch_name` is currently being populated from program name in the frontend section create flow, which is semantically wrong
+- `branch_name` is preserved only for historical rows and is no longer part of active section create/update input
 
 ## 4. Backend Logic Implemented
 
@@ -202,12 +196,9 @@ Behavior:
   - `department_id`
   - `program_id`
   - `specialization_id`
-  - `course_id`
-  - `year_id`
   - `batch_id`
   - `semester_id`
   - `faculty_name`
-  - `branch_name`
   - text query `q`
   - `is_active`
   - `skip`
@@ -256,11 +247,6 @@ Validation implemented:
 - if `specialization_id` provided:
   - specialization must exist
   - if program present, specialization must belong to program
-- if `course_id` provided:
-  - course must exist
-- if `year_id` provided:
-  - year must exist
-  - if course present, year must belong to course
 - if `batch_id` provided:
   - batch must exist
 - if `semester_id` provided:
@@ -271,6 +257,7 @@ Persisted create state:
 
 - section starts active
 - `created_at` is stored
+- `schema_version` is stored
 
 ### 4.5 Update section/class
 
@@ -331,13 +318,10 @@ Exposed create/update fields:
 - `department_id`
 - `program_id`
 - `specialization_id`
-- `course_id`
-- `year_id`
 - `batch_id`
 - `semester_id`
 - `name`
 - `faculty_name`
-- `branch_name`
 - `class_coordinator_user_id`
 
 Output fields:
@@ -345,12 +329,13 @@ Output fields:
 - all linkage ids
 - `name`
 - `faculty_name`
-- `branch_name`
+- `branch_name` for historical compatibility rows only
 - `class_coordinator_user_id`
 - `is_active`
 - `deleted_at`
 - `deleted_by`
 - `created_at`
+- `schema_version`
 
 Important contract issue:
 
@@ -454,14 +439,9 @@ Cross-entity validation is enforced so the chain is internally consistent.
 
 A section may also still carry:
 
-- `course_id`
-- `year_id`
+- `branch_name`
 
-with validation:
-
-- `year_id` must belong to `course_id`
-
-This preserves old integrations, but creates dual-model complexity.
+This is now compatibility output only. Active section writes and filters no longer treat it as canonical input.
 
 ### 7.3 Teacher scope
 
@@ -511,24 +491,18 @@ only.
 
 ### 8.3 Legacy fields are hidden but still operational
 
-Backend still supports:
+Backend still returns:
 
-- `course_id`
-- `year_id`
 - `faculty_name`
-- `branch_name`
+- `branch_name` for historical rows
 
-Frontend does not intentionally expose these as editable fields in the main sections page.
+Frontend does not intentionally expose these as editable fields in the main sections page, and active section writes no longer send `branch_name`.
 
-That is partly good because it favors the canonical model, but it also means the API contract is broader than the UI contract.
+That favors the canonical model while preserving compatibility output for migrated data.
 
 ### 8.4 Wrong denormalized field mapping
 
-The create flow sends:
-
-- `branch_name: programNameById[form.program_id]`
-
-This is logically wrong. Program name is not branch name.
+The previous create-flow misuse of `branch_name` has been removed from the active UI contract.
 
 ## 9. Architectural Issues
 
@@ -590,11 +564,7 @@ This means section/class cleanup must be done carefully because many modules sti
 
 ### 11.1 Branch name misuse
 
-Frontend create path derives `branch_name` from selected program name.
-
-Risk:
-
-- stored display metadata becomes semantically incorrect
+The main runtime misuse has been removed, but historical rows may still carry old `branch_name` values.
 
 ### 11.2 UI permission ambiguity
 
@@ -637,15 +607,13 @@ Make it explicit that new clients must use:
 
 Phase out direct use of:
 
-- `course_id`
-- `year_id`
 - `branch_name`
 
 from canonical section creation and update flows.
 
 ### 12.4 Fix denormalized field mapping
 
-Stop populating `branch_name` from program name in the frontend.
+Completed for the active sections UI.
 
 ### 12.5 Add full section management UI
 

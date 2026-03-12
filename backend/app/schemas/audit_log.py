@@ -18,3 +18,4 @@ class AuditLogOut(BaseModel):
     user_agent: str | None = None
     severity: str | None = None
     created_at: datetime | None = None
+    schema_version: int = 1

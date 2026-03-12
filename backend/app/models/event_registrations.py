@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import EVENT_REGISTRATION_SCHEMA_VERSION, normalize_schema_version
+
 
 def event_registration_public(document: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -25,5 +27,9 @@ def event_registration_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "attendance_status": document.get("attendance_status"),
         "certificate_issued": bool(document.get("certificate_issued", False)),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=EVENT_REGISTRATION_SCHEMA_VERSION,
+        ),
     }
 

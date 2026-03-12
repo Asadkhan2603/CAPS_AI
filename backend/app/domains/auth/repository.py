@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from app.core.database import db as core_db
 from app.core.redis_store import redis_store
+from app.core.schema_versions import USER_SCHEMA_VERSION, USER_SESSION_SCHEMA_VERSION
 
 
 class AuthRepository:
@@ -25,10 +26,18 @@ class AuthRepository:
         await self._db.users.create_index("email", unique=True)
 
     async def insert_user(self, document: dict[str, Any]):
-        return await self._db.users.insert_one(document)
+        return await self._db.users.insert_one(
+            {
+                **document,
+                "schema_version": USER_SCHEMA_VERSION,
+            }
+        )
 
     async def update_user(self, user_obj_id, set_data: dict[str, Any]) -> None:
-        await self._db.users.update_one({"_id": user_obj_id}, {"$set": set_data})
+        await self._db.users.update_one(
+            {"_id": user_obj_id},
+            {"$set": {**set_data, "schema_version": USER_SCHEMA_VERSION}},
+        )
 
     async def is_any_admin_registered(self) -> bool:
         existing_admin = await self._db.users.find_one({"role": "admin"})
@@ -96,6 +105,10 @@ class AuthRepository:
         sessions = getattr(self._db, "user_sessions", None)
         if sessions is None:
             return
+        document = {
+            **document,
+            "schema_version": USER_SESSION_SCHEMA_VERSION,
+        }
         await sessions.insert_one(document)
 
     async def find_active_session_by_refresh_jti(self, refresh_jti: str) -> dict[str, Any] | None:
@@ -110,7 +123,7 @@ class AuthRepository:
             return
         await sessions.update_one(
             {"refresh_jti": refresh_jti, "revoked_at": None},
-            {"$set": {"revoked_at": revoked_at}},
+            {"$set": {"revoked_at": revoked_at, "schema_version": USER_SESSION_SCHEMA_VERSION}},
         )
 
     async def rotate_session_refresh_jti(
@@ -136,6 +149,7 @@ class AuthRepository:
                     "last_seen_ip": ip_address,
                     "fingerprint": fingerprint,
                     "user_agent": user_agent,
+                    "schema_version": USER_SESSION_SCHEMA_VERSION,
                 }
             },
         )

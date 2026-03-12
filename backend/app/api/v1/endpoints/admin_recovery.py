@@ -10,11 +10,14 @@ from app.services.audit import log_audit_event
 
 router = APIRouter()
 
-RECOVERY_COLLECTIONS = {
-    'courses',
-    'departments',
+LEGACY_RECOVERY_COLLECTIONS = {
     'branches',
+    'courses',
     'years',
+}
+
+ACTIVE_RECOVERY_COLLECTIONS = {
+    'departments',
     'classes',
     'notices',
     'notifications',
@@ -26,14 +29,22 @@ RECOVERY_COLLECTIONS = {
     'review_tickets',
 }
 
+RECOVERY_COLLECTIONS = ACTIVE_RECOVERY_COLLECTIONS | LEGACY_RECOVERY_COLLECTIONS
+
 
 @router.get('/')
 async def list_recovery_items(
     collection: str | None = Query(default=None),
+    include_legacy: bool = Query(
+        default=False,
+        description='Include retired legacy compatibility collections such as courses, years, and branches.',
+    ),
     limit: int = Query(default=100, ge=1, le=500),
     _current_user=Depends(require_permission('system.read')),
 ) -> dict:
-    targets = [collection] if collection else sorted(RECOVERY_COLLECTIONS)
+    targets = [collection] if collection else sorted(
+        RECOVERY_COLLECTIONS if include_legacy else ACTIVE_RECOVERY_COLLECTIONS
+    )
     for target in targets:
         if target not in RECOVERY_COLLECTIONS:
             raise HTTPException(status_code=400, detail=f'Unsupported recovery collection: {target}')
@@ -61,7 +72,12 @@ async def list_recovery_items(
         for target in targets
     }
 
-    return {'timestamp': datetime.now(timezone.utc), 'items': data, 'summary': summary}
+    return {
+        'timestamp': datetime.now(timezone.utc),
+        'items': data,
+        'summary': summary,
+        'legacy_collections_included': include_legacy,
+    }
 
 
 @router.patch('/{collection}/{item_id}/restore')

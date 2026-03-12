@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import BATCH_SCHEMA_VERSION, SEMESTER_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.batches import batch_public
@@ -124,6 +125,7 @@ async def create_batch(
         now=now,
         auto_generated=False,
     )
+    document["schema_version"] = BATCH_SCHEMA_VERSION
     result = await db.batches.insert_one(document)
     batch_id = str(result.inserted_id)
 
@@ -138,6 +140,8 @@ async def create_batch(
         )
         for semester_number in range(1, total_semesters + 1)
     ]
+    for semester_doc in semester_docs:
+        semester_doc["schema_version"] = SEMESTER_SCHEMA_VERSION
     if semester_docs:
         await db.semesters.insert_many(semester_docs)
 
@@ -209,6 +213,7 @@ async def update_batch(
         update_data["university_code"] = program_context.get("university_code")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    update_data["schema_version"] = BATCH_SCHEMA_VERSION
     result = await db.batches.update_one({"_id": batch_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
@@ -237,6 +242,7 @@ async def update_batch(
                 "academic_year_label": semester_payload.get("academic_year_label"),
                 "university_name": semester_payload.get("university_name"),
                 "university_code": semester_payload.get("university_code"),
+                "schema_version": SEMESTER_SCHEMA_VERSION,
             }
             current_label = str(semester.get("label") or "").strip()
             if not current_label or current_label.startswith("Semester "):
@@ -274,7 +280,10 @@ async def delete_batch(
     ))
     result = await db.batches.update_one(
         {"_id": parse_object_id(batch_id), "is_active": True},
-        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
+        build_soft_delete_update(
+            deleted_by=str(current_user.get("_id")),
+            extra_fields={"schema_version": BATCH_SCHEMA_VERSION},
+        ),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")

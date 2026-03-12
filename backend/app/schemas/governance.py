@@ -41,3 +41,21 @@ class AdminActionReviewOut(BaseModel):
     executed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    schema_version: int = 1
+
+
+class UserSessionOut(BaseModel):
+    id: str
+    user_id: str | None = None
+    user_name: str | None = None
+    user_email: str | None = None
+    fingerprint: str | None = None
+    ip_address: str | None = None
+    last_seen_ip: str | None = None
+    user_agent: str | None = None
+    created_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    rotated_at: datetime | None = None
+    revoked_at: datetime | None = None
+    status: str
+    schema_version: int = 1

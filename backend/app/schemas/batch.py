@@ -40,3 +40,4 @@ class BatchOut(BaseModel):
     deleted_at: datetime | None = None
     deleted_by: str | None = None
     created_at: datetime | None = None
+    schema_version: int = 1

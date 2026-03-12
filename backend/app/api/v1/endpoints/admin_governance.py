@@ -9,11 +9,14 @@ from fastapi import APIRouter, Depends, Query
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.security import require_permission
+from app.models.admin_action_reviews import admin_action_review_public
+from app.models.user_sessions import user_session_public
 from app.schemas.governance import (
     AdminActionReviewCreate,
     AdminActionReviewDecision,
     AdminActionReviewOut,
     GovernancePolicyUpdate,
+    UserSessionOut,
 )
 from app.services.audit import log_audit_event
 from app.services.governance import (
@@ -24,25 +27,6 @@ from app.services.governance import (
 )
 
 router = APIRouter()
-
-
-def _review_public(row: dict) -> AdminActionReviewOut:
-    return AdminActionReviewOut(
-        id=str(row.get("_id")),
-        review_type=row.get("review_type"),
-        action=row.get("action"),
-        entity_type=row.get("entity_type"),
-        entity_id=row.get("entity_id"),
-        reason=row.get("reason"),
-        status=row.get("status"),
-        requested_by=row.get("requested_by"),
-        reviewed_by=row.get("reviewed_by"),
-        reviewed_at=row.get("reviewed_at"),
-        executed_by=row.get("executed_by"),
-        executed_at=row.get("executed_at"),
-        created_at=row.get("created_at"),
-        updated_at=row.get("updated_at"),
-    )
 
 
 @router.get("/policy")
@@ -85,7 +69,7 @@ async def create_review(
         reason=payload.reason,
         metadata=payload.metadata,
     )
-    return _review_public(created)
+    return AdminActionReviewOut(**admin_action_review_public(created))
 
 
 @router.get("/reviews", response_model=List[AdminActionReviewOut])
@@ -98,7 +82,7 @@ async def list_reviews(
     if status_filter:
         query["status"] = status_filter
     rows = await db.admin_action_reviews.find(query).sort("created_at", -1).limit(limit).to_list(length=limit)
-    return [_review_public(row) for row in rows]
+    return [AdminActionReviewOut(**admin_action_review_public(row)) for row in rows]
 
 
 @router.patch("/reviews/{review_id}", response_model=AdminActionReviewOut)
@@ -123,7 +107,7 @@ async def decide_review(
         new_value={"status": updated.get("status")},
         severity="high",
     )
-    return _review_public(updated)
+    return AdminActionReviewOut(**admin_action_review_public(updated))
 
 
 @router.get("/dashboard")
@@ -151,7 +135,7 @@ async def governance_dashboard(
     }
 
 
-@router.get("/sessions")
+@router.get("/sessions", response_model=dict)
 async def list_sessions(
     status_filter: str | None = Query(default=None, alias="status"),
     user_id: str | None = Query(default=None),
@@ -182,21 +166,5 @@ async def list_sessions(
     for row in rows:
         uid = row.get("user_id")
         user = user_map.get(uid, {})
-        items.append(
-            {
-                "id": str(row.get("_id")),
-                "user_id": uid,
-                "user_name": user.get("full_name"),
-                "user_email": user.get("email"),
-                "fingerprint": row.get("fingerprint"),
-                "ip_address": row.get("ip_address") or row.get("last_seen_ip"),
-                "last_seen_ip": row.get("last_seen_ip"),
-                "user_agent": row.get("user_agent"),
-                "created_at": row.get("created_at"),
-                "last_seen_at": row.get("last_seen_at"),
-                "rotated_at": row.get("rotated_at"),
-                "revoked_at": row.get("revoked_at"),
-                "status": "revoked" if row.get("revoked_at") else "active",
-            }
-        )
+        items.append(UserSessionOut(**user_session_public(row, user=user)).model_dump())
     return {"items": items, "total": len(items)}

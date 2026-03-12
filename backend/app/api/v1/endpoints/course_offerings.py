@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import COURSE_OFFERING_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.course_offerings import course_offering_public
 from app.schemas.course_offering import CourseOfferingCreate, CourseOfferingOut, CourseOfferingUpdate
@@ -187,6 +188,7 @@ async def create_course_offering(
         "is_active": True,
         "created_by_user_id": str(current_user.get("_id")),
         "created_at": datetime.now(timezone.utc),
+        "schema_version": COURSE_OFFERING_SCHEMA_VERSION,
     }
     result = await db.course_offerings.insert_one(document)
     created = await db.course_offerings.find_one({"_id": result.inserted_id})
@@ -204,11 +206,14 @@ async def update_course_offering(
     if not current:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course offering not found")
     await _ensure_section_write_access(current_user=current_user, section_id=current["section_id"])
-    merged = await _validate_payload(payload, current=current)
+    await _validate_payload(payload, current=current)
     update_data = payload.model_dump(exclude_none=True)
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    await db.course_offerings.update_one({"_id": offering_obj_id}, {"$set": update_data})
+    await db.course_offerings.update_one(
+        {"_id": offering_obj_id},
+        {"$set": {**update_data, "schema_version": COURSE_OFFERING_SCHEMA_VERSION}},
+    )
     updated = await db.course_offerings.find_one({"_id": offering_obj_id})
     return CourseOfferingOut(**course_offering_public(updated))
 
@@ -225,6 +230,12 @@ async def delete_course_offering(
     await _ensure_section_write_access(current_user=current_user, section_id=current["section_id"])
     await db.course_offerings.update_one(
         {"_id": offering_obj_id},
-        {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc)}},
+        {
+            "$set": {
+                "is_active": False,
+                "deleted_at": datetime.now(timezone.utc),
+                "schema_version": COURSE_OFFERING_SCHEMA_VERSION,
+            }
+        },
     )
     return {"message": "Course offering archived"}

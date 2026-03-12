@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import ASSIGNMENT_SCHEMA_VERSION, normalize_schema_version
+
 
 def assignment_public(document: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -14,4 +16,8 @@ def assignment_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "plagiarism_enabled": document.get("plagiarism_enabled", True),
         "created_by": document.get("created_by"),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=ASSIGNMENT_SCHEMA_VERSION,
+        ),
     }

@@ -15,3 +15,4 @@ class EnrollmentOut(BaseModel):
     student_roll_number: str | None = None
     assigned_by_user_id: str
     created_at: datetime | None = None
+    schema_version: int = 1

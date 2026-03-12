@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import CLUB_EVENT_SCHEMA_VERSION, normalize_schema_version
+
 
 def club_event_public(document: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -23,4 +25,8 @@ def club_event_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "result_summary": document.get("result_summary"),
         "created_by": document.get("created_by"),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=CLUB_EVENT_SCHEMA_VERSION,
+        ),
     }

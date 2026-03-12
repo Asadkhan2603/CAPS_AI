@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import STUDENT_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.models.students import student_public
 from app.schemas.student import StudentCreate, StudentOut, StudentUpdate
@@ -86,6 +87,7 @@ async def create_student(
         "group_id": payload.group_id,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
+        "schema_version": STUDENT_SCHEMA_VERSION,
     }
     result = await db.students.insert_one(document)
     created = await db.students.find_one({"_id": result.inserted_id})
@@ -140,7 +142,7 @@ async def update_student(
 
     result = await db.students.update_one(
         {"_id": student_obj_id},
-        {"$set": update_data},
+        {"$set": {**update_data, "schema_version": STUDENT_SCHEMA_VERSION}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")

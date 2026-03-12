@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import REVIEW_TICKET_SCHEMA_VERSION, normalize_schema_version
+
 
 def review_ticket_public(document: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -11,4 +13,8 @@ def review_ticket_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "resolved_by_user_id": document.get("resolved_by_user_id"),
         "resolved_at": document.get("resolved_at"),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=REVIEW_TICKET_SCHEMA_VERSION,
+        ),
     }

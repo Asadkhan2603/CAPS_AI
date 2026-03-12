@@ -6,6 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import (
+    CLUB_APPLICATION_SCHEMA_VERSION,
+    CLUB_MEMBER_SCHEMA_VERSION,
+    CLUB_SCHEMA_VERSION,
+)
 from app.core.security import require_permission, require_roles
 from app.models.clubs import club_application_public, club_member_public, club_public
 from app.schemas.club import (
@@ -233,6 +238,7 @@ async def create_club(
         "created_by": str(current_user["_id"]),
         "created_at": now,
         "updated_at": now,
+        "schema_version": CLUB_SCHEMA_VERSION,
         # Legacy compatibility
         "is_active": payload.status in {"draft", "active"},
     }
@@ -315,7 +321,10 @@ async def update_club(
     update_data["status"] = next_status
     update_data["is_active"] = next_status in ACTIVE_STATES
 
-    await db.clubs.update_one({"_id": parse_object_id(club_id)}, {"$set": update_data})
+    await db.clubs.update_one(
+        {"_id": parse_object_id(club_id)},
+        {"$set": {**update_data, "schema_version": CLUB_SCHEMA_VERSION}},
+    )
     updated = await db.clubs.find_one({"_id": parse_object_id(club_id)})
     enriched = await _enrich_club_document(updated)
 
@@ -374,6 +383,7 @@ async def join_club(
                 "status": "active",
                 "joined_at": now,
                 "left_at": None,
+                "schema_version": CLUB_MEMBER_SCHEMA_VERSION,
             }
         )
         return {
@@ -398,6 +408,7 @@ async def join_club(
             "applied_at": datetime.now(timezone.utc),
             "reviewed_by": None,
             "reviewed_at": None,
+            "schema_version": CLUB_APPLICATION_SCHEMA_VERSION,
         }
     )
     return {
@@ -456,13 +467,22 @@ async def update_member(
         if existing_president:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only one president is allowed per club")
         await db.clubs.update_one(
-            {"_id": parse_object_id(club_id)}, {"$set": {"president_user_id": member.get("student_user_id")}}
+            {"_id": parse_object_id(club_id)},
+            {
+                "$set": {
+                    "president_user_id": member.get("student_user_id"),
+                    "schema_version": CLUB_SCHEMA_VERSION,
+                }
+            },
         )
 
     if update_data.get("status") in {"inactive", "removed"}:
         update_data["left_at"] = datetime.now(timezone.utc)
 
-    await db.club_members.update_one({"_id": member_obj_id}, {"$set": update_data})
+    await db.club_members.update_one(
+        {"_id": member_obj_id},
+        {"$set": {**update_data, "schema_version": CLUB_MEMBER_SCHEMA_VERSION}},
+    )
     updated = await db.club_members.find_one({"_id": member_obj_id})
     return ClubMembershipOut(**club_member_public(updated))
 
@@ -517,6 +537,7 @@ async def review_application(
                 "status": payload.status,
                 "reviewed_by": str(current_user["_id"]),
                 "reviewed_at": now,
+                "schema_version": CLUB_APPLICATION_SCHEMA_VERSION,
             }
         },
     )
@@ -540,6 +561,7 @@ async def review_application(
                     "status": "active",
                     "joined_at": now,
                     "left_at": None,
+                    "schema_version": CLUB_MEMBER_SCHEMA_VERSION,
                 }
             )
 

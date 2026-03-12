@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import SPECIALIZATION_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.specializations import specialization_public
@@ -67,6 +68,7 @@ async def create_specialization(
         "description": payload.description,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
+        "schema_version": SPECIALIZATION_SCHEMA_VERSION,
     }
     result = await db.specializations.insert_one(document)
     created = await db.specializations.find_one({"_id": result.inserted_id})
@@ -94,6 +96,7 @@ async def update_specialization(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program not found for provided program_id")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    update_data["schema_version"] = SPECIALIZATION_SCHEMA_VERSION
     result = await db.specializations.update_one({"_id": specialization_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specialization not found")
@@ -127,7 +130,10 @@ async def delete_specialization(
     ))
     result = await db.specializations.update_one(
         {"_id": parse_object_id(specialization_id), "is_active": True},
-        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
+        build_soft_delete_update(
+            deleted_by=str(current_user.get("_id")),
+            extra_fields={"schema_version": SPECIALIZATION_SCHEMA_VERSION},
+        ),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specialization not found")

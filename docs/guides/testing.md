@@ -122,21 +122,13 @@ Installs:
 - backend dev/static-analysis requirements
 
 Runs:
+- `python -m pip_audit -r backend/requirements.txt --ignore-vuln CVE-2024-23342`
 - `flake8`
 - `mypy`
 - `bandit`
 - `python scripts/check_backend_safety.py`
 
-Current CI static-analysis scope (stale, because it references removed legacy endpoints):
-- `backend/app/services/governance.py`
-- `backend/app/api/v1/endpoints/departments.py`
-- `backend/app/api/v1/endpoints/branches.py`
-- `backend/app/api/v1/endpoints/years.py`
-- `backend/app/api/v1/endpoints/courses.py`
-- `backend/app/api/v1/endpoints/classes.py`
-- `scripts/check_backend_safety.py`
-
-Recommended scope update for the canonical academic model:
+Current CI static-analysis scope:
 - `backend/app/services/governance.py`
 - `backend/app/api/v1/endpoints/faculties.py`
 - `backend/app/api/v1/endpoints/departments.py`
@@ -150,7 +142,7 @@ Recommended scope update for the canonical academic model:
 ### Job 2: `backend`
 
 Runs:
-- `pytest -q` in `backend`
+- `pytest -q --cov=app --cov-report=term-missing --cov-fail-under=55` in `backend`
 
 ### Job 3: `frontend`
 
@@ -158,8 +150,10 @@ Runs on Node `20` with npm cache.
 
 Executes:
 - `npm ci`
+- `npm audit --omit=dev --audit-level=high`
 - `npm run lint`
 - `npm run test:ci`
+- `npm run test:coverage`
 - `npm run build`
 
 ## Static Analysis And Safety Gates
@@ -216,23 +210,16 @@ npm run build
 
 ### Static Analysis Run
 
-From repo root (current CI commands, stale):
+From repo root (current CI commands):
 
 ```powershell
 python -m pip install -r backend/requirements.txt
 python -m pip install -r backend/requirements-dev.txt
-python -m flake8 backend/app/services/governance.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/branches.py backend/app/api/v1/endpoints/years.py backend/app/api/v1/endpoints/courses.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
-python -m mypy --config-file mypy.ini backend/app/services/governance.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/branches.py backend/app/api/v1/endpoints/years.py backend/app/api/v1/endpoints/courses.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
-python -m bandit -c bandit.yaml backend/app/services/governance.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/branches.py backend/app/api/v1/endpoints/years.py backend/app/api/v1/endpoints/courses.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
-python scripts/check_backend_safety.py
-```
-
-Recommended update for the canonical academic endpoints:
-
-```powershell
+python -m pip_audit -r backend/requirements.txt --ignore-vuln CVE-2024-23342
 python -m flake8 backend/app/services/governance.py backend/app/api/v1/endpoints/faculties.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/programs.py backend/app/api/v1/endpoints/specializations.py backend/app/api/v1/endpoints/batches.py backend/app/api/v1/endpoints/semesters.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
 python -m mypy --config-file mypy.ini backend/app/services/governance.py backend/app/api/v1/endpoints/faculties.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/programs.py backend/app/api/v1/endpoints/specializations.py backend/app/api/v1/endpoints/batches.py backend/app/api/v1/endpoints/semesters.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
 python -m bandit -c bandit.yaml backend/app/services/governance.py backend/app/api/v1/endpoints/faculties.py backend/app/api/v1/endpoints/departments.py backend/app/api/v1/endpoints/programs.py backend/app/api/v1/endpoints/specializations.py backend/app/api/v1/endpoints/batches.py backend/app/api/v1/endpoints/semesters.py backend/app/api/v1/endpoints/classes.py scripts/check_backend_safety.py
+python scripts/check_backend_safety.py
 ```
 
 ### Full Local Stack Validation

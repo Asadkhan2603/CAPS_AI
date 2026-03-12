@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.config import settings
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import ATTENDANCE_RECORD_SCHEMA_VERSION, INTERNSHIP_SESSION_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.schemas.internship_session import (
     InternshipClockInRequest,
@@ -71,6 +72,7 @@ async def _mark_single(*, payload: AttendanceRecordCreate, actor_user_id: str) -
         "note": payload.note,
         "marked_by_user_id": actor_user_id,
         "marked_at": datetime.now(timezone.utc),
+        "schema_version": ATTENDANCE_RECORD_SCHEMA_VERSION,
     }
     await db.attendance_records.update_one(
         {"class_slot_id": payload.class_slot_id, "student_id": str(student["_id"])},
@@ -94,6 +96,7 @@ def _internship_public(document: dict) -> dict:
         "note": document.get("note"),
         "created_at": document.get("created_at"),
         "updated_at": document.get("updated_at"),
+        "schema_version": document.get("schema_version", INTERNSHIP_SESSION_SCHEMA_VERSION),
     }
 
 
@@ -127,6 +130,7 @@ async def _auto_close_internship_session(session: dict, *, now: datetime) -> dic
                 "auto_closed": True,
                 "total_minutes": total_minutes,
                 "updated_at": now,
+                "schema_version": INTERNSHIP_SESSION_SCHEMA_VERSION,
             }
         },
     )
@@ -219,6 +223,7 @@ async def internship_clock_in(
         "note": payload.note,
         "created_at": now,
         "updated_at": now,
+        "schema_version": INTERNSHIP_SESSION_SCHEMA_VERSION,
     }
     result = await db.internship_sessions.insert_one(document)
     created = await db.internship_sessions.find_one({"_id": result.inserted_id})
@@ -253,6 +258,7 @@ async def internship_clock_out(
                 "auto_closed": False,
                 "note": payload.note or active.get("note"),
                 "updated_at": now,
+                "schema_version": INTERNSHIP_SESSION_SCHEMA_VERSION,
             }
         },
     )

@@ -140,9 +140,9 @@ Phase 2 acceptance gates
 
 ### Phase 3 (6-10 weeks): Data and Documentation Integrity
 Status: `In Progress`
-1. Introduce migration/version strategy for Mongo data shapes. (in progress: submissions, evaluations, ai_jobs, ai_evaluation_runs, and scheduler_locks now persist `schema_version`, and dry-run/apply backfill scripts exist)
-2. Remove legacy schema/index artifacts where safe. (in progress: AI chat indexes centralized in startup bootstrap; legacy compatibility indexes no longer materialize absent collections at startup; `course_id` and `year_id` removed from section API output)
-3. Align and version docs (stop ignoring actionable docs, refresh READMEs/module docs). (in progress)
+1. Introduce migration/version strategy for Mongo data shapes. (in progress: submissions, evaluations, ai_jobs, ai_evaluation_runs, scheduler_locks, settings, admin_action_reviews, analytics_snapshots, user_sessions, notifications, audit_logs, audit_logs_immutable, review_tickets, notices, assignments, club_events, clubs, event_registrations, club_members, club_applications, similarity_logs, groups, subjects, students, class_slots, course_offerings, enrollments, attendance_records, internship_sessions, faculties, departments, specializations, legacy branches, programs, batches, semesters, classes, timetables, timetable_subject_teacher_maps, and users now persist `schema_version`, and dry-run/apply backfill scripts exist; collection-target sweep complete)
+2. Remove legacy schema/index artifacts where safe. (completed: AI chat indexes centralized in startup bootstrap; legacy compatibility indexes no longer materialize absent collections at startup; `course_id` and `year_id` removed from section API output; dead `SidebarLegacy.jsx` removed; timetable lookup payload no longer exposes `branch_name`; active announcement audience search no longer keys on `branch_name`; dashboard identity no longer falls back to legacy `profile.branch_name`; section create/update/filter flows no longer accept `branch_name`; recovery defaults exclude retired `courses`/`years`/`branches` unless explicitly requested; analytics no longer exposes `courses`/`years` compatibility payload aliases or the `/analytics/teacher/classes` compatibility route)
+3. Align and version docs (stop ignoring actionable docs, refresh READMEs/module docs). (completed: root docs, testing guide, mongo versioning guide, recovery docs, and legacy academic compatibility docs now reflect the current runtime and migration baseline)
 
 ### Phase 4 (Continuous): Scale Readiness
 Status: `Pending`

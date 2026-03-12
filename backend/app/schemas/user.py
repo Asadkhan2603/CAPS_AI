@@ -74,6 +74,7 @@ class UserOut(BaseModel):
     avatar_url: str | None = None
     avatar_updated_at: datetime | None = None
     created_at: datetime | None = None
+    schema_version: int = 1
 
 
 class UserExtensionRolesUpdate(BaseModel):

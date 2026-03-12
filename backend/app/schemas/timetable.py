@@ -65,6 +65,7 @@ class TimetableOut(BaseModel):
     created_by_user_id: str
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    schema_version: int = 1
 
 
 class TimetablePublishResponse(BaseModel):
@@ -85,4 +86,3 @@ class TimetableGenerateRequest(BaseModel):
         if len(self.days) == 0:
             raise ValueError("At least one day is required")
         return self
-

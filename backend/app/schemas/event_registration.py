@@ -43,3 +43,4 @@ class EventRegistrationOut(BaseModel):
     attendance_status: AttendanceStatus | None = None
     certificate_issued: bool = False
     created_at: datetime | None = None
+    schema_version: int = 1

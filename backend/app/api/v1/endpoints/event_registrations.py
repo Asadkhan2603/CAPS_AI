@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import CLUB_EVENT_SCHEMA_VERSION, EVENT_REGISTRATION_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.event_registrations import event_registration_public
 from app.schemas.event_registration import EventRegistrationCreate, EventRegistrationOut
@@ -83,7 +84,10 @@ async def _validate_and_prepare_registration(event_id: str, student_user_id: str
     if registration_end:
         if now > registration_end:
             if event.get('status') == 'open':
-                await db.club_events.update_one({'_id': event['_id']}, {'$set': {'status': 'closed'}})
+                await db.club_events.update_one(
+                    {'_id': event['_id']},
+                    {'$set': {'status': 'closed', 'schema_version': CLUB_EVENT_SCHEMA_VERSION}},
+                )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail='Registration deadline has passed',
@@ -103,7 +107,10 @@ async def _auto_close_event_if_full(event_id: str) -> None:
         {'event_id': event_id, 'status': {'$in': ['registered', 'approved']}}
     )
     if confirmed >= capacity and event.get('status') == 'open':
-        await db.club_events.update_one({'_id': event['_id']}, {'$set': {'status': 'closed'}})
+        await db.club_events.update_one(
+            {'_id': event['_id']},
+            {'$set': {'status': 'closed', 'schema_version': CLUB_EVENT_SCHEMA_VERSION}},
+        )
 
 
 @router.get('/', response_model=List[EventRegistrationOut])
@@ -181,6 +188,7 @@ async def create_event_registration(
         'attendance_status': None,
         'certificate_issued': False,
         'created_at': datetime.now(timezone.utc),
+        'schema_version': EVENT_REGISTRATION_SCHEMA_VERSION,
     }
     result = await db.event_registrations.insert_one(document)
     created = await db.event_registrations.find_one({'_id': result.inserted_id})
@@ -231,6 +239,7 @@ async def submit_event_registration(
         'attendance_status': None,
         'certificate_issued': False,
         'created_at': datetime.now(timezone.utc),
+        'schema_version': EVENT_REGISTRATION_SCHEMA_VERSION,
     }
 
     if payment_receipt:

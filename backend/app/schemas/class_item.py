@@ -12,7 +12,6 @@ class ClassCreate(BaseModel):
     semester_id: str | None = None
     name: str = Field(min_length=1, max_length=100)
     faculty_name: str | None = Field(default=None, max_length=120)
-    branch_name: str | None = Field(default=None, max_length=120)
     class_coordinator_user_id: str | None = None
 
 
@@ -25,7 +24,6 @@ class ClassUpdate(BaseModel):
     semester_id: str | None = None
     name: str | None = Field(default=None, min_length=1, max_length=100)
     faculty_name: str | None = Field(default=None, max_length=120)
-    branch_name: str | None = Field(default=None, max_length=120)
     class_coordinator_user_id: str | None = None
     is_active: bool | None = None
 
@@ -40,9 +38,13 @@ class ClassOut(BaseModel):
     semester_id: str | None = None
     name: str
     faculty_name: str | None = None
-    branch_name: str | None = None
+    branch_name: str | None = Field(
+        default=None,
+        description="Legacy compatibility field returned only for historical rows.",
+    )
     class_coordinator_user_id: str | None = None
     is_active: bool = True
     deleted_at: datetime | None = None
     deleted_by: str | None = None
     created_at: datetime | None = None
+    schema_version: int = 1

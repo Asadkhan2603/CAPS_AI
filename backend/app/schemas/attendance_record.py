@@ -27,3 +27,4 @@ class AttendanceRecordOut(BaseModel):
     note: str | None = None
     marked_by_user_id: str
     marked_at: datetime | None = None
+    schema_version: int = 1

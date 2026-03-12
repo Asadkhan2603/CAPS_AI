@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import ADMIN_ACTION_REVIEW_SCHEMA_VERSION, SETTINGS_SCHEMA_VERSION
 from app.services.audit import log_destructive_action_event
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,14 @@ async def set_governance_policy(payload: dict[str, Any]) -> dict[str, Any]:
         return current
     await settings_collection.update_one(
         {"key": "governance_policy"},
-        {"$set": {"key": "governance_policy", "value": current, "updated_at": _now()}},
+        {
+            "$set": {
+                "key": "governance_policy",
+                "value": current,
+                "updated_at": _now(),
+                "schema_version": SETTINGS_SCHEMA_VERSION,
+            }
+        },
         upsert=True,
     )
     return current
@@ -69,6 +77,7 @@ async def create_admin_review(
         "status": "pending",
         "created_at": _now(),
         "updated_at": _now(),
+        "schema_version": ADMIN_ACTION_REVIEW_SCHEMA_VERSION,
     }
     result = await db.admin_action_reviews.insert_one(doc)
     created = await db.admin_action_reviews.find_one({"_id": result.inserted_id})
@@ -94,6 +103,7 @@ async def approve_admin_review(*, review_id: str, approver_id: str, approve: boo
                 "reviewed_at": _now(),
                 "review_note": note,
                 "updated_at": _now(),
+                "schema_version": ADMIN_ACTION_REVIEW_SCHEMA_VERSION,
             }
         },
     )
@@ -191,6 +201,7 @@ async def enforce_review_approval(
                 "executed_by": str(current_user.get("_id")),
                 "executed_at": _now(),
                 "updated_at": _now(),
+                "schema_version": ADMIN_ACTION_REVIEW_SCHEMA_VERSION,
             }
         },
     )

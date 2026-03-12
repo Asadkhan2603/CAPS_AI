@@ -76,6 +76,7 @@ class ClubOut(BaseModel):
     created_by: str | None = None
     updated_at: datetime | None = None
     archived_at: datetime | None = None
+    schema_version: int = 1
     is_active: bool = True
     created_at: datetime | None = None
 
@@ -90,6 +91,7 @@ class ClubMembershipOut(BaseModel):
     status: ClubMemberStatus = "active"
     joined_at: datetime | None = None
     left_at: datetime | None = None
+    schema_version: int = 1
 
 
 class ClubMembershipUpdate(BaseModel):
@@ -107,6 +109,7 @@ class ClubApplicationOut(BaseModel):
     applied_at: datetime | None = None
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None
+    schema_version: int = 1
 
 
 class ClubApplicationReview(BaseModel):

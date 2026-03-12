@@ -5,6 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import (
+    BATCH_SCHEMA_VERSION,
+    PROGRAM_SCHEMA_VERSION,
+    SEMESTER_SCHEMA_VERSION,
+)
 from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.programs import program_public
@@ -81,6 +86,7 @@ async def _sync_program_semesters(program_id: str, total_semesters: int) -> None
                 now=now,
             )
             if not current:
+                semester_payload["schema_version"] = SEMESTER_SCHEMA_VERSION
                 await db.semesters.insert_one(semester_payload)
             else:
                 update_fields = {
@@ -93,6 +99,7 @@ async def _sync_program_semesters(program_id: str, total_semesters: int) -> None
                     "academic_year_label": semester_payload.get("academic_year_label"),
                     "university_name": semester_payload.get("university_name"),
                     "university_code": semester_payload.get("university_code"),
+                    "schema_version": SEMESTER_SCHEMA_VERSION,
                     "updated_at": now,
                 }
                 current_label = str(current.get("label") or "").strip()
@@ -108,7 +115,7 @@ async def _sync_program_semesters(program_id: str, total_semesters: int) -> None
         # Archive semesters beyond configured total.
         await db.semesters.update_many(
             {"batch_id": batch_id, "semester_number": {"$gt": total_semesters}, "is_active": True},
-            {"$set": {"is_active": False, "updated_at": now}},
+            {"$set": {"is_active": False, "updated_at": now, "schema_version": SEMESTER_SCHEMA_VERSION}},
         )
 
 
@@ -151,6 +158,7 @@ async def _seed_program_batches(program_id: str, duration_years: int) -> int:
                 auto_generated=True,
             )
         )
+        batch_docs[-1]["schema_version"] = BATCH_SCHEMA_VERSION
 
     if not batch_docs:
         return 0
@@ -170,6 +178,7 @@ async def _seed_program_batches(program_id: str, duration_years: int) -> int:
                     now=now,
                 )
             )
+            semester_docs[-1]["schema_version"] = SEMESTER_SCHEMA_VERSION
     if semester_docs:
         await db.semesters.insert_many(semester_docs)
     return len(batch_docs)
@@ -209,6 +218,7 @@ async def _sync_auto_generated_batches(program_id: str, duration_years: int) -> 
                     "department_id": program_context.get("department_id"),
                     "university_name": program_context.get("university_name"),
                     "university_code": program_context.get("university_code"),
+                    "schema_version": BATCH_SCHEMA_VERSION,
                     "updated_at": now,
                 }
             },
@@ -296,6 +306,7 @@ async def create_program(
         "description": payload.description,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
+        "schema_version": PROGRAM_SCHEMA_VERSION,
     }
     result = await db.programs.insert_one(document)
     await _seed_program_batches(str(result.inserted_id), duration_years)
@@ -351,6 +362,7 @@ async def update_program(
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    update_data["schema_version"] = PROGRAM_SCHEMA_VERSION
     result = await db.programs.update_one({"_id": program_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
@@ -386,7 +398,10 @@ async def delete_program(
     ))
     result = await db.programs.update_one(
         {"_id": parse_object_id(program_id), "is_active": True},
-        build_soft_delete_update(deleted_by=str(current_user.get("_id"))),
+        build_soft_delete_update(
+            deleted_by=str(current_user.get("_id")),
+            extra_fields={"schema_version": PROGRAM_SCHEMA_VERSION},
+        ),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")

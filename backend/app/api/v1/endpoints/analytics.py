@@ -136,7 +136,6 @@ def _empty_academic_structure_payload(*, page: int, page_size: int, total_classe
             'location': 'Indore, India',
         },
         'programs': [],
-        'courses': [],
         'pagination': {
             'page': page,
             'page_size': page_size,
@@ -423,14 +422,6 @@ async def _teacher_section_tiles(
 
     items.sort(key=lambda row: str(row.get('class_name') or ''))
     return {'items': items}
-
-
-@router.get('/teacher/classes')
-async def teacher_class_tiles(
-    current_user=Depends(require_roles(['teacher'])),
-) -> dict:
-    # Legacy compatibility alias; canonical path is /teacher/sections.
-    return await _teacher_section_tiles(current_user=current_user)
 
 
 @router.get('/teacher/sections')
@@ -817,8 +808,6 @@ async def academic_structure(
                 'name': program['name'],
                 'is_legacy': program['is_legacy'],
                 'batches': batch_items,
-                # Compatibility alias for older clients that still expect course -> year -> classes.
-                'years': batch_items,
             }
         )
     program_items.sort(key=lambda item: str(item.get('name') or ''))
@@ -830,7 +819,6 @@ async def academic_structure(
             'location': 'Indore, India',
         },
         'programs': program_items,
-        'courses': program_items,
         'pagination': {
             'page': page,
             'page_size': page_size,

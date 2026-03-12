@@ -1,4 +1,6 @@
-﻿from typing import Any, Dict
+from typing import Any, Dict
+
+from app.core.schema_versions import AUDIT_LOG_SCHEMA_VERSION, normalize_schema_version
 
 
 def audit_log_public(document: Dict[str, Any]) -> Dict[str, Any]:
@@ -17,4 +19,8 @@ def audit_log_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "user_agent": document.get("user_agent"),
         "severity": document.get("severity"),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=AUDIT_LOG_SCHEMA_VERSION,
+        ),
     }

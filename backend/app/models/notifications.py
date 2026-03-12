@@ -1,4 +1,6 @@
-﻿from typing import Any, Dict
+from typing import Any, Dict
+
+from app.core.schema_versions import NOTIFICATION_SCHEMA_VERSION, normalize_schema_version
 
 
 def notification_public(document: Dict[str, Any]) -> Dict[str, Any]:
@@ -12,4 +14,8 @@ def notification_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "created_by": document.get("created_by"),
         "is_read": document.get("is_read", False),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=NOTIFICATION_SCHEMA_VERSION,
+        ),
     }

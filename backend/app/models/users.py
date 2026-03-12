@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import USER_SCHEMA_VERSION, normalize_schema_version
+
 
 def user_public(document: Dict[str, Any]) -> Dict[str, Any]:
     user_id = str(document["_id"])
@@ -17,4 +19,8 @@ def user_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "avatar_url": f"/api/v1/auth/profile/avatar/{user_id}" if document.get("avatar_filename") else None,
         "avatar_updated_at": document.get("avatar_updated_at"),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=USER_SCHEMA_VERSION,
+        ),
     }

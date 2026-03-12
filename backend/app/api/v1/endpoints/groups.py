@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.security import get_current_user, require_roles
+from app.core.schema_versions import GROUP_SCHEMA_VERSION
+from app.core.security import require_roles
 from app.models.groups import group_public
 from app.schemas.group_item import GroupCreate, GroupOut, GroupUpdate
 
@@ -73,6 +74,7 @@ async def create_group(
         "description": payload.description,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
+        "schema_version": GROUP_SCHEMA_VERSION,
     }
     result = await db.groups.insert_one(document)
     created = await db.groups.find_one({"_id": result.inserted_id})
@@ -102,7 +104,10 @@ async def update_group(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group code already exists in this section")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    await db.groups.update_one({"_id": group_obj_id}, {"$set": update_data})
+    await db.groups.update_one(
+        {"_id": group_obj_id},
+        {"$set": {**update_data, "schema_version": GROUP_SCHEMA_VERSION}},
+    )
     updated = await db.groups.find_one({"_id": group_obj_id})
     return GroupOut(**group_public(updated))
 
@@ -119,6 +124,12 @@ async def delete_group(
     await _ensure_section_access(current_user=current_user, section_id=current["section_id"], write_mode=True)
     await db.groups.update_one(
         {"_id": group_obj_id},
-        {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc)}},
+        {
+            "$set": {
+                "is_active": False,
+                "deleted_at": datetime.now(timezone.utc),
+                "schema_version": GROUP_SCHEMA_VERSION,
+            }
+        },
     )
     return {"message": "Group archived"}

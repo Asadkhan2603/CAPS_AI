@@ -6,6 +6,8 @@ from typing import Any
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis_store import redis_store
+from app.core.schema_versions import ANALYTICS_SNAPSHOT_SCHEMA_VERSION
+from app.models.analytics_snapshots import analytics_snapshot_public
 
 
 def _today_key() -> str:
@@ -55,24 +57,36 @@ async def compute_platform_snapshot(*, snapshot_date: str | None = None) -> dict
         "active_clubs": clubs_total,
         "events_this_week": await db.club_events.count_documents({"event_date": {"$gte": now, "$lte": week_ahead}}),
         "updated_at": now,
+        "schema_version": ANALYTICS_SNAPSHOT_SCHEMA_VERSION,
     }
 
     await db.analytics_snapshots.update_one({"date": key}, {"$set": snapshot}, upsert=True)
-    await redis_store.set_json(f"analytics:snapshot:{key}", snapshot, ttl_seconds=settings.analytics_cache_ttl_seconds)
-    return snapshot
+    public_snapshot = analytics_snapshot_public(snapshot)
+    await redis_store.set_json(
+        f"analytics:snapshot:{key}",
+        public_snapshot,
+        ttl_seconds=settings.analytics_cache_ttl_seconds,
+    )
+    return public_snapshot
 
 
 async def get_daily_snapshot(*, snapshot_date: str | None = None) -> dict[str, Any] | None:
     key = snapshot_date or _today_key()
     cached = await redis_store.get_json(f"analytics:snapshot:{key}")
     if cached:
-        return cached
+        return analytics_snapshot_public(cached)
     doc = await db.analytics_snapshots.find_one({"date": key})
     if doc:
-        await redis_store.set_json(f"analytics:snapshot:{key}", doc, ttl_seconds=settings.analytics_cache_ttl_seconds)
-    return doc
+        public_doc = analytics_snapshot_public(doc)
+        await redis_store.set_json(
+            f"analytics:snapshot:{key}",
+            public_doc,
+            ttl_seconds=settings.analytics_cache_ttl_seconds,
+        )
+        return public_doc
+    return None
 
 
 async def get_snapshot_history(*, limit: int = 30) -> list[dict[str, Any]]:
     rows = await db.analytics_snapshots.find({}).sort("date", -1).limit(limit).to_list(length=limit)
-    return rows
+    return [analytics_snapshot_public(row) for row in rows]

@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -17,3 +17,4 @@ class SimilarityLogOut(BaseModel):
     is_flagged: bool = False
     engine_version: str | None = None
     created_at: datetime | None = None
+    schema_version: int = 1

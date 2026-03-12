@@ -6,6 +6,7 @@ from pymongo.errors import OperationFailure
 from app.core.database import db
 
 _indexes_ensured = False
+LEGACY_COMPATIBILITY_INDEX_COLLECTIONS = ("courses", "branches", "years")
 
 
 async def _safe_create_index(collection, keys, **kwargs) -> None:
@@ -24,6 +25,15 @@ async def _collection_exists(name: str) -> bool:
     except Exception:
         return True
     return name in set(existing)
+
+
+async def _ensure_legacy_compatibility_indexes() -> None:
+    # Legacy academic collections stay indexable only for explicit recovery/translation flows.
+    # Do not add new collections here unless they are already retired from the active router.
+    for name in LEGACY_COMPATIBILITY_INDEX_COLLECTIONS:
+        if not await _collection_exists(name):
+            continue
+        await _safe_create_index(getattr(db, name), [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
 
 
 async def ensure_indexes() -> None:
@@ -97,11 +107,6 @@ async def ensure_indexes() -> None:
         [('source_submission_id', ASCENDING), ('matched_submission_id', ASCENDING), ('threshold', ASCENDING), ('engine_version', ASCENDING)],
         unique=True,
     )
-    if await _collection_exists("courses"):
-        await _safe_create_index(db.courses, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
-    if await _collection_exists("branches"):
-        await _safe_create_index(db.branches, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
-    if await _collection_exists("years"):
-        await _safe_create_index(db.years, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _ensure_legacy_compatibility_indexes()
 
     _indexes_ensured = True

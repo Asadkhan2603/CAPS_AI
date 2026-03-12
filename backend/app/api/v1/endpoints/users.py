@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import CLASS_SCHEMA_VERSION, CLUB_SCHEMA_VERSION, USER_SCHEMA_VERSION
 from app.core.security import get_password_hash, require_permission
 from app.models.users import user_public
 from app.schemas.user import UserCreate, UserExtensionRolesUpdate, UserOut
@@ -63,6 +64,7 @@ async def create_user(
         "role_scope": {},
         "is_active": True,
         "must_change_password": False,
+        "schema_version": USER_SCHEMA_VERSION,
     }
     result = await db.users.insert_one(document)
     created = await db.users.find_one({"_id": result.inserted_id})
@@ -113,11 +115,11 @@ async def update_user_extension_roles(
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Class not found for class coordinator scope")
                 await db.classes.update_many(
                     {"class_coordinator_user_id": user_id},
-                    {"$set": {"class_coordinator_user_id": None}},
+                    {"$set": {"class_coordinator_user_id": None, "schema_version": CLASS_SCHEMA_VERSION}},
                 )
                 await db.classes.update_one(
                     {"_id": parse_object_id(class_id)},
-                    {"$set": {"class_coordinator_user_id": user_id}},
+                    {"$set": {"class_coordinator_user_id": user_id, "schema_version": CLASS_SCHEMA_VERSION}},
                 )
                 class_scope["faculty_id"] = class_doc.get("faculty_id")
                 class_scope["department_id"] = class_doc.get("department_id")
@@ -130,7 +132,7 @@ async def update_user_extension_roles(
             role_scope.pop("class_coordinator", None)
             await db.classes.update_many(
                 {"class_coordinator_user_id": user_id},
-                {"$set": {"class_coordinator_user_id": None}},
+                {"$set": {"class_coordinator_user_id": None, "schema_version": CLASS_SCHEMA_VERSION}},
             )
 
         role_scope.pop("club_president", None)
@@ -145,25 +147,31 @@ async def update_user_extension_roles(
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Club not found for club president scope")
                 await db.clubs.update_many(
                     {"president_user_id": user_id},
-                    {"$set": {"president_user_id": None}},
+                    {"$set": {"president_user_id": None, "schema_version": CLUB_SCHEMA_VERSION}},
                 )
                 await db.clubs.update_one(
                     {"_id": parse_object_id(club_id)},
-                    {"$set": {"president_user_id": user_id}},
+                    {"$set": {"president_user_id": user_id, "schema_version": CLUB_SCHEMA_VERSION}},
                 )
                 role_scope["club_president"] = {"club_id": club_id}
         else:
             role_scope.pop("club_president", None)
             await db.clubs.update_many(
                 {"president_user_id": user_id},
-                {"$set": {"president_user_id": None}},
+                {"$set": {"president_user_id": None, "schema_version": CLUB_SCHEMA_VERSION}},
             )
 
         role_scope.pop("class_coordinator", None)
 
     await db.users.update_one(
         {"_id": user_obj_id},
-        {"$set": {"extended_roles": payload.extended_roles, "role_scope": role_scope}},
+        {
+            "$set": {
+                "extended_roles": payload.extended_roles,
+                "role_scope": role_scope,
+                "schema_version": USER_SCHEMA_VERSION,
+            }
+        },
     )
     updated = await db.users.find_one({"_id": user_obj_id})
     await log_audit_event(
@@ -193,18 +201,21 @@ async def deactivate_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    await db.users.update_one({"_id": user_obj_id}, {"$set": {"is_active": False}})
+    await db.users.update_one(
+        {"_id": user_obj_id},
+        {"$set": {"is_active": False, "schema_version": USER_SCHEMA_VERSION}},
+    )
     await db.classes.update_many(
         {"class_coordinator_user_id": user_id},
-        {"$set": {"class_coordinator_user_id": None}},
+        {"$set": {"class_coordinator_user_id": None, "schema_version": CLASS_SCHEMA_VERSION}},
     )
     await db.clubs.update_many(
         {"coordinator_user_id": user_id},
-        {"$set": {"coordinator_user_id": None}},
+        {"$set": {"coordinator_user_id": None, "schema_version": CLUB_SCHEMA_VERSION}},
     )
     await db.clubs.update_many(
         {"president_user_id": user_id},
-        {"$set": {"president_user_id": None}},
+        {"$set": {"president_user_id": None, "schema_version": CLUB_SCHEMA_VERSION}},
     )
     await log_audit_event(
         actor_user_id=str(current_user.get("_id")),

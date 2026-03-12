@@ -50,17 +50,18 @@ These are the replacement rules to use during migration. They are intentionally 
 ## Backend Data Contracts
 
 - [class_item.py](/backend/app/schemas/class_item.py)
-  - section schema still carries `course_id`, `year_id`, `branch_name`
+  - section output still carries `branch_name` for historical rows
+  - section create and update payloads no longer accept `course_id`, `year_id`, or `branch_name`
   - canonical fields already exist: `faculty_id`, `department_id`, `program_id`, `specialization_id`, `batch_id`, `semester_id`
 
 - [classes.py](/backend/app/models/classes.py)
-  - persisted class model still exposes `course_id`, `year_id`, `branch_name`
+  - persisted class model still exposes `branch_name` only as compatibility output for historical rows
 
 ## Backend Logic Still Reading Legacy Fields
 
 - [classes.py](/backend/app/api/v1/endpoints/classes.py)
-  - active canonical create/update no longer depends on `course_id` or `year_id`
-  - `branch_name` remains as a compatibility read/write field for historical rows
+  - active canonical create/update no longer depends on `course_id`, `year_id`, or `branch_name`
+  - section list no longer exposes `branch_name` as an active filter
 
 - [analytics.py](/backend/app/api/v1/endpoints/analytics.py)
   - active structure aggregation now builds output using canonical IDs
@@ -75,7 +76,7 @@ These are the replacement rules to use during migration. They are intentionally 
   - derived class scope payload now stores `batch_id` and `semester_id`
 
 - [timetables.py](/backend/app/api/v1/endpoints/timetables.py)
-  - timetable display still exposes `branch_name`
+  - timetable lookup payload no longer exposes `branch_name`
 
 - [background_jobs.py](/backend/app/services/background_jobs.py)
   - background jobs still fetch classes by `year_id`
@@ -86,35 +87,31 @@ These are the replacement rules to use during migration. They are intentionally 
   - `/courses`, `/years`, and `/branches` now redirect to canonical routes
 
 - [navigationGroups.js](/frontend/src/config/navigationGroups.js)
-  - still includes Courses, Years, and Branches in navigation
-
-- [AdminAcademicStructurePage.jsx](/frontend/src/pages/Admin/AdminAcademicStructurePage.jsx)
-  - still renders the legacy compatibility cards
+  - no longer includes Courses, Years, or Branches in navigation
 
 - [AcademicStructurePage.jsx](/frontend/src/pages/AcademicStructurePage.jsx)
-  - still renders legacy compatibility links inside the canonical page
-  - still uses `branch_name` as section display code
+  - renders only the canonical hierarchy tree
 
 - dedicated legacy CRUD pages have been deleted
 
 ## Frontend Logic Still Reading Legacy Fields
 
 - [ClassesPage.jsx](/frontend/src/pages/ClassesPage.jsx)
-  - creates canonical sections but still writes `branch_name` from selected program name for compatibility
+  - creates canonical sections without `branch_name`
 
 - [AnnouncementsPage.jsx](/frontend/src/pages/Communication/AnnouncementsPage.jsx)
   - no longer loads `/years/`
-  - still uses `branch_name` in section search text
+  - no longer uses `branch_name` in section search text
 
 - [TimetablePage.jsx](/frontend/src/pages/TimetablePage.jsx)
-  - still renders `branch_name`
+  - no longer depends on timetable lookup `branch_name`
 
 - [TeacherClassTiles.jsx](/frontend/src/components/ui/TeacherClassTiles.jsx)
   - still falls back to `year_id`
 
 - [Sidebar.jsx](/frontend/src/components/layout/Sidebar.jsx)
 - [DashboardPage.jsx](/frontend/src/pages/DashboardPage.jsx)
-  - still render `branch` or `branch_name` from profile data
+  - no longer renders `branch_name` as a primary academic identity fallback
 
 ## Tests Blocking Removal
 
@@ -172,6 +169,10 @@ Required updates:
 - stop validating section creation against legacy `courses` and `years`
 - keep compatibility reads only if historical data still needs to be displayed
 - backfill any missing canonical IDs on existing `classes` documents if legacy-only rows still exist
+
+Status:
+- completed for active create/update/filter flows
+- `branch_name` remains read-only compatibility output for historical section rows
 
 Primary file:
 

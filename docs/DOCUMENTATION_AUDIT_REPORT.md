@@ -6,6 +6,9 @@ Phase 3 update (2026-03-12):
 - actionable `docs/` content is tracked in git again
 - root runtime docs (`README.md`, `scripts/README.md`, `backend/app/models/README.md`) were refreshed against current code
 - Mongo migration/versioning guidance was added in `docs/guides/mongo-versioning.md`
+- the active collection `schema_version` sweep is now documented as complete
+- admin recovery docs now reflect canonical-by-default listing with explicit legacy opt-in
+- section docs now reflect that `branch_name` is read-only compatibility output, not an active write contract
 
 ## Summary
 
@@ -82,6 +85,8 @@ Student workspaces:
 - `/docs/modules/GOVERNANCE_MODULE_MASTER.md`
 - `/docs/modules/SYSTEM_MODULE_MASTER.md`
 - `/docs/modules/RECOVERY_MODULE_MASTER.md`
+- `/docs/guides/mongo-versioning.md`
+- `/docs/modules/LEGACY_ACADEMIC_MIGRATION_CHECKLIST.md`
 - standardized section headers inserted into all `*_MODULE_MASTER.md` files
 - repo-relative link normalization across `docs/`
 
@@ -113,3 +118,4 @@ Student workspaces:
 - consider renaming legacy storage artifacts (`classes`) once migration risk is reduced
 - remove or archive legacy collections after data migration and reporting dependencies are retired
 - continue to enforce root-relative links and standardized module sections for new docs
+- keep `scripts/README.md` and `docs/guides/mongo-versioning.md` in sync whenever a new migration script is added

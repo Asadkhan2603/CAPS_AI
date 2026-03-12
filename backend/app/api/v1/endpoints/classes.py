@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import CLASS_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.classes import class_public
@@ -77,7 +78,6 @@ async def list_classes(
     batch_id: str | None = Query(default=None),
     semester_id: str | None = Query(default=None),
     faculty_name: str | None = Query(default=None),
-    branch_name: str | None = Query(default=None),
     q: str | None = Query(default=None, min_length=1, max_length=100),
     is_active: bool | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
@@ -99,8 +99,6 @@ async def list_classes(
         query['semester_id'] = semester_id
     if faculty_name:
         query['faculty_name'] = faculty_name
-    if branch_name:
-        query['branch_name'] = branch_name
     if q:
         query['name'] = {'$regex': q, '$options': 'i'}
     apply_is_active_filter(query, is_active)
@@ -150,10 +148,10 @@ async def create_class(
         'semester_id': payload.semester_id,
         'name': payload.name.strip(),
         'faculty_name': payload.faculty_name.strip() if payload.faculty_name else None,
-        'branch_name': payload.branch_name.strip() if payload.branch_name else None,
         'class_coordinator_user_id': payload.class_coordinator_user_id,
         'is_active': True,
         'created_at': datetime.now(timezone.utc),
+        'schema_version': CLASS_SCHEMA_VERSION,
     }
     result = await db.classes.insert_one(document)
     created = await db.classes.find_one({'_id': result.inserted_id})
@@ -178,8 +176,6 @@ async def update_class(
         update_data['name'] = update_data['name'].strip()
     if 'faculty_name' in update_data and update_data['faculty_name']:
         update_data['faculty_name'] = update_data['faculty_name'].strip()
-    if 'branch_name' in update_data and update_data['branch_name']:
-        update_data['branch_name'] = update_data['branch_name'].strip()
 
     target_faculty_id = update_data.get('faculty_id', current.get('faculty_id'))
     target_department_id = update_data.get('department_id', current.get('department_id'))
@@ -198,6 +194,7 @@ async def update_class(
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
+    update_data['schema_version'] = CLASS_SCHEMA_VERSION
 
     result = await db.classes.update_one({'_id': class_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
@@ -234,7 +231,10 @@ async def delete_class(
     ))
     result = await db.classes.update_one(
         {'_id': parse_object_id(class_id), 'is_active': True},
-        build_soft_delete_update(deleted_by=str(current_user.get('_id'))),
+        build_soft_delete_update(
+            deleted_by=str(current_user.get('_id')),
+            extra_fields={'schema_version': CLASS_SCHEMA_VERSION},
+        ),
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')

@@ -24,3 +24,4 @@ class ReviewTicketOut(BaseModel):
     resolved_by_user_id: str | None = None
     resolved_at: datetime | None = None
     created_at: datetime | None = None
+    schema_version: int = 1

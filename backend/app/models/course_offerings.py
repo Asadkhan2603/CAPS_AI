@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import COURSE_OFFERING_SCHEMA_VERSION, normalize_schema_version
+
 
 def course_offering_public(document: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -14,4 +16,8 @@ def course_offering_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "offering_type": document.get("offering_type", "theory"),
         "is_active": document.get("is_active", True),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=COURSE_OFFERING_SCHEMA_VERSION,
+        ),
     }

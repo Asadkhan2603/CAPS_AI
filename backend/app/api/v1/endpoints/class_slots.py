@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import CLASS_SLOT_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.class_slots import class_slot_public
 from app.schemas.class_slot import ClassSlotCreate, ClassSlotOut, ClassSlotUpdate
@@ -196,6 +197,7 @@ async def create_class_slot(
         "is_active": True,
         "created_by_user_id": str(current_user.get("_id")),
         "created_at": datetime.now(timezone.utc),
+        "schema_version": CLASS_SLOT_SCHEMA_VERSION,
     }
     result = await db.class_slots.insert_one(document)
     created = await db.class_slots.find_one({"_id": result.inserted_id})
@@ -229,7 +231,10 @@ async def update_class_slot(
     )
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    await db.class_slots.update_one({"_id": slot_obj_id}, {"$set": update_data})
+    await db.class_slots.update_one(
+        {"_id": slot_obj_id},
+        {"$set": {**update_data, "schema_version": CLASS_SLOT_SCHEMA_VERSION}},
+    )
     updated = await db.class_slots.find_one({"_id": slot_obj_id})
     return ClassSlotOut(**class_slot_public(updated))
 
@@ -247,6 +252,12 @@ async def delete_class_slot(
     await _ensure_offering_write_access(current_user=current_user, offering=offering)
     await db.class_slots.update_one(
         {"_id": slot_obj_id},
-        {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc)}},
+        {
+            "$set": {
+                "is_active": False,
+                "deleted_at": datetime.now(timezone.utc),
+                "schema_version": CLASS_SLOT_SCHEMA_VERSION,
+            }
+        },
     )
     return {"message": "Class slot archived"}

@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import SEMESTER_SCHEMA_VERSION, normalize_schema_version
+
 
 def semester_public(document: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -20,4 +22,8 @@ def semester_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "deleted_at": document.get("deleted_at"),
         "deleted_by": document.get("deleted_by"),
         "created_at": document.get("created_at"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=SEMESTER_SCHEMA_VERSION,
+        ),
     }

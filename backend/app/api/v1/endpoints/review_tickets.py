@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.schema_versions import EVALUATION_SCHEMA_VERSION
+from app.core.schema_versions import EVALUATION_SCHEMA_VERSION, REVIEW_TICKET_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.review_tickets import review_ticket_public
 from app.schemas.review_ticket import (
@@ -65,6 +65,7 @@ async def create_review_ticket(
         "resolved_by_user_id": None,
         "resolved_at": None,
         "created_at": datetime.now(timezone.utc),
+        "schema_version": REVIEW_TICKET_SCHEMA_VERSION,
     }
     result = await db.review_tickets.insert_one(document)
     created = await db.review_tickets.find_one({"_id": result.inserted_id})
@@ -109,6 +110,7 @@ async def approve_review_ticket(
                 "resolved_by_user_id": str(current_user["_id"]),
                 "resolved_at": datetime.now(timezone.utc),
                 "reason": payload.reason.strip() if payload.reason else ticket.get("reason"),
+                "schema_version": REVIEW_TICKET_SCHEMA_VERSION,
             }
         },
     )
@@ -144,6 +146,7 @@ async def reject_review_ticket(
                 "resolved_by_user_id": str(current_user["_id"]),
                 "resolved_at": datetime.now(timezone.utc),
                 "reason": payload.reason.strip() if payload.reason else ticket.get("reason"),
+                "schema_version": REVIEW_TICKET_SCHEMA_VERSION,
             }
         },
     )
