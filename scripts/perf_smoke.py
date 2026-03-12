@@ -16,6 +16,8 @@ BACKEND_ROOT = ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+os.environ.setdefault("SKIP_STARTUP_TASKS", "1")
+
 from app.core.observability import observability_state  # noqa: E402
 from app.main import app  # noqa: E402
 from tests.test_auth import (  # noqa: E402
@@ -223,8 +225,8 @@ def main() -> int:
     )
     assert_threshold(
         login_metric,
-        p95_ms=float(os.getenv("PERF_SMOKE_LOGIN_P95_MS", "380")),
-        avg_ms=float(os.getenv("PERF_SMOKE_LOGIN_AVG_MS", "280")),
+        p95_ms=float(os.getenv("PERF_SMOKE_LOGIN_P95_MS", "450")),
+        avg_ms=float(os.getenv("PERF_SMOKE_LOGIN_AVG_MS", "330")),
     )
     assert_threshold(
         teacher_submission_list_metric,

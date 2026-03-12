@@ -17,6 +17,8 @@ BACKEND_ROOT = ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+os.environ.setdefault("SKIP_STARTUP_TASKS", "1")
+
 from app.core.observability import observability_state  # noqa: E402
 from app.main import app  # noqa: E402
 from tests.test_main_missing_blocks import _admin_headers  # noqa: E402

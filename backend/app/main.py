@@ -3,6 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import HTTPException
+import os
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -162,14 +163,28 @@ app.add_middleware(ResponseEnvelopeMiddleware)
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
+def _should_skip_startup_tasks() -> bool:
+    return str(os.getenv("SKIP_STARTUP_TASKS", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 @app.on_event("startup")
 async def startup_tasks() -> None:
+    if _should_skip_startup_tasks():
+        logger.info({"event": "startup.tasks_skipped"})
+        return
     await ensure_indexes()
     await app_scheduler.start()
 
 
 @app.on_event("shutdown")
 async def shutdown_tasks() -> None:
+    if _should_skip_startup_tasks():
+        return
     await app_scheduler.stop()
 
 
