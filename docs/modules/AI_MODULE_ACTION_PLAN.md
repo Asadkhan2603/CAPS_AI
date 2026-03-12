@@ -34,12 +34,10 @@ Completed audit tasks reflected in codebase:
   - dependency upgrades and lockfile refreshes
   - SHA256 idempotency for submission AI bulk evaluation
   - CI quality gates for `pip_audit`, `npm audit`, and coverage thresholds
-- `Phase 1` performance fixes completed in commits `9f39c65`, `d3eac0a`, `13722be`, `455069a`, `76438a9`.
+- `Phase 1` performance and observability work completed in commits `9f39c65`, `d3eac0a`, `13722be`, `455069a`, `76438a9`, and current branch.
   - batched notice fanout and reduced high-limit query scans
   - teacher-scope query reductions across notices, submissions, enrollments, and class slots
-
-Open from prior phases:
-- endpoint/scheduler observability metrics and alerting remain open from Phase 1
+  - `/admin/system/health` now exposes request metrics, scheduler metrics, and operational alerts
 
 ## Phase 2 Refactor Plan (Completed)
 

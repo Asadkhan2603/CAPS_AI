@@ -35,10 +35,71 @@ export default function AdminSystemPage() {
         <Metric label="Errors (24h)" value={data?.error_count_24h ?? 0} />
         <Metric label="Active Sessions (24h)" value={data?.active_sessions_24h ?? 0} />
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-3">
         <Metric label="Slow Queries (24h)" value={data?.slow_query_count_24h ?? 0} />
+        <Metric label="Operational Alerts" value={data?.alert_count ?? 0} />
         <Metric label="Timestamp" value={data?.timestamp ? new Date(data.timestamp).toLocaleString() : '-'} />
       </div>
+      <Card className="space-y-2">
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Operational Alerts</p>
+        {data?.alerts?.length ? (
+          <div className="space-y-2">
+            {data.alerts.map((alert) => (
+              <div
+                key={alert.code}
+                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+              >
+                <div className="font-medium">
+                  {alert.level?.toUpperCase() || 'INFO'} · {alert.code}
+                </div>
+                <div>{alert.message}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-emerald-600 dark:text-emerald-400">No active operational alerts.</p>
+        )}
+      </Card>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Requests (15m)" value={data?.observability?.request_metrics?.requests_15m ?? 0} />
+        <Metric label="5xx Rate (15m)" value={formatPercent(data?.observability?.request_metrics?.server_error_rate_pct_15m)} />
+        <Metric label="P95 (15m)" value={formatDuration(data?.observability?.request_metrics?.p95_duration_ms_15m)} />
+        <Metric label="Slow Requests (15m)" value={data?.observability?.request_metrics?.slow_requests_15m ?? 0} />
+      </div>
+      <Card className="space-y-2">
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Scheduler Observability</p>
+        <pre className="overflow-auto rounded-xl bg-slate-100 p-3 text-xs dark:bg-slate-800">
+          {JSON.stringify(
+            {
+              scheduler: data?.scheduler || {},
+              scheduler_lock: data?.scheduler_lock || {},
+              scheduler_metrics: data?.observability?.scheduler_metrics || {},
+            },
+            null,
+            2
+          )}
+        </pre>
+      </Card>
+      <Card className="space-y-2">
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Top Paths (15m)</p>
+        {data?.observability?.request_metrics?.top_paths_15m?.length ? (
+          <div className="space-y-2">
+            {data.observability.request_metrics.top_paths_15m.map((row) => (
+              <div key={row.path} className="rounded-xl border border-slate-200 px-3 py-2 text-xs dark:border-slate-700">
+                <div className="font-medium">{row.path}</div>
+                <div className="text-slate-600 dark:text-slate-300">
+                  requests={row.requests} · 5xx={row.server_errors} · slow={row.slow_requests}
+                </div>
+                <div className="text-slate-500">
+                  avg={formatDuration(row.avg_duration_ms)} · p95={formatDuration(row.p95_duration_ms)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">No recent request metrics yet.</p>
+        )}
+      </Card>
       <Card className="space-y-2">
         <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Collection Counts</p>
         <pre className="overflow-auto rounded-xl bg-slate-100 p-3 text-xs dark:bg-slate-800">{JSON.stringify(data?.collection_counts || {}, null, 2)}</pre>
@@ -69,6 +130,16 @@ function formatUptime(seconds) {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return `${h}h ${m}m ${s}s`;
+}
+
+function formatDuration(value) {
+  if (value === null || value === undefined) return '-';
+  return `${value} ms`;
+}
+
+function formatPercent(value) {
+  if (value === null || value === undefined) return '-';
+  return `${Number(value).toFixed(2)}%`;
 }
 
 function Metric({ label, value }) {

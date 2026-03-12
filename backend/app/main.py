@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.core.indexes import ensure_indexes
 from app.core.observability import (
     new_error_id,
+    observability_state,
     request_id_ctx,
     setup_logging,
     trace_id_ctx,
@@ -51,6 +52,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         request_id_token = request_id_ctx.set(request_id)
         trace_id_token = trace_id_ctx.set(trace_id)
         started = time.perf_counter()
+        observability_state.request_started()
         logger.info(
             {
                 "event": "request.start",
@@ -66,6 +68,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response: Response = await call_next(request)
         except Exception:
             duration_ms = int((time.perf_counter() - started) * 1000)
+            observability_state.record_request(
+                method=request.method,
+                path=request.url.path,
+                status_code=500,
+                duration_ms=duration_ms,
+            )
             logger.exception(
                 {
                     "event": "request.unhandled_exception",
@@ -78,6 +86,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             )
             raise
         duration_ms = int((time.perf_counter() - started) * 1000)
+        observability_state.record_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_ms=duration_ms,
+        )
 
         response.headers["X-Request-Id"] = request_id
         response.headers["X-Trace-Id"] = trace_id

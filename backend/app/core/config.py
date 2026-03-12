@@ -86,6 +86,21 @@ class Settings:
         default_factory=lambda: _as_float(os.getenv("SIMILARITY_THRESHOLD", "0.8"), 0.8)
     )
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
+    observability_slow_request_ms: int = field(
+        default_factory=lambda: _as_int(os.getenv("OBSERVABILITY_SLOW_REQUEST_MS", "1500"), 1500)
+    )
+    observability_slow_request_count_alert_threshold: int = field(
+        default_factory=lambda: _as_int(
+            os.getenv("OBSERVABILITY_SLOW_REQUEST_COUNT_ALERT_THRESHOLD", "3"),
+            3,
+        )
+    )
+    observability_error_rate_threshold_pct: float = field(
+        default_factory=lambda: _as_float(
+            os.getenv("OBSERVABILITY_ERROR_RATE_THRESHOLD_PCT", "5"),
+            5.0,
+        )
+    )
     rate_limit_max_requests: int = field(
         default_factory=lambda: _as_int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"), 120)
     )

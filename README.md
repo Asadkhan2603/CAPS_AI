@@ -6,9 +6,9 @@ Academic governance and AI-assisted evaluation platform built with FastAPI, Reac
 
 Roadmap status:
 - Phase 0: completed
-- Phase 1: mostly completed
+- Phase 1: completed
 - Phase 2: completed
-- Phase 3: in progress
+- Phase 3: completed
 
 Primary planning and audit references:
 - [audit/roadmap.md](./audit/roadmap.md)

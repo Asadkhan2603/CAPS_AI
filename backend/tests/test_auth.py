@@ -8,6 +8,7 @@ from app.main import app
 from app.api.v1.endpoints import ai as ai_endpoint
 from app.api.v1.endpoints import assignments as assignments_endpoint
 from app.api.v1.endpoints import analytics as analytics_endpoint
+from app.api.v1.endpoints import admin_system as admin_system_endpoint
 from app.api.v1.endpoints import audit_logs as audit_logs_endpoint
 from app.api.v1.endpoints import club_events as club_events_endpoint
 from app.api.v1.endpoints import clubs as clubs_endpoint
@@ -128,6 +129,16 @@ class FakeUsersCollection:
     async def count_documents(self, query: Dict[str, Any]) -> int:
         return len([item for item in self.items if _matches_query(item, query)])
 
+    async def distinct(self, key: str, query: Dict[str, Any] | None = None) -> List[Any]:
+        values: List[Any] = []
+        for item in self.items:
+            if not _matches_query(item, query or {}):
+                continue
+            value = item.get(key)
+            if value not in values:
+                values.append(value)
+        return values
+
     async def update_one(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False):
         matched = 0
         for item in self.items:
@@ -238,6 +249,15 @@ class FakeDB:
         self.timetables = FakeUsersCollection()
         self.timetable_subject_teacher_maps = FakeUsersCollection()
         self.settings = FakeUsersCollection()
+        self.scheduler_locks = FakeUsersCollection()
+
+    async def command(self, name: str) -> dict[str, Any]:
+        if name != "ping":
+            raise ValueError(f"Unsupported command: {name}")
+        return {"ok": 1}
+
+    def __getitem__(self, name: str) -> FakeUsersCollection:
+        return getattr(self, name)
 
 
 def _setup_fake_db() -> FakeDB:
@@ -258,6 +278,7 @@ def _setup_fake_db() -> FakeDB:
     evaluations_endpoint.db = fake_db
     similarity_endpoint.db = fake_db
     analytics_endpoint.db = fake_db
+    admin_system_endpoint.db = fake_db
     notifications_endpoint.db = fake_db
     notices_endpoint.db = fake_db
     clubs_endpoint.db = fake_db

@@ -74,25 +74,25 @@ Debt impact:
 
 ## 9. Recommended Roadmap (Phase-wise)
 
-## Execution Status Update (2026-03-11)
+## Execution Status Update (2026-03-12)
 - Phase 0 (stabilize and secure): completed in `56fbe7d`.
   - dependency upgrades completed (backend + frontend)
   - SHA1 replaced with SHA256 for submission AI idempotency
   - CI quality gates added (`pip_audit`, `npm audit`, backend/frontend coverage)
-- Phase 1 (performance and reliability): core backlog completed across `9f39c65`, `d3eac0a`, `13722be`, `455069a`, `76438a9`.
+- Phase 1 (performance and reliability): completed across `9f39c65`, `d3eac0a`, `13722be`, `455069a`, `76438a9`, and current branch.
   - notice fanout batching and high-limit query reduction completed
   - teacher-scope query hot paths reduced with `distinct` + safe fallback patterns
-  - remaining open item: endpoint/scheduler observability metrics and alerting
+  - endpoint/scheduler observability metrics and alert synthesis are now exposed through `/admin/system/health`
 - Phase 2 (structural refactor): completed in `7d3c52c` plus frontend policy UX follow-up in current branch.
   - shared access-control utilities extracted into services
   - monolithic `ai.py` and `evaluations.py` split into submodules
   - service-layer orchestration added for AI runtime, AI ops, AI chat, evaluation workflows, and access-policy checks
   - teacher fallback indicators added to AI review surfaces
   - student AI disclosure policy made explicit in submissions/evaluations UI
-- Phase 3 (data and documentation integrity): started in current branch.
-  - `docs/` is now tracked again via `.gitignore` cleanup
-  - root, scripts, and backend model READMEs aligned with runtime truth
-  - Mongo versioning strategy documented in `docs/guides/mongo-versioning.md`
+- Phase 3 (data and documentation integrity): completed in `8ecddc6`.
+  - `schema_version` rollout and backfill coverage completed across active Mongo collections
+  - legacy schema and compatibility cleanup completed where safe
+  - root, module, guide, recovery, and migration documentation aligned with runtime truth
 
 ### Phase 0 (0-1 week): Stabilize and Secure
 Status: `Completed`
@@ -101,10 +101,10 @@ Status: `Completed`
 3. Add SCA + coverage CI gates.
 
 ### Phase 1 (1-3 weeks): Performance and Reliability
-Status: `Mostly Completed`
+Status: `Completed`
 1. Fix top `to_list` hotspots with paging/chunking.
 2. Parallelize/batch notice fanout.
-3. Add endpoint and scheduler observability metrics with alerting (open).
+3. Add endpoint and scheduler observability metrics with alerting. (completed)
 
 ### Phase 2 (3-6 weeks): Structural Refactor
 Status: `Completed`
@@ -139,13 +139,13 @@ Phase 2 acceptance gates
 3. Endpoint files targeted in this phase are reduced in size and duplicate access logic is removed.
 
 ### Phase 3 (6-10 weeks): Data and Documentation Integrity
-Status: `In Progress`
-1. Introduce migration/version strategy for Mongo data shapes. (in progress: submissions, evaluations, ai_jobs, ai_evaluation_runs, scheduler_locks, settings, admin_action_reviews, analytics_snapshots, user_sessions, notifications, audit_logs, audit_logs_immutable, review_tickets, notices, assignments, club_events, clubs, event_registrations, club_members, club_applications, similarity_logs, groups, subjects, students, class_slots, course_offerings, enrollments, attendance_records, internship_sessions, faculties, departments, specializations, legacy branches, programs, batches, semesters, classes, timetables, timetable_subject_teacher_maps, and users now persist `schema_version`, and dry-run/apply backfill scripts exist; collection-target sweep complete)
+Status: `Completed`
+1. Introduce migration/version strategy for Mongo data shapes. (completed: submissions, evaluations, ai_jobs, ai_evaluation_runs, scheduler_locks, settings, admin_action_reviews, analytics_snapshots, user_sessions, notifications, audit_logs, audit_logs_immutable, review_tickets, notices, assignments, club_events, clubs, event_registrations, club_members, club_applications, similarity_logs, groups, subjects, students, class_slots, course_offerings, enrollments, attendance_records, internship_sessions, faculties, departments, specializations, legacy branches, programs, batches, semesters, classes, timetables, timetable_subject_teacher_maps, and users now persist `schema_version`, and dry-run/apply backfill scripts exist)
 2. Remove legacy schema/index artifacts where safe. (completed: AI chat indexes centralized in startup bootstrap; legacy compatibility indexes no longer materialize absent collections at startup; `course_id` and `year_id` removed from section API output; dead `SidebarLegacy.jsx` removed; timetable lookup payload no longer exposes `branch_name`; active announcement audience search no longer keys on `branch_name`; dashboard identity no longer falls back to legacy `profile.branch_name`; section create/update/filter flows no longer accept `branch_name`; recovery defaults exclude retired `courses`/`years`/`branches` unless explicitly requested; analytics no longer exposes `courses`/`years` compatibility payload aliases or the `/analytics/teacher/classes` compatibility route)
 3. Align and version docs (stop ignoring actionable docs, refresh READMEs/module docs). (completed: root docs, testing guide, mongo versioning guide, recovery docs, and legacy academic compatibility docs now reflect the current runtime and migration baseline)
 
 ### Phase 4 (Continuous): Scale Readiness
-Status: `Pending`
-1. Load/perf regression tests in CI/CD.
+Status: `In Progress`
+1. Load/perf regression tests in CI/CD. (in progress: backend performance smoke gate added in current branch for `/health`, `/auth/login`, and `/admin/system/health`)
 2. Capacity planning for AI and similarity workloads.
 3. Release governance with risk budgets and rollback criteria.

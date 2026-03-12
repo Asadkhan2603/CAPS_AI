@@ -1,7 +1,9 @@
 from bson import ObjectId
 from fastapi.testclient import TestClient
 
+from app.core.observability import observability_state
 from app.main import app
+from app.services.scheduler import app_scheduler
 from tests.test_auth import _create_section_payload, _seed_canonical_structure, _setup_fake_db
 
 
@@ -889,4 +891,61 @@ def test_student_cannot_access_ai_chat_endpoints() -> None:
 
     blocked_history = client.get("/api/v1/ai/history/s1/e1", headers=student_headers)
     assert blocked_history.status_code == 403
+
+
+def test_admin_system_health_includes_observability_metrics_and_alerts() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_system_metrics@example.com")
+    observability_state.reset()
+
+    original_scheduler_state = (
+        app_scheduler._enabled,
+        app_scheduler._running,
+        app_scheduler._is_leader,
+    )
+    try:
+        app_scheduler._enabled = True
+        app_scheduler._running = True
+        app_scheduler._is_leader = False
+
+        for _ in range(3):
+            observability_state.request_started()
+            observability_state.record_request(
+                method="GET",
+                path="/api/v1/test/failing-endpoint",
+                status_code=500,
+                duration_ms=2100,
+            )
+        observability_state.request_started()
+        observability_state.record_request(
+            method="GET",
+            path="/api/v1/test/healthy-endpoint",
+            status_code=200,
+            duration_ms=120,
+        )
+        observability_state.record_scheduler_job_run(
+            job_name="notice_dispatch",
+            success=True,
+            duration_ms=35,
+            processed_count=2,
+        )
+
+        response = client.get("/api/v1/admin/system/health", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+
+        assert body["alert_count"] >= 2
+        assert any(alert["code"] == "http.high_server_error_rate" for alert in body["alerts"])
+        assert any(alert["code"] == "scheduler.leader_lock_missing" for alert in body["alerts"])
+        assert body["scheduler_lock"]["owner_id"] is None
+        assert body["observability"]["request_metrics"]["requests_15m"] >= 4
+        assert body["observability"]["request_metrics"]["slow_requests_15m"] >= 3
+        assert body["observability"]["request_metrics"]["top_paths_15m"][0]["path"] == "/api/v1/test/failing-endpoint"
+        assert body["observability"]["scheduler_metrics"]["jobs"]["notice_dispatch"]["success_total"] >= 1
+        assert body["observability"]["scheduler_metrics"]["jobs"]["notice_dispatch"]["processed_total"] >= 2
+        assert fake_db.scheduler_locks.items == []
+    finally:
+        app_scheduler._enabled, app_scheduler._running, app_scheduler._is_leader = original_scheduler_state
+        observability_state.reset()
 
