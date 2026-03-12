@@ -140,7 +140,7 @@ Phase 2 acceptance gates
 
 ### Phase 3 (6-10 weeks): Data and Documentation Integrity
 Status: `In Progress`
-1. Introduce migration/version strategy for Mongo data shapes. (in progress: submissions, evaluations, ai_jobs, and ai_evaluation_runs now persist `schema_version`, and dry-run/apply backfill scripts exist)
+1. Introduce migration/version strategy for Mongo data shapes. (in progress: submissions, evaluations, ai_jobs, ai_evaluation_runs, and scheduler_locks now persist `schema_version`, and dry-run/apply backfill scripts exist)
 2. Remove legacy schema/index artifacts where safe. (in progress: AI chat indexes centralized in startup bootstrap; legacy compatibility indexes no longer materialize absent collections at startup; `course_id` and `year_id` removed from section API output)
 3. Align and version docs (stop ignoring actionable docs, refresh READMEs/module docs). (in progress)
 

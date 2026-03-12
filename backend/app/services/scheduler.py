@@ -11,6 +11,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.core.config import settings
 from app.core.database import db
+from app.core.schema_versions import SCHEDULER_LOCK_SCHEMA_VERSION
 from app.services.ai_jobs import process_ai_jobs_once
 from app.services.background_jobs import (
     dispatch_scheduled_notice_notifications,
@@ -170,6 +171,7 @@ class AppScheduler:
                     "owner_id": self._instance_id,
                     "expires_at": expires_at,
                     "heartbeat_at": now,
+                    "schema_version": SCHEDULER_LOCK_SCHEMA_VERSION,
                 }
             },
             return_document=ReturnDocument.AFTER,
@@ -184,6 +186,7 @@ class AppScheduler:
                     "owner_id": self._instance_id,
                     "expires_at": expires_at,
                     "heartbeat_at": now,
+                    "schema_version": SCHEDULER_LOCK_SCHEMA_VERSION,
                     "created_at": now,
                 }
             )
