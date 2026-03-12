@@ -111,12 +111,12 @@ export default function ClassesPage() {
 
   async function loadLookups() {
     const requests = [
-      apiClient.get('/faculties/', { params: { skip: 0, limit: 200 } }),
-      apiClient.get('/departments/', { params: { skip: 0, limit: 300 } }),
-      apiClient.get('/programs/', { params: { skip: 0, limit: 300 } }),
-      apiClient.get('/specializations/', { params: { skip: 0, limit: 300 } }),
-      apiClient.get('/batches/', { params: { skip: 0, limit: 300 } }),
-      apiClient.get('/semesters/', { params: { skip: 0, limit: 300 } })
+      apiClient.get('/faculties/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/departments/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/programs/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/specializations/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/batches/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/semesters/', { params: { skip: 0, limit: 100 } })
     ];
     if (isAdmin) requests.push(apiClient.get('/users/'));
     const results = await Promise.allSettled(requests);

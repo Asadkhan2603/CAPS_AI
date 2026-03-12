@@ -8,7 +8,7 @@ export default function SpecializationsPage() {
   useEffect(() => {
     async function loadPrograms() {
       try {
-        const response = await apiClient.get('/programs/', { params: { skip: 0, limit: 200 } });
+        const response = await apiClient.get('/programs/', { params: { skip: 0, limit: 100 } });
         setPrograms(response.data || []);
       } catch {
         setPrograms([]);

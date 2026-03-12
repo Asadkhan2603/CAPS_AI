@@ -11,8 +11,8 @@ export default function StudentsPage() {
     async function loadSections() {
       try {
         const [sectionsRes, groupsRes] = await Promise.allSettled([
-          getSections({ skip: 0, limit: 200 }),
-          apiClient.get('/groups/', { params: { skip: 0, limit: 300, is_active: true } })
+          getSections({ skip: 0, limit: 100 }),
+          apiClient.get('/groups/', { params: { skip: 0, limit: 100, is_active: true } })
         ]);
         setSections(sectionsRes.status === 'fulfilled' ? sectionsRes.value.data || [] : []);
         setGroups(groupsRes.status === 'fulfilled' ? groupsRes.value.data || [] : []);

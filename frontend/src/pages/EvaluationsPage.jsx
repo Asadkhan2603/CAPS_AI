@@ -53,8 +53,8 @@ export default function EvaluationsPage() {
       if (isStudent) {
         try {
           const [submissionsRes, evaluationsRes] = await Promise.all([
-            apiClient.get('/submissions/', { params: { skip: 0, limit: 200 } }),
-            apiClient.get('/evaluations/', { params: { skip: 0, limit: 200 } })
+            apiClient.get('/submissions/', { params: { skip: 0, limit: 100 } }),
+            apiClient.get('/evaluations/', { params: { skip: 0, limit: 100 } })
           ]);
           setSubmissions(submissionsRes.data || []);
           setStudentRows(evaluationsRes.data || []);

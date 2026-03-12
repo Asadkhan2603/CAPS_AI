@@ -8,7 +8,7 @@ export default function SemestersPage() {
   useEffect(() => {
     async function loadBatches() {
       try {
-        const response = await apiClient.get('/batches/', { params: { skip: 0, limit: 300 } });
+        const response = await apiClient.get('/batches/', { params: { skip: 0, limit: 100 } });
         setBatches(response.data || []);
       } catch {
         setBatches([]);

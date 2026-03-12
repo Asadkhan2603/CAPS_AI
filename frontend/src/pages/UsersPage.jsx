@@ -86,12 +86,12 @@ export default function UsersPage() {
 
   async function loadLookups() {
     const [facultiesRes, departmentsRes, programsRes, specializationsRes, batchesRes, semestersRes, sectionsRes, clubsRes] = await Promise.allSettled([
-      apiClient.get('/faculties/', { params: { skip: 0, limit: 200 } }),
+      apiClient.get('/faculties/', { params: { skip: 0, limit: 100 } }),
       apiClient.get('/departments/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/programs/', { params: { skip: 0, limit: 200 } }),
-      apiClient.get('/specializations/', { params: { skip: 0, limit: 200 } }),
-      apiClient.get('/batches/', { params: { skip: 0, limit: 200 } }),
-      apiClient.get('/semesters/', { params: { skip: 0, limit: 200 } }),
+      apiClient.get('/programs/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/specializations/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/batches/', { params: { skip: 0, limit: 100 } }),
+      apiClient.get('/semesters/', { params: { skip: 0, limit: 100 } }),
       getAllSections(100),
       apiClient.get('/clubs/', { params: { skip: 0, limit: 100 } })
     ]);

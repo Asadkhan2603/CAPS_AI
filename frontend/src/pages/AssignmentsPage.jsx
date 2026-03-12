@@ -16,7 +16,7 @@ export default function AssignmentsPage() {
     async function loadLookups() {
       try {
         const subjectsReq = apiClient.get('/subjects/', { params: { skip: 0, limit: 100 } });
-        const sectionsReq = getSections({ skip: 0, limit: 200 });
+        const sectionsReq = getSections({ skip: 0, limit: 100 });
         const [subjectsRes, sectionsRes] = await Promise.all([subjectsReq, sectionsReq]);
         setSubjects(subjectsRes.data || []);
         setSections(sectionsRes.data || []);

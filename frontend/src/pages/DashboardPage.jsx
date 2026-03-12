@@ -119,10 +119,10 @@ export default function DashboardPage() {
         ? getTeacherSectionsAnalytics()
         : Promise.resolve({ data: { items: [] } });
       const studentAssignmentsRequest = user?.role === 'student'
-        ? apiClient.get('/assignments/', { params: { skip: 0, limit: 300 } })
+        ? apiClient.get('/assignments/', { params: { skip: 0, limit: 100 } })
         : Promise.resolve({ data: [] });
       const studentSubmissionsRequest = user?.role === 'student'
-        ? apiClient.get('/submissions/', { params: { skip: 0, limit: 300 } })
+        ? apiClient.get('/submissions/', { params: { skip: 0, limit: 100 } })
         : Promise.resolve({ data: [] });
       const studentClassSlotsRequest = user?.role === 'student'
         ? apiClient.get('/class-slots/my')

@@ -23,11 +23,11 @@ export default function CourseOfferingsPage() {
   useEffect(() => {
     async function loadLookups() {
       const [subjectsRes, usersRes, batchesRes, semestersRes, groupsRes] = await Promise.allSettled([
-        apiClient.get('/subjects/', { params: { skip: 0, limit: 300 } }),
+        apiClient.get('/subjects/', { params: { skip: 0, limit: 100 } }),
         apiClient.get('/users/'),
-        apiClient.get('/batches/', { params: { skip: 0, limit: 300 } }),
-        apiClient.get('/semesters/', { params: { skip: 0, limit: 300 } }),
-        apiClient.get('/groups/', { params: { skip: 0, limit: 300 } })
+        apiClient.get('/batches/', { params: { skip: 0, limit: 100 } }),
+        apiClient.get('/semesters/', { params: { skip: 0, limit: 100 } }),
+        apiClient.get('/groups/', { params: { skip: 0, limit: 100 } })
       ]);
       setSubjects(subjectsRes.status === 'fulfilled' ? subjectsRes.value.data || [] : []);
       setTeachers(

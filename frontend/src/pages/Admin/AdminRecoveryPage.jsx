@@ -30,7 +30,7 @@ export default function AdminRecoveryPage() {
     setLoading(true);
     setError('');
     try {
-      const response = await apiClient.get('/admin/recovery/', { params: { collection, limit: 200 } });
+      const response = await apiClient.get('/admin/recovery/', { params: { collection, limit: 100 } });
       setRows(response.data?.items?.[collection] || []);
       setSummary(response.data?.summary || {});
     } catch (err) {
