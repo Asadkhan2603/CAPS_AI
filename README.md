@@ -1,36 +1,40 @@
-﻿# CAPS AI
+# CAPS AI
 
-Enterprise academic governance and AI-assisted evaluation platform.
+Academic governance and AI-assisted evaluation platform built with FastAPI, React, and MongoDB.
 
-Master plan reference:
-- `PROJECT_RECREATE_GUIDE.md` (authoritative master)
-- `DOC'S/PROJECT_RECREATE_GUIDE.md` (pointer)
+## Status
 
-## Current Implementation Status
+Roadmap status:
+- Phase 0: completed
+- Phase 1: mostly completed
+- Phase 2: completed
+- Phase 3: in progress
 
-Completed backend phases (roadmap-aligned):
-- Phase 1: Foundation setup, auth, RBAC, health APIs
-- Phase 2: Academic core CRUD, role extensions, enrollment mapping
-- Phase 3: Assignments, submissions, evaluation lock workflow
-- Phase 4: AI suggestion pipeline and similarity engine
-- Phase 5: Analytics, notices, clubs/events, registration constraints
-- Phase 6 (in progress): hardening and release readiness
+Primary planning and audit references:
+- [audit/roadmap.md](./audit/roadmap.md)
+- [docs/README.md](./docs/README.md)
+- [audits/AI_MODULE_AUDIT.md](./audits/AI_MODULE_AUDIT.md)
 
-## Project Structure
+## Repository Structure
 
-- `backend/` FastAPI services, endpoints, schemas, models, tests
-- `frontend/` React (Vite) SaaS dashboard frontend
-- `DOC'S/` authoritative roadmap and planning documents
-- `docs/` supplementary notes
+- `backend/`: FastAPI app, API endpoints, services, models, schemas, tests
+- `frontend/`: React + Vite dashboard
+- `docs/`: tracked project documentation, module masters, guides, audit notes
+- `audit/`: repository-wide audit reports and roadmap
+- `audits/`: focused module audit reports
+- `scripts/`: local setup, seeding, migration, and safety utilities
+- `uploads/`: local runtime upload storage
 
 ## Prerequisites
 
 - Python 3.11+
 - Node.js 20+
 - MongoDB on `mongodb://localhost:27017`
-- Docker Desktop (recommended for full stack run)
+- Docker Desktop for containerized local runs
 
-## Backend Run
+## Local Development
+
+Backend:
 
 ```bash
 cd backend
@@ -41,12 +45,7 @@ copy .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Backend URLs:
-- API: `http://localhost:8000`
-- OpenAPI docs: `http://localhost:8000/docs`
-- Health: `http://localhost:8000/health`
-
-## Frontend Run
+Frontend:
 
 ```bash
 cd frontend
@@ -55,41 +54,37 @@ copy .env.example .env
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-Frontend URL:
-- App: `http://localhost:5173`
+Local URLs:
+- API: `http://localhost:8000`
+- OpenAPI docs: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/health`
+- Frontend: `http://localhost:5173`
 
-## Docker Deployment (Primary)
-
-Run the complete stack from repo root:
+## Docker
 
 ```bash
 docker compose up -d --build
 docker compose ps
 ```
 
-Verify:
-
-```bash
-curl http://localhost:8000/health
-curl http://localhost:5173
-```
-
-Stop stack:
+Stop:
 
 ```bash
 docker compose down
 ```
 
-## Test Commands
+## Quality Checks
 
-Use project virtualenv Python to avoid global-package conflicts:
+Backend:
 
 ```bash
 cd backend
 .venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe -m flake8 app tests
+python ..\scripts\check_backend_safety.py
 ```
 
-Frontend quality checks:
+Frontend:
 
 ```bash
 cd frontend
@@ -98,24 +93,41 @@ npm run test:ci
 npm run build
 ```
 
-## Core API Domains
+## Runtime API Domains
 
-- Auth and users: `/api/v1/auth`, `/api/v1/users`
-- Academic structure: `/courses`, `/years`, `/sections`, `/students`, `/subjects`
-  - Legacy alias: `/classes` is supported for backward compatibility, but `/sections` is the canonical path for new integrations.
-- Academic operations: `/assignments`, `/submissions`, `/evaluations`
-- Intelligence: `/similarity`, AI submission evaluation via `/submissions/{id}/ai-evaluate`
-- Institutional modules: `/analytics`, `/notices`, `/notifications`, `/clubs`, `/club-events`, `/event-registrations`
-- Governance: `/audit-logs`, `/enrollments`
+All primary APIs are mounted under `/api/v1`.
 
-## Security Baseline
+- auth and identity: `/auth`, `/users`
+- academic setup: `/faculties`, `/departments`, `/programs`, `/specializations`, `/batches`, `/semesters`, `/sections`
+- academics: `/students`, `/groups`, `/subjects`, `/course-offerings`, `/class-slots`, `/attendance-records`, `/enrollments`
+- assessment and AI: `/assignments`, `/submissions`, `/evaluations`, `/similarity`, `/ai`
+- scheduling: `/timetables`
+- communication: `/notices`, `/notifications`
+- clubs and events: `/clubs`, `/club-events`, `/event-registrations`
+- governance and audit: `/review-tickets`, `/audit-logs`
+- admin domains: `/admin/system`, `/admin/analytics`, `/admin/communication`, `/admin/governance`, `/admin/recovery`
 
-- JWT auth with role and extension-role checks
-- PBKDF2-SHA256 password hashing
-- File type and upload size validation
-- CORS-configured local origins
-- Security response headers (`X-Content-Type-Options`, `X-Frame-Options`, etc.)
+Compatibility notes:
+- `/sections` is the canonical public route for section management.
+- The underlying legacy storage artifact is still the `classes` collection and `backend/app/models/classes.py`.
+- Removed public endpoints such as `/courses`, `/years`, and `/branches` are documentation-only legacy references now.
 
-## Kubernetes (Optional)
+## Documentation
 
-Base manifests are available in repo root as `k8s-*.yaml`.
+Start here:
+- [docs/README.md](./docs/README.md)
+- [docs/guides/module-index.md](./docs/guides/module-index.md)
+- [docs/DOCUMENTATION_AUDIT_REPORT.md](./docs/DOCUMENTATION_AUDIT_REPORT.md)
+
+## Kubernetes
+
+Base manifests are kept in the repository root:
+- `k8s-namespace.yaml`
+- `k8s-mongodb.yaml`
+- `k8s-redis.yaml`
+- `k8s-backend.yaml`
+- `k8s-frontend.yaml`
+- `k8s-ingress.yaml`
+- `k8s-configmap.yaml`
+- `k8s-secrets.yaml`
+- `k8s-uploads-pvc.yaml`

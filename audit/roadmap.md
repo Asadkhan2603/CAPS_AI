@@ -89,6 +89,10 @@ Debt impact:
   - service-layer orchestration added for AI runtime, AI ops, AI chat, evaluation workflows, and access-policy checks
   - teacher fallback indicators added to AI review surfaces
   - student AI disclosure policy made explicit in submissions/evaluations UI
+- Phase 3 (data and documentation integrity): started in current branch.
+  - `docs/` is now tracked again via `.gitignore` cleanup
+  - root, scripts, and backend model READMEs aligned with runtime truth
+  - Mongo versioning strategy documented in `docs/guides/mongo-versioning.md`
 
 ### Phase 0 (0-1 week): Stabilize and Secure
 Status: `Completed`
@@ -135,10 +139,10 @@ Phase 2 acceptance gates
 3. Endpoint files targeted in this phase are reduced in size and duplicate access logic is removed.
 
 ### Phase 3 (6-10 weeks): Data and Documentation Integrity
-Status: `Pending`
-1. Introduce migration/version strategy for Mongo data shapes.
-2. Remove legacy schema/index artifacts where safe.
-3. Align and version docs (stop ignoring actionable docs, refresh READMEs/module docs).
+Status: `In Progress`
+1. Introduce migration/version strategy for Mongo data shapes. (documentation baseline completed)
+2. Remove legacy schema/index artifacts where safe. (pending)
+3. Align and version docs (stop ignoring actionable docs, refresh READMEs/module docs). (in progress)
 
 ### Phase 4 (Continuous): Scale Readiness
 Status: `Pending`

@@ -61,5 +61,4 @@ frontend_phase*_attempt_*/
 # Local build artifacts
 out/
 
-# Docs (ignore generated/local copies)
-docs/
+# Docs are tracked. Keep generated output outside docs/ ignored via out/ above.
