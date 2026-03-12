@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.mongo import parse_object_id
 from app.core.security import require_roles
+from app.models.ai_evaluation_runs import ai_evaluation_run_public
 from app.models.evaluations import evaluation_public
 from app.schemas.evaluation import EvaluationOut
 from app.services.evaluation_access_policy import ensure_can_view_evaluation, ensure_teacher_owns_evaluation
@@ -74,21 +75,5 @@ async def get_evaluation_trace(
         "evaluation_id": evaluation_id,
         "submission_id": item.get("submission_id"),
         "count": len(rows),
-        "items": [
-            {
-                "id": str(row.get("_id")),
-                "ai_score": row.get("ai_score"),
-                "ai_status": row.get("ai_status"),
-                "ai_provider": row.get("ai_provider"),
-                "ai_prompt_version": row.get("ai_prompt_version"),
-                "ai_runtime_snapshot": row.get("ai_runtime_snapshot"),
-                "ai_confidence": row.get("ai_confidence"),
-                "ai_risk_flags": row.get("ai_risk_flags") or [],
-                "grade": row.get("grade"),
-                "internal_total": row.get("internal_total"),
-                "grand_total": row.get("grand_total"),
-                "created_at": row.get("created_at"),
-            }
-            for row in rows
-        ],
+        "items": [ai_evaluation_run_public(row) for row in rows],
     }

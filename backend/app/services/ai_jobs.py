@@ -9,7 +9,7 @@ from pymongo import ReturnDocument
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
-from app.core.schema_versions import SUBMISSION_SCHEMA_VERSION
+from app.core.schema_versions import AI_JOB_SCHEMA_VERSION, SUBMISSION_SCHEMA_VERSION, normalize_schema_version
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
 from app.services.similarity_pipeline import run_similarity_pipeline
@@ -45,6 +45,10 @@ def serialize_ai_job(document: dict[str, Any]) -> dict[str, Any]:
         "progress": document.get("progress") or {},
         "summary": document.get("summary") or {},
         "error": document.get("error"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=AI_JOB_SCHEMA_VERSION,
+        ),
         "requested_at": _serialize_dt(document.get("requested_at")),
         "started_at": _serialize_dt(document.get("started_at")),
         "completed_at": _serialize_dt(document.get("completed_at")),
@@ -86,6 +90,7 @@ async def queue_ai_job(
         },
         "summary": {},
         "error": None,
+        "schema_version": AI_JOB_SCHEMA_VERSION,
         "requested_at": now,
         "started_at": None,
         "completed_at": None,
@@ -119,6 +124,7 @@ async def process_ai_jobs_once(*, max_jobs: int = 2) -> int:
                     "started_at": datetime.now(timezone.utc),
                     "worker_id": _worker_id,
                     "error": None,
+                    "schema_version": AI_JOB_SCHEMA_VERSION,
                 }
             },
             sort=[("requested_at", 1)],
@@ -140,6 +146,7 @@ async def process_ai_jobs_once(*, max_jobs: int = 2) -> int:
                             "failed": max(1, int((job.get("progress") or {}).get("failed") or 0)),
                         },
                         "error": str(exc)[:500],
+                        "schema_version": AI_JOB_SCHEMA_VERSION,
                     }
                 },
             )
@@ -178,6 +185,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 "summary": summary,
                 "progress": progress,
                 "error": None,
+                "schema_version": AI_JOB_SCHEMA_VERSION,
             }
         },
     )
@@ -240,7 +248,8 @@ async def _run_bulk_submission_job(job: dict[str, Any]) -> dict[str, Any]:
                         "failed": failed,
                         "skipped": skipped,
                         "fallback": fallback,
-                    }
+                    },
+                    "schema_version": AI_JOB_SCHEMA_VERSION,
                 }
             },
         )

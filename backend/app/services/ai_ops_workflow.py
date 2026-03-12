@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.models.ai_evaluation_runs import ai_evaluation_run_public
 from app.services.ai_jobs import serialize_ai_job
 
 
@@ -137,15 +138,7 @@ async def build_ai_operations_overview_payload(
         "summary": summary,
         "recent_evaluation_runs": [
             {
-                "id": str(item.get("_id")),
-                "evaluation_id": item.get("evaluation_id"),
-                "submission_id": item.get("submission_id"),
-                "actor_user_id": item.get("actor_user_id"),
-                "ai_status": item.get("ai_status"),
-                "ai_provider": item.get("ai_provider"),
-                "ai_score": item.get("ai_score"),
-                "grade": item.get("grade"),
-                "grand_total": item.get("grand_total"),
+                **ai_evaluation_run_public(item),
                 "created_at": serialize_dt(item.get("created_at")),
             }
             for item in recent_evaluation_runs

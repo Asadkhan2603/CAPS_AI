@@ -43,6 +43,16 @@ Utility scripts for local setup, safety checks, and canonical academic data seed
   - Supports dry-run by default and `--apply` for persistence.
   - Current target version: `1`.
 
+- `python scripts/migrate_ai_job_schema_version.py`
+  - Backfills `schema_version` on `ai_jobs`.
+  - Supports dry-run by default and `--apply` for persistence.
+  - Current target version: `1`.
+
+- `python scripts/migrate_ai_evaluation_run_schema_version.py`
+  - Backfills `schema_version` on `ai_evaluation_runs`.
+  - Supports dry-run by default and `--apply` for persistence.
+  - Current target version: `1`.
+
 ## Usage Notes
 
 - Run Python scripts from the repository root so relative imports and paths resolve correctly.

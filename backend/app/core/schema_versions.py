@@ -4,6 +4,8 @@ from typing import Any
 
 SUBMISSION_SCHEMA_VERSION = 1
 EVALUATION_SCHEMA_VERSION = 1
+AI_JOB_SCHEMA_VERSION = 1
+AI_EVALUATION_RUN_SCHEMA_VERSION = 1
 
 
 def normalize_schema_version(raw_value: Any, *, default: int) -> int:

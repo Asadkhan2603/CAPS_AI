@@ -3,6 +3,7 @@ from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
+from app.core.schema_versions import AI_EVALUATION_RUN_SCHEMA_VERSION
 from app.services.evaluation_ai_module import build_ai_insight
 from app.services.grading import grade_from_total, grand_total, internal_total
 
@@ -109,6 +110,7 @@ async def persist_ai_trace(
         "grade": totals_payload.get("grade"),
         "internal_total": totals_payload.get("internal_total"),
         "grand_total": totals_payload.get("grand_total"),
+        "schema_version": AI_EVALUATION_RUN_SCHEMA_VERSION,
         "created_at": datetime.now(timezone.utc),
     }
     await database.ai_evaluation_runs.insert_one(document)
