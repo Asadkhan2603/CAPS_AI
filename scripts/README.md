@@ -56,7 +56,16 @@ Utility scripts for local setup, safety checks, and canonical academic data seed
 - `python scripts/migrate_scheduler_lock_schema_version.py`
   - Backfills `schema_version` on `scheduler_locks`.
 - `python scripts/perf_smoke.py`
-  - Runs an in-process backend performance smoke gate against `/health`, `/auth/login`, `/admin/system/health`, and an authenticated teacher submission-list workflow.
+  - Runs an in-process backend performance smoke gate against `/health`, `/auth/login`, `/admin/system/health`, an authenticated teacher submission-list workflow, an authenticated admin section-list academic workflow, a write-heavy admin student-create academic workflow, and a mixed teacher review workflow (`submissions -> evaluations -> analytics summary`).
+- `python scripts/release_gate.py`
+  - Runs release-governance health gates against either:
+    - an in-process local backend using `TestClient`, or
+    - a deployed environment via `--base-url` and `--bearer-token`
+  - Fails on critical alerts by default and validates snapshot retention plus alert-routing health.
+- `python scripts/canary_rollout.py <backend|frontend> <prepare|promote|rollback|disable> --image <image>`
+  - Executes staged Kubernetes rollout control for backend or frontend canary deployments.
+  - Uses the dedicated canary deployment/service/ingress manifests and can call `release_gate.py` for remote verification.
+  - Supports `--print-only` for command preview without touching a cluster.
 - `python scripts/ai_capacity_baseline.py`
   - Emits the current AI and similarity capacity baseline derived from runtime settings and scheduler behavior.
   - Supports dry-run by default and `--apply` for persistence.

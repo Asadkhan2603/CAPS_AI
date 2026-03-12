@@ -6,6 +6,7 @@ import re
 from openai import OpenAI
 
 from app.core.config import settings
+from app.core.observability import observability_state
 from app.services.ai_runtime import AI_CHAT_PROMPT_VERSION, build_runtime_snapshot
 
 
@@ -57,6 +58,7 @@ def generate_evaluation_chat_reply(
     }
     try:
         if not provider_enabled:
+            observability_state.record_ai_generation(status="fallback", provider="local")
             return _fallback_response(question_text, rubric, student_answer), "OpenAI key not configured", metadata
 
         system_prompt = (
@@ -104,7 +106,9 @@ def generate_evaluation_chat_reply(
             raise ValueError("Empty AI response text")
         # Remove accidental fenced blocks to keep UI clean.
         raw = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", raw).strip()
+        observability_state.record_ai_generation(status="completed", provider=model_name)
         return raw[:4000], None, metadata
     except Exception as exc:
         metadata["provider"] = "local"
+        observability_state.record_ai_generation(status="fallback", provider="local")
         return _fallback_response(question_text, rubric, student_answer), str(exc)[:300], metadata

@@ -11,6 +11,7 @@ const items = [
   { to: '/audit-logs', label: 'Compliance', requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
   { to: '/admin/analytics', label: 'Analytics', requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'] },
   { to: '/admin/system', label: 'System', requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
+  { to: '/admin/observability', label: 'Observability', requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
   { to: '/admin/recovery', label: 'Recovery', requiredAdminTypes: ['super_admin', 'admin'] },
   { to: '/admin/developer', label: 'Developer', requiredAdminTypes: ['super_admin'] }
 ];

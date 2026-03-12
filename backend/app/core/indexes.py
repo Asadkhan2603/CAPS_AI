@@ -102,6 +102,10 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.ai_jobs, [('status', ASCENDING), ('requested_at', ASCENDING)])
     await _safe_create_index(db.ai_jobs, [('job_type', ASCENDING), ('requested_by_user_id', ASCENDING), ('requested_at', ASCENDING)])
     await _safe_create_index(db.ai_jobs, [('job_type', ASCENDING), ('idempotency_key', ASCENDING), ('status', ASCENDING)])
+    await _safe_create_index(db.system_health_snapshots, [('bucket_minute', ASCENDING)], unique=True)
+    await _safe_create_index(db.system_health_snapshots, [('recorded_at', ASCENDING)])
+    await _safe_create_index(db.operational_alert_routes, [('alert_code', ASCENDING)], unique=True)
+    await _safe_create_index(db.operational_alert_routes, [('is_active', ASCENDING), ('last_seen_at', ASCENDING)])
     await _safe_create_index(
         db.similarity_logs,
         [('source_submission_id', ASCENDING), ('matched_submission_id', ASCENDING), ('threshold', ASCENDING), ('engine_version', ASCENDING)],

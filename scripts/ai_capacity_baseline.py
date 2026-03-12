@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import sys
 from pathlib import Path
 
@@ -10,52 +9,11 @@ BACKEND_ROOT = ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.core.config import settings  # noqa: E402
-from app.services.ai_runtime import AI_SIMILARITY_ENGINE_VERSION  # noqa: E402
-
-AI_JOB_MAX_JOBS_PER_TICK = 3
-SIMILARITY_CANDIDATE_CAP = 1000
-SIMILARITY_WARNING_CANDIDATE_COUNT = 800
+from app.core.ai_capacity import build_ai_capacity_baseline  # noqa: E402
 
 
 def build_capacity_baseline() -> dict[str, object]:
-    ai_job_poll_seconds = max(5, int(settings.ai_job_poll_seconds))
-    pickup_ceiling_per_minute = round((60 / ai_job_poll_seconds) * AI_JOB_MAX_JOBS_PER_TICK, 2)
-    pickup_ceiling_per_15m = round(pickup_ceiling_per_minute * 15, 2)
-    queue_warn_depth = math.ceil(pickup_ceiling_per_minute * 2)
-    queue_critical_depth = math.ceil(pickup_ceiling_per_minute * 5)
-
-    return {
-        "provider_mode": "openai+fallback" if bool(settings.openai_api_key) else "fallback-only",
-        "openai_model": settings.openai_model,
-        "openai_timeout_seconds": int(settings.openai_timeout_seconds),
-        "openai_max_output_tokens": int(settings.openai_max_output_tokens),
-        "similarity_threshold": float(settings.similarity_threshold),
-        "similarity_engine_version": AI_SIMILARITY_ENGINE_VERSION,
-        "scheduler": {
-            "enabled": bool(settings.scheduler_enabled),
-            "single_leader": True,
-            "lock_ttl_seconds": int(settings.scheduler_lock_ttl_seconds),
-            "lock_renew_seconds": int(settings.scheduler_lock_renew_seconds),
-            "ai_job_poll_seconds": ai_job_poll_seconds,
-            "ai_job_max_jobs_per_tick": AI_JOB_MAX_JOBS_PER_TICK,
-            "pickup_ceiling_jobs_per_minute": pickup_ceiling_per_minute,
-            "pickup_ceiling_jobs_per_15m": pickup_ceiling_per_15m,
-            "queue_warn_depth": queue_warn_depth,
-            "queue_critical_depth": queue_critical_depth,
-        },
-        "similarity": {
-            "candidate_cap_per_run": SIMILARITY_CANDIDATE_CAP,
-            "candidate_warn_threshold": SIMILARITY_WARNING_CANDIDATE_COUNT,
-            "processing_model": "single-process tfidf cosine similarity in app worker",
-        },
-        "capacity_notes": [
-            "Queue pickup ceiling assumes jobs finish faster than the poll interval. Slow jobs reduce actual throughput.",
-            "Similarity runs are bounded by assignment-local candidate selection and currently cap at 1000 submissions per run.",
-            "Bulk submission AI jobs can contain multiple submissions, so queue depth alone does not represent token or CPU cost.",
-            "Scheduler leadership failover is bounded by the lock TTL if the active leader dies without releasing the lock.",
-        ],
-    }
+    return build_ai_capacity_baseline()
 
 
 def emit_markdown(baseline: dict[str, object]) -> str:

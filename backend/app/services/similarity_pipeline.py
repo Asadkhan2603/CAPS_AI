@@ -5,8 +5,10 @@ from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
+from app.core.ai_capacity import SIMILARITY_CANDIDATE_CAP
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.observability import observability_state
 from app.core.schema_versions import SIMILARITY_LOG_SCHEMA_VERSION, SUBMISSION_SCHEMA_VERSION
 from app.services.ai_runtime import AI_SIMILARITY_ENGINE_VERSION
 from app.services.notifications import create_notification
@@ -64,11 +66,12 @@ async def run_similarity_pipeline(
     active_threshold: float,
     actor_user_id: str,
 ) -> dict[str, Any]:
+    started = datetime.now(timezone.utc)
     source_text = source.get("extracted_text") or ""
     source_assignment_id = source.get("assignment_id")
 
     candidate_cursor = db.submissions.find({"assignment_id": source_assignment_id})
-    candidates = await candidate_cursor.to_list(length=1000)
+    candidates = await candidate_cursor.to_list(length=SIMILARITY_CANDIDATE_CAP)
 
     candidate_texts: list[tuple[str, str]] = []
     id_to_submission: dict[str, dict[str, Any]] = {}
@@ -151,6 +154,12 @@ async def run_similarity_pipeline(
     await db.submissions.update_one(
         {"_id": parse_object_id(submission_id)},
         {"$set": {"similarity_score": round(max_score, 4), "schema_version": SUBMISSION_SCHEMA_VERSION}},
+    )
+    observability_state.record_similarity_run(
+        candidate_count=len(candidate_texts),
+        duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+        flagged_count=flagged_count,
+        max_score=round(max_score, 4),
     )
     return {
         "items": created_items,

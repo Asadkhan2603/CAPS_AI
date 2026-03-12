@@ -5,7 +5,14 @@ from fastapi import APIRouter, Depends
 from app.core.database import db
 from app.core.observability import build_operational_alerts, observability_state
 from app.core.security import require_permission
+from app.services.ai_jobs import sample_ai_queue_metrics
+from app.services.operational_alert_routing import route_operational_alert_notifications
 from app.services.scheduler import app_scheduler
+from app.services.system_health_snapshots import (
+    get_system_health_snapshot_history,
+    get_system_health_snapshot_store_status,
+    persist_system_health_snapshot,
+)
 
 router = APIRouter()
 _APP_BOOT_TIME = datetime.now(timezone.utc)
@@ -90,6 +97,7 @@ async def admin_system_health(
         }
         for row in slow_query_rows
     ]
+    await sample_ai_queue_metrics(database=db)
     observability = observability_state.snapshot()
     alerts = build_operational_alerts(
         db_status=db_status,
@@ -98,7 +106,7 @@ async def admin_system_health(
         snapshot=observability,
     )
 
-    return {
+    payload = {
         'timestamp': now,
         'db_status': db_status,
         'scheduler': scheduler_status,
@@ -113,3 +121,25 @@ async def admin_system_health(
         'slow_query_logs': slow_query_logs,
         'collection_counts': collection_counts,
     }
+    await persist_system_health_snapshot(payload=payload, database=db)
+    payload['snapshot_history'] = await get_system_health_snapshot_history(database=db)
+    payload['snapshot_store'] = await get_system_health_snapshot_store_status(database=db)
+    if not payload['snapshot_store']['is_within_retention_bound']:
+        payload['alerts'].append(
+            {
+                'level': 'medium',
+                'code': 'system_health_snapshots.retention_drift',
+                'message': (
+                    'Persisted system health snapshots exceed the configured retention bound: '
+                    f"{payload['snapshot_store']['retained_rows']} rows stored with a configured cap of "
+                    f"{payload['snapshot_store']['max_retained_rows']}."
+                ),
+            }
+        )
+        payload['alert_count'] = len(payload['alerts'])
+    payload['alert_routing'] = await route_operational_alert_notifications(
+        alerts=payload["alerts"],
+        database=db,
+        now=now,
+    )
+    return payload

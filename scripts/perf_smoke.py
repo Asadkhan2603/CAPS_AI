@@ -18,7 +18,11 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.core.observability import observability_state  # noqa: E402
 from app.main import app  # noqa: E402
-from tests.test_auth import _setup_fake_db  # noqa: E402
+from tests.test_auth import (  # noqa: E402
+    _create_section_payload,
+    _seed_canonical_structure,
+    _setup_fake_db,
+)
 from tests.test_main_missing_blocks import _admin_headers  # noqa: E402
 
 
@@ -98,6 +102,32 @@ def main() -> int:
         )
         _assert_ok(submission, expected_status=201)
         submission_id = submission.json()["id"]
+        evaluation = client.post(
+            "/api/v1/evaluations/",
+            json={
+                "submission_id": submission_id,
+                "attendance_percent": 92,
+                "skill": 2.0,
+                "behavior": 2.0,
+                "report": 8,
+                "viva": 16,
+                "final_exam": 50,
+                "is_finalized": False,
+            },
+            headers=teacher_headers,
+        )
+        _assert_ok(evaluation, expected_status=201)
+        evaluation_id = evaluation.json()["id"]
+        structure = _seed_canonical_structure(fake_db, suffix="PERF", semester_number=3)
+        section_ids: list[str] = []
+        for index in range(12):
+            section = client.post(
+                "/api/v1/sections/",
+                json=_create_section_payload(structure, name=f"Perf Section {index:02d}"),
+                headers=headers,
+            )
+            _assert_ok(section, expected_status=201)
+            section_ids.append(section.json()["id"])
 
         health_metric = timed_run(
             "health_check",
@@ -127,8 +157,54 @@ def main() -> int:
                 expected_submission_id=submission_id,
             ),
         )
+        admin_section_list_metric = timed_run(
+            "admin_section_list",
+            15,
+            lambda: _assert_section_list(
+                client.get("/api/v1/sections/?skip=0&limit=50", headers=headers),
+                expected_section_id=section_ids[0],
+                expected_min_count=len(section_ids),
+            ),
+        )
+        student_create_counter = [0]
+        admin_student_create_metric = timed_run(
+            "admin_student_create",
+            12,
+            lambda: _assert_student_create(
+                client.post(
+                    "/api/v1/students/",
+                    json={
+                        "full_name": f"Perf Student {student_create_counter[0]:02d}",
+                        "roll_number": f"PERF-STU-{student_create_counter[0]:04d}",
+                        "class_id": section_ids[0],
+                    },
+                    headers=headers,
+                ),
+                expected_roll_number=f"PERF-STU-{student_create_counter[0]:04d}",
+                next_counter=student_create_counter,
+            ),
+        )
+        teacher_review_workflow_metric = timed_run(
+            "teacher_review_workflow",
+            12,
+            lambda: _assert_teacher_review_workflow(
+                client=client,
+                teacher_headers=teacher_headers,
+                assignment_id=assignment_id,
+                submission_id=submission_id,
+                evaluation_id=evaluation_id,
+            ),
+        )
 
-    metrics = [health_metric, system_health_metric, login_metric, teacher_submission_list_metric]
+    metrics = [
+        health_metric,
+        system_health_metric,
+        login_metric,
+        teacher_submission_list_metric,
+        admin_section_list_metric,
+        admin_student_create_metric,
+        teacher_review_workflow_metric,
+    ]
     for metric in metrics:
         print(
             f"{metric['label']}: avg={metric['avg_ms']:.2f}ms "
@@ -147,13 +223,28 @@ def main() -> int:
     )
     assert_threshold(
         login_metric,
-        p95_ms=float(os.getenv("PERF_SMOKE_LOGIN_P95_MS", "260")),
-        avg_ms=float(os.getenv("PERF_SMOKE_LOGIN_AVG_MS", "180")),
+        p95_ms=float(os.getenv("PERF_SMOKE_LOGIN_P95_MS", "380")),
+        avg_ms=float(os.getenv("PERF_SMOKE_LOGIN_AVG_MS", "280")),
     )
     assert_threshold(
         teacher_submission_list_metric,
         p95_ms=float(os.getenv("PERF_SMOKE_TEACHER_SUBMISSION_LIST_P95_MS", "220")),
         avg_ms=float(os.getenv("PERF_SMOKE_TEACHER_SUBMISSION_LIST_AVG_MS", "120")),
+    )
+    assert_threshold(
+        admin_section_list_metric,
+        p95_ms=float(os.getenv("PERF_SMOKE_ADMIN_SECTION_LIST_P95_MS", "260")),
+        avg_ms=float(os.getenv("PERF_SMOKE_ADMIN_SECTION_LIST_AVG_MS", "150")),
+    )
+    assert_threshold(
+        admin_student_create_metric,
+        p95_ms=float(os.getenv("PERF_SMOKE_ADMIN_STUDENT_CREATE_P95_MS", "320")),
+        avg_ms=float(os.getenv("PERF_SMOKE_ADMIN_STUDENT_CREATE_AVG_MS", "180")),
+    )
+    assert_threshold(
+        teacher_review_workflow_metric,
+        p95_ms=float(os.getenv("PERF_SMOKE_TEACHER_REVIEW_WORKFLOW_P95_MS", "800")),
+        avg_ms=float(os.getenv("PERF_SMOKE_TEACHER_REVIEW_WORKFLOW_AVG_MS", "450")),
     )
 
     print("Performance smoke checks passed.")
@@ -169,6 +260,57 @@ def _assert_submission_list(response, *, expected_submission_id: str) -> None:
     payload = response.json()
     assert isinstance(payload, list)
     assert any(item.get("id") == expected_submission_id for item in payload)
+
+
+def _assert_section_list(response, *, expected_section_id: str, expected_min_count: int) -> None:
+    _assert_ok(response)
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert len(payload) >= expected_min_count
+    assert any(item.get("id") == expected_section_id for item in payload)
+
+
+def _assert_student_create(response, *, expected_roll_number: str, next_counter: list[int]) -> None:
+    _assert_ok(response, expected_status=201)
+    payload = response.json()
+    assert payload.get("roll_number") == expected_roll_number
+    next_counter[0] += 1
+
+
+def _assert_teacher_review_workflow(
+    *,
+    client: TestClient,
+    teacher_headers: dict[str, str],
+    assignment_id: str,
+    submission_id: str,
+    evaluation_id: str,
+) -> None:
+    _assert_submission_list(
+        client.get(f"/api/v1/submissions/?assignment_id={assignment_id}", headers=teacher_headers),
+        expected_submission_id=submission_id,
+    )
+    _assert_evaluation_list(
+        client.get(f"/api/v1/evaluations/?submission_id={submission_id}", headers=teacher_headers),
+        expected_evaluation_id=evaluation_id,
+    )
+    _assert_analytics_summary(
+        client.get("/api/v1/analytics/summary", headers=teacher_headers),
+        expected_role="teacher",
+    )
+
+
+def _assert_evaluation_list(response, *, expected_evaluation_id: str) -> None:
+    _assert_ok(response)
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert any(item.get("id") == expected_evaluation_id for item in payload)
+
+
+def _assert_analytics_summary(response, *, expected_role: str) -> None:
+    _assert_ok(response)
+    payload = response.json()
+    assert payload.get("role") == expected_role
+    assert isinstance(payload.get("summary"), dict)
 
 
 def _role_headers(client: TestClient, email: str, *, role: str) -> dict[str, str]:

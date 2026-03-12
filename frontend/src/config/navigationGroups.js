@@ -40,6 +40,7 @@ const adminTeacherNavigationGroups = [
       { to: '/audit-logs', label: 'Compliance', featureKey: 'adminCompliance', icon: Shield, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
       { to: '/admin/analytics', label: 'Admin Analytics', featureKey: 'adminAnalytics', icon: ChartNoAxesCombined, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'] },
       { to: '/admin/system', label: 'System Health', featureKey: 'adminSystem', icon: School, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
+      { to: '/admin/observability', label: 'Observability', featureKey: 'adminSystem', icon: ChartNoAxesCombined, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
       { to: '/admin/recovery', label: 'Recovery', featureKey: 'adminRecovery', icon: History, requiredAdminTypes: ['super_admin', 'admin'] },
       { to: '/admin/developer', label: 'Developer', featureKey: 'adminDeveloper', icon: Wrench, requiredAdminTypes: ['super_admin'] }
     ]

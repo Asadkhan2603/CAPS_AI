@@ -15,6 +15,7 @@ const AdminDashboardPage = lazy(() => import('../pages/Admin/AdminDashboardPage'
 const AdminGovernancePage = lazy(() => import('../pages/Admin/AdminGovernancePage'));
 const AdminAnalyticsPage = lazy(() => import('../pages/Admin/AdminAnalyticsPage'));
 const AdminSystemPage = lazy(() => import('../pages/Admin/AdminSystemPage'));
+const AdminObservabilityPage = lazy(() => import('../pages/Admin/AdminObservabilityPage'));
 const AdminRecoveryPage = lazy(() => import('../pages/Admin/AdminRecoveryPage'));
 const AdminDeveloperPage = lazy(() => import('../pages/Admin/AdminDeveloperPage'));
 const HistoryPage = lazy(() => import('../pages/HistoryPage'));
@@ -62,6 +63,7 @@ const workspaceRouteMap = {
   '/admin/compliance': { access: FEATURE_ACCESS.adminCompliance, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'], element: <Navigate to="/audit-logs" replace /> },
   '/admin/analytics': { access: FEATURE_ACCESS.adminAnalytics, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'], element: <AdminAnalyticsPage /> },
   '/admin/system': { access: FEATURE_ACCESS.adminSystem, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'], element: <AdminSystemPage /> },
+  '/admin/observability': { access: FEATURE_ACCESS.adminSystem, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'], element: <AdminObservabilityPage /> },
   '/admin/recovery': { access: FEATURE_ACCESS.adminRecovery, requiredAdminTypes: ['super_admin', 'admin'], element: <AdminRecoveryPage /> },
   '/admin/developer': { access: FEATURE_ACCESS.adminDeveloper, requiredAdminTypes: ['super_admin'], element: <AdminDeveloperPage /> },
   '/dashboard': { access: FEATURE_ACCESS.dashboard, element: <DashboardPage /> },
@@ -181,6 +183,7 @@ export function AppRoutes() {
           <Route path="/admin/compliance" element={<WorkspaceRedirect path="/admin/compliance" />} />
           <Route path="/admin/analytics" element={<WorkspaceRedirect path="/admin/analytics" />} />
           <Route path="/admin/system" element={<WorkspaceRedirect path="/admin/system" />} />
+          <Route path="/admin/observability" element={<WorkspaceRedirect path="/admin/observability" />} />
           <Route path="/admin/recovery" element={<WorkspaceRedirect path="/admin/recovery" />} />
           <Route path="/admin/developer" element={<WorkspaceRedirect path="/admin/developer" />} />
           <Route path="/history" element={<WorkspaceRedirect path="/history" />} />

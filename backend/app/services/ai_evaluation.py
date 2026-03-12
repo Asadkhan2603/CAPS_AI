@@ -7,6 +7,7 @@ from typing import Dict
 from openai import OpenAI
 
 from app.core.config import settings
+from app.core.observability import observability_state
 from app.services.ai_runtime import AI_EVALUATION_PROMPT_VERSION, build_runtime_snapshot
 
 
@@ -120,7 +121,7 @@ def generate_ai_feedback(
     runtime_snapshot = build_runtime_snapshot(runtime_settings)
     try:
         if not provider_enabled:
-            return {
+            payload = {
                 "score": fallback_score,
                 "summary": _heuristic_summary(metrics, provider_state="Fallback evaluation generated (OpenAI key not configured)"),
                 "status": "fallback",
@@ -129,6 +130,8 @@ def generate_ai_feedback(
                 "prompt_version": AI_EVALUATION_PROMPT_VERSION,
                 "runtime_snapshot": runtime_snapshot,
             }
+            observability_state.record_ai_generation(status="fallback", provider="local")
+            return payload
 
         client = OpenAI(api_key=settings.openai_api_key, timeout=timeout_seconds)
         system_prompt = (
@@ -192,7 +195,7 @@ def generate_ai_feedback(
         if confidence_value is not None:
             explainability_tail += f" Confidence: {round(confidence_value, 2)}."
 
-        return {
+        payload = {
             "score": ai_score,
             "summary": (summary + explainability_tail)[:1200],
             "status": "completed",
@@ -201,8 +204,10 @@ def generate_ai_feedback(
             "prompt_version": AI_EVALUATION_PROMPT_VERSION,
             "runtime_snapshot": runtime_snapshot,
         }
+        observability_state.record_ai_generation(status="completed", provider=model_name)
+        return payload
     except Exception as exc:
-        return {
+        payload = {
             "score": fallback_score,
             "summary": _heuristic_summary(metrics, provider_state="Fallback evaluation generated due to AI provider error"),
             "status": "fallback",
@@ -211,3 +216,5 @@ def generate_ai_feedback(
             "prompt_version": AI_EVALUATION_PROMPT_VERSION,
             "runtime_snapshot": runtime_snapshot,
         }
+        observability_state.record_ai_generation(status="fallback", provider="local")
+        return payload

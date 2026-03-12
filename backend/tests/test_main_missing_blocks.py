@@ -1,9 +1,13 @@
+import asyncio
+from datetime import datetime, timedelta, timezone
+
 from bson import ObjectId
 from fastapi.testclient import TestClient
 
 from app.core.observability import observability_state
 from app.main import app
 from app.services.scheduler import app_scheduler
+from app.services import system_health_snapshots as snapshot_service
 from tests.test_auth import _create_section_payload, _seed_canonical_structure, _setup_fake_db
 
 
@@ -930,6 +934,39 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
             duration_ms=35,
             processed_count=2,
         )
+        for _ in range(4):
+            observability_state.record_ai_generation(status="fallback", provider="local")
+        observability_state.record_similarity_run(
+            candidate_count=850,
+            duration_ms=2800,
+            flagged_count=3,
+            max_score=0.91,
+        )
+        now = datetime.now(timezone.utc)
+        fake_db.ai_jobs.items.extend(
+            [
+                {
+                    "_id": ObjectId(),
+                    "status": "queued",
+                    "requested_at": now - timedelta(minutes=6),
+                },
+                {
+                    "_id": ObjectId(),
+                    "status": "queued",
+                    "requested_at": now - timedelta(minutes=1),
+                },
+                {
+                    "_id": ObjectId(),
+                    "status": "running",
+                    "requested_at": now - timedelta(seconds=30),
+                },
+                {
+                    "_id": ObjectId(),
+                    "status": "failed",
+                    "requested_at": now - timedelta(minutes=2),
+                },
+            ]
+        )
 
         response = client.get("/api/v1/admin/system/health", headers=headers)
         assert response.status_code == 200
@@ -938,14 +975,115 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
         assert body["alert_count"] >= 2
         assert any(alert["code"] == "http.high_server_error_rate" for alert in body["alerts"])
         assert any(alert["code"] == "scheduler.leader_lock_missing" for alert in body["alerts"])
+        assert any(alert["code"] == "ai.oldest_job_age_critical" for alert in body["alerts"])
+        assert any(alert["code"] == "ai.fallback_rate_critical" for alert in body["alerts"])
+        assert any(alert["code"] == "similarity.high_candidate_count" for alert in body["alerts"])
         assert body["scheduler_lock"]["owner_id"] is None
         assert body["observability"]["request_metrics"]["requests_15m"] >= 4
         assert body["observability"]["request_metrics"]["slow_requests_15m"] >= 3
         assert body["observability"]["request_metrics"]["top_paths_15m"][0]["path"] == "/api/v1/test/failing-endpoint"
         assert body["observability"]["scheduler_metrics"]["jobs"]["notice_dispatch"]["success_total"] >= 1
         assert body["observability"]["scheduler_metrics"]["jobs"]["notice_dispatch"]["processed_total"] >= 2
+        assert body["observability"]["ai_metrics"]["queued_jobs"] == 2
+        assert body["observability"]["ai_metrics"]["running_jobs"] == 1
+        assert body["observability"]["ai_metrics"]["failed_jobs"] == 1
+        assert body["observability"]["ai_metrics"]["oldest_queued_age_seconds"] >= 360
+        assert body["observability"]["ai_metrics"]["fallbacks_15m"] == 4
+        assert body["observability"]["ai_metrics"]["fallback_rate_pct_15m"] == 100.0
+        assert body["observability"]["ai_metrics"]["last_similarity_candidate_count"] == 850
+        assert len(body["observability"]["ai_metrics"]["history_15m"]) >= 3
+        assert any(point["queued_jobs"] == 2 for point in body["observability"]["ai_metrics"]["history_15m"])
+        assert any(point["similarity_candidate_count"] == 850 for point in body["observability"]["ai_metrics"]["history_15m"])
+        assert len(body["snapshot_history"]) >= 1
+        assert body["snapshot_history"][0]["queued_jobs"] == 2
+        assert body["snapshot_history"][0]["fallback_rate_pct_15m"] == 100.0
+        assert body["snapshot_history"][0]["retained_rows"] == 1
+        assert body["snapshot_history"][0]["last_pruned_deleted_count"] == 0
+        assert body["snapshot_history"][0]["is_within_retention_bound"] is True
+        assert body["snapshot_store"]["retained_rows"] == 1
+        assert body["snapshot_store"]["is_within_retention_bound"] is True
+        assert body["snapshot_store"]["retention_minutes"] >= 60
+        assert body["snapshot_store"]["last_pruned_deleted_count"] == 0
+        assert body["alert_routing"]["enabled"] is True
+        assert body["alert_routing"]["target_user_count"] == 1
+        assert body["alert_routing"]["notifications_created"] >= 1
+        assert "http.high_server_error_rate" in body["alert_routing"]["routed_alert_codes"]
+        assert len(fake_db.notifications.items) >= 1
+        assert all(item["scope"] == "system" for item in fake_db.notifications.items)
+        notification_count_after_first_call = len(fake_db.notifications.items)
+        second = client.get("/api/v1/admin/system/health", headers=headers)
+        assert second.status_code == 200
+        second_body = second.json()
+        assert second_body["alert_routing"]["notifications_created"] == 0
+        assert len(fake_db.notifications.items) == notification_count_after_first_call
+        assert len(fake_db.system_health_snapshots.items) == 1
+        assert len(fake_db.operational_alert_routes.items) >= 1
         assert fake_db.scheduler_locks.items == []
     finally:
         app_scheduler._enabled, app_scheduler._running, app_scheduler._is_leader = original_scheduler_state
         observability_state.reset()
+
+
+def test_system_health_snapshot_pruning_keeps_store_bounded() -> None:
+    fake_db = _setup_fake_db()
+    original_retention = snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES
+    original_last_pruned_bucket = snapshot_service._last_pruned_bucket
+    original_last_pruned_at = snapshot_service._last_pruned_at
+    original_last_pruned_deleted_count = snapshot_service._last_pruned_deleted_count
+    try:
+        snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES = 2
+        snapshot_service._last_pruned_bucket = None
+        snapshot_service._last_pruned_at = None
+        snapshot_service._last_pruned_deleted_count = 0
+        base_time = datetime(2026, 3, 12, 12, 0, tzinfo=timezone.utc)
+
+        for minute_offset in range(4):
+            timestamp = base_time + timedelta(minutes=minute_offset)
+            asyncio.run(
+                snapshot_service.persist_system_health_snapshot(
+                    payload={
+                        "timestamp": timestamp,
+                        "db_status": "ok",
+                        "alert_count": 0,
+                        "observability": {
+                            "request_metrics": {
+                                "requests_15m": minute_offset + 1,
+                                "server_error_rate_pct_15m": 0.0,
+                                "p95_duration_ms_15m": 100,
+                            },
+                            "ai_metrics": {
+                                "queued_jobs": minute_offset,
+                                "running_jobs": 0,
+                                "failed_jobs": 0,
+                                "oldest_queued_age_seconds": minute_offset * 10,
+                                "fallback_rate_pct_15m": 0.0,
+                                "last_similarity_candidate_count": minute_offset * 5,
+                            },
+                        },
+                    },
+                    database=fake_db,
+                )
+            )
+
+        buckets = sorted(item["bucket_minute"] for item in fake_db.system_health_snapshots.items)
+        assert len(buckets) == 3
+        assert buckets == [
+            "2026-03-12T12:01:00+00:00",
+            "2026-03-12T12:02:00+00:00",
+            "2026-03-12T12:03:00+00:00",
+        ]
+        status = asyncio.run(snapshot_service.get_system_health_snapshot_store_status(database=fake_db))
+        assert status["retained_rows"] == 3
+        assert status["max_retained_rows"] == 3
+        assert status["is_within_retention_bound"] is True
+        assert status["last_pruned_deleted_count"] == 1
+        latest_snapshot = max(fake_db.system_health_snapshots.items, key=lambda item: item["bucket_minute"])
+        assert latest_snapshot["retained_rows"] == 3
+        assert latest_snapshot["last_pruned_deleted_count"] == 1
+        assert latest_snapshot["is_within_retention_bound"] is True
+    finally:
+        snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES = original_retention
+        snapshot_service._last_pruned_bucket = original_last_pruned_bucket
+        snapshot_service._last_pruned_at = original_last_pruned_at
+        snapshot_service._last_pruned_deleted_count = original_last_pruned_deleted_count
 

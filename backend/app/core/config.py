@@ -101,6 +101,15 @@ class Settings:
             5.0,
         )
     )
+    operational_alert_notifications_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("OPERATIONAL_ALERT_NOTIFICATIONS_ENABLED"), True)
+    )
+    operational_alert_notification_cooldown_minutes: int = field(
+        default_factory=lambda: _as_int(
+            os.getenv("OPERATIONAL_ALERT_NOTIFICATION_COOLDOWN_MINUTES", "30"),
+            30,
+        )
+    )
     rate_limit_max_requests: int = field(
         default_factory=lambda: _as_int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"), 120)
     )

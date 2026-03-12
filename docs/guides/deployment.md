@@ -19,7 +19,11 @@ This guide is based on the current deployable assets in the repo:
 - [k8s-mongodb.yaml](k8s-mongodb.yaml)
 - [k8s-redis.yaml](k8s-redis.yaml)
 - [k8s-backend.yaml](k8s-backend.yaml)
+- [k8s-backend-canary.yaml](k8s-backend-canary.yaml)
+- [k8s-backend-canary-ingress.yaml](k8s-backend-canary-ingress.yaml)
 - [k8s-frontend.yaml](k8s-frontend.yaml)
+- [k8s-frontend-canary.yaml](k8s-frontend-canary.yaml)
+- [k8s-frontend-canary-ingress.yaml](k8s-frontend-canary-ingress.yaml)
 - [k8s-ingress.yaml](k8s-ingress.yaml)
 - [k8s-uploads-pvc.yaml](k8s-uploads-pvc.yaml)
 
@@ -151,6 +155,53 @@ Suggested local verification order:
 3. verify login page loads
 4. verify one authenticated flow
 5. verify frontend can reach `/api/v1`
+
+Suggested release-governance verification:
+1. run `python scripts/perf_smoke.py`
+2. run `python scripts/release_gate.py`
+3. after deployment, run `python scripts/release_gate.py --base-url <api-root> --bearer-token <token>`
+
+### Staged Canary Rollout
+
+The repo now includes explicit canary deployment support for both backend and frontend:
+
+- [k8s-backend-canary.yaml](k8s-backend-canary.yaml)
+- [k8s-backend-canary-ingress.yaml](k8s-backend-canary-ingress.yaml)
+- [k8s-frontend-canary.yaml](k8s-frontend-canary.yaml)
+- [k8s-frontend-canary-ingress.yaml](k8s-frontend-canary-ingress.yaml)
+
+Primary controller:
+
+```powershell
+python scripts/canary_rollout.py backend prepare --image <image> --base-url <api-root> --bearer-token <token>
+python scripts/canary_rollout.py backend promote --image <image> --base-url <api-root> --bearer-token <token>
+python scripts/canary_rollout.py backend rollback --base-url <api-root> --bearer-token <token>
+```
+
+Behavior:
+
+1. `prepare`
+2. apply canary deployment and ingress
+3. set canary image
+4. wait for rollout readiness
+5. set canary traffic weight
+6. run the remote release gate for backend canaries
+
+`promote`
+
+1. update the stable deployment image
+2. wait for rollout readiness
+3. run the remote release gate
+4. set canary traffic back to `0`
+5. scale the canary deployment down
+
+`rollback`
+
+1. set canary traffic to `0`
+2. scale the canary deployment down
+3. rerun the release gate to confirm recovery
+
+Use `--print-only` first if you want to inspect the exact `kubectl` commands before execution.
 
 ### Compose Strengths
 
@@ -511,5 +562,7 @@ The deployment model is workable today. The main risks are not missing manifests
 - placeholder secret and host values in cluster manifests
 
 That means the next deployment improvements should focus on operational correctness and configuration discipline, not on adding more deployment targets.
+
+For release decision rules, risk budgets, and rollback criteria, use [Release Governance](./release-governance.md) alongside this deployment guide.
 
 

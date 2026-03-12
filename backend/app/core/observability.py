@@ -11,6 +11,11 @@ from threading import Lock
 from typing import Any
 from uuid import uuid4
 
+from app.core.ai_capacity import (
+    AI_FALLBACK_CRITICAL_RATE_PCT,
+    AI_FALLBACK_WARNING_RATE_PCT,
+    build_ai_capacity_baseline,
+)
 from app.core.config import settings
 
 
@@ -18,6 +23,7 @@ request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("request_id
 trace_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("trace_id", default="")
 _REQUEST_WINDOW_MINUTES = 15
 _MAX_REQUEST_EVENTS = 5000
+_MAX_AI_HISTORY_POINTS = 720
 _MAX_ALERTS = 10
 
 
@@ -53,6 +59,16 @@ class ObservabilityState:
             self._active_requests = 0
             self._request_total = 0
             self._request_events: deque[dict[str, Any]] = deque(maxlen=_MAX_REQUEST_EVENTS)
+            self._ai_generation_events: deque[dict[str, Any]] = deque(maxlen=_MAX_REQUEST_EVENTS)
+            self._similarity_events: deque[dict[str, Any]] = deque(maxlen=_MAX_REQUEST_EVENTS)
+            self._ai_history_points: deque[dict[str, Any]] = deque(maxlen=_MAX_AI_HISTORY_POINTS)
+            self._ai_queue_sample = {
+                "queued_jobs": 0,
+                "running_jobs": 0,
+                "failed_jobs": 0,
+                "oldest_queued_age_seconds": None,
+                "last_sample_at": None,
+            }
             self._leader_acquired_total = 0
             self._leader_lost_total = 0
             self._leader_election_errors_total = 0
@@ -142,11 +158,93 @@ class ObservabilityState:
                 job["last_processed_count"] = int(processed_count)
                 job["processed_total"] += max(0, int(processed_count))
 
+    def _append_ai_history_point(self, now: datetime) -> None:
+        cutoff = now - timedelta(minutes=_REQUEST_WINDOW_MINUTES)
+        ai_generations = [event for event in self._ai_generation_events if event["timestamp"] >= cutoff]
+        fallback_events = [event for event in ai_generations if event["status"] == "fallback"]
+        similarity_runs = [event for event in self._similarity_events if event["timestamp"] >= cutoff]
+        last_similarity = similarity_runs[-1] if similarity_runs else None
+        self._ai_history_points.append(
+            {
+                "timestamp": now,
+                "queued_jobs": int(self._ai_queue_sample["queued_jobs"]),
+                "running_jobs": int(self._ai_queue_sample["running_jobs"]),
+                "failed_jobs": int(self._ai_queue_sample["failed_jobs"]),
+                "oldest_queued_age_seconds": self._ai_queue_sample["oldest_queued_age_seconds"],
+                "fallback_rate_pct_15m": round((len(fallback_events) / len(ai_generations)) * 100, 2)
+                if ai_generations
+                else 0.0,
+                "fallbacks_15m": len(fallback_events),
+                "similarity_candidate_count": (
+                    None if last_similarity is None else int(last_similarity["candidate_count"])
+                ),
+            }
+        )
+
+    def record_ai_queue_sample(
+        self,
+        *,
+        queued_jobs: int,
+        running_jobs: int,
+        failed_jobs: int,
+        oldest_queued_age_seconds: int | None,
+    ) -> None:
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            self._ai_queue_sample = {
+                "queued_jobs": max(0, int(queued_jobs)),
+                "running_jobs": max(0, int(running_jobs)),
+                "failed_jobs": max(0, int(failed_jobs)),
+                "oldest_queued_age_seconds": (
+                    None if oldest_queued_age_seconds is None else max(0, int(oldest_queued_age_seconds))
+                ),
+                "last_sample_at": now,
+            }
+            self._append_ai_history_point(now)
+
+    def record_ai_generation(self, *, status: str, provider: str | None = None) -> None:
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            self._ai_generation_events.append(
+                {
+                    "timestamp": now,
+                    "status": str(status or "unknown"),
+                    "provider": str(provider or ""),
+                }
+            )
+            self._append_ai_history_point(now)
+
+    def record_similarity_run(
+        self,
+        *,
+        candidate_count: int,
+        duration_ms: int,
+        flagged_count: int = 0,
+        max_score: float | None = None,
+    ) -> None:
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            self._similarity_events.append(
+                {
+                    "timestamp": now,
+                    "candidate_count": max(0, int(candidate_count)),
+                    "duration_ms": max(0, int(duration_ms)),
+                    "flagged_count": max(0, int(flagged_count)),
+                    "max_score": None if max_score is None else float(max_score),
+                }
+            )
+            self._append_ai_history_point(now)
+
     def snapshot(self) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(minutes=_REQUEST_WINDOW_MINUTES)
+        capacity = build_ai_capacity_baseline()
+        scheduler_capacity = capacity["scheduler"]
+        similarity_capacity = capacity["similarity"]
         with self._lock:
             recent = [event for event in self._request_events if event["timestamp"] >= cutoff]
+            ai_generations = [event for event in self._ai_generation_events if event["timestamp"] >= cutoff]
+            similarity_runs = [event for event in self._similarity_events if event["timestamp"] >= cutoff]
             durations = [int(event["duration_ms"]) for event in recent]
             slow_threshold_ms = settings.observability_slow_request_ms
             slow_requests = [event for event in recent if int(event["duration_ms"]) >= slow_threshold_ms]
@@ -232,9 +330,71 @@ class ObservabilityState:
                 "last_leader_election_error_at": _serialize_dt(self._last_leader_election_error_at),
                 "jobs": scheduler_jobs,
             }
+            fallback_events = [event for event in ai_generations if event["status"] == "fallback"]
+            last_fallback_at = fallback_events[-1]["timestamp"] if fallback_events else None
+            last_similarity = similarity_runs[-1] if similarity_runs else None
+            history_points = [
+                {
+                    "timestamp": _serialize_dt(point["timestamp"]),
+                    "queued_jobs": int(point["queued_jobs"]),
+                    "running_jobs": int(point["running_jobs"]),
+                    "failed_jobs": int(point["failed_jobs"]),
+                    "oldest_queued_age_seconds": point["oldest_queued_age_seconds"],
+                    "fallback_rate_pct_15m": float(point["fallback_rate_pct_15m"]),
+                    "fallbacks_15m": int(point["fallbacks_15m"]),
+                    "similarity_candidate_count": point["similarity_candidate_count"],
+                }
+                for point in self._ai_history_points
+                if point["timestamp"] >= cutoff
+            ]
+            ai_metrics = {
+                "window_minutes": _REQUEST_WINDOW_MINUTES,
+                "provider_mode": capacity["provider_mode"],
+                "queue_warn_depth": int(scheduler_capacity["queue_warn_depth"]),
+                "queue_critical_depth": int(scheduler_capacity["queue_critical_depth"]),
+                "queue_warn_age_seconds": int(scheduler_capacity["queue_warn_age_seconds"]),
+                "queue_critical_age_seconds": int(scheduler_capacity["queue_critical_age_seconds"]),
+                "queued_jobs": int(self._ai_queue_sample["queued_jobs"]),
+                "running_jobs": int(self._ai_queue_sample["running_jobs"]),
+                "failed_jobs": int(self._ai_queue_sample["failed_jobs"]),
+                "oldest_queued_age_seconds": self._ai_queue_sample["oldest_queued_age_seconds"],
+                "last_queue_sample_at": _serialize_dt(self._ai_queue_sample["last_sample_at"]),
+                "generations_15m": len(ai_generations),
+                "fallbacks_15m": len(fallback_events),
+                "fallback_rate_pct_15m": round((len(fallback_events) / len(ai_generations)) * 100, 2)
+                if ai_generations
+                else 0.0,
+                "last_fallback_at": _serialize_dt(last_fallback_at),
+                "fallback_warning_rate_pct": AI_FALLBACK_WARNING_RATE_PCT,
+                "fallback_critical_rate_pct": AI_FALLBACK_CRITICAL_RATE_PCT,
+                "similarity_runs_15m": len(similarity_runs),
+                "similarity_candidate_warn_threshold": int(similarity_capacity["candidate_warn_threshold"]),
+                "similarity_candidate_cap": int(similarity_capacity["candidate_cap_per_run"]),
+                "max_similarity_candidate_count_15m": max(
+                    (int(event["candidate_count"]) for event in similarity_runs),
+                    default=0,
+                ),
+                "last_similarity_candidate_count": (
+                    None if last_similarity is None else int(last_similarity["candidate_count"])
+                ),
+                "last_similarity_duration_ms": (
+                    None if last_similarity is None else int(last_similarity["duration_ms"])
+                ),
+                "last_similarity_flagged_count": (
+                    None if last_similarity is None else int(last_similarity["flagged_count"])
+                ),
+                "last_similarity_max_score": (
+                    None if last_similarity is None else last_similarity["max_score"]
+                ),
+                "last_similarity_at": (
+                    None if last_similarity is None else _serialize_dt(last_similarity["timestamp"])
+                ),
+                "history_15m": history_points,
+            }
         return {
             "request_metrics": request_metrics,
             "scheduler_metrics": scheduler_metrics,
+            "ai_metrics": ai_metrics,
         }
 
 
@@ -249,6 +409,7 @@ def build_operational_alerts(
     now = datetime.now(timezone.utc)
     request_metrics = snapshot.get("request_metrics") or {}
     scheduler_metrics = snapshot.get("scheduler_metrics") or {}
+    ai_metrics = snapshot.get("ai_metrics") or {}
 
     if db_status != "ok":
         alerts.append(
@@ -283,6 +444,104 @@ def build_operational_alerts(
                     f"{slow_requests_15m} requests exceeded "
                     f"{request_metrics.get('slow_request_threshold_ms') or settings.observability_slow_request_ms} ms "
                     f"in the last {request_metrics.get('window_minutes') or _REQUEST_WINDOW_MINUTES} minutes."
+                ),
+            }
+        )
+
+    queued_jobs = int(ai_metrics.get("queued_jobs") or 0)
+    queue_warn_depth = int(ai_metrics.get("queue_warn_depth") or 0)
+    queue_critical_depth = int(ai_metrics.get("queue_critical_depth") or 0)
+    if queue_critical_depth and queued_jobs >= queue_critical_depth:
+        alerts.append(
+            {
+                "level": "critical",
+                "code": "ai.queue_depth_critical",
+                "message": f"AI queued job depth is {queued_jobs}, above the critical threshold of {queue_critical_depth}.",
+            }
+        )
+    elif queue_warn_depth and queued_jobs >= queue_warn_depth:
+        alerts.append(
+            {
+                "level": "high",
+                "code": "ai.queue_depth_warning",
+                "message": f"AI queued job depth is {queued_jobs}, above the warning threshold of {queue_warn_depth}.",
+            }
+        )
+
+    oldest_queued_age_seconds = ai_metrics.get("oldest_queued_age_seconds")
+    queue_warn_age_seconds = int(ai_metrics.get("queue_warn_age_seconds") or 0)
+    queue_critical_age_seconds = int(ai_metrics.get("queue_critical_age_seconds") or 0)
+    if isinstance(oldest_queued_age_seconds, int):
+        if queue_critical_age_seconds and oldest_queued_age_seconds >= queue_critical_age_seconds:
+            alerts.append(
+                {
+                    "level": "critical",
+                    "code": "ai.oldest_job_age_critical",
+                    "message": (
+                        f"Oldest queued AI job age is {oldest_queued_age_seconds}s, above the critical threshold "
+                        f"of {queue_critical_age_seconds}s."
+                    ),
+                }
+            )
+        elif queue_warn_age_seconds and oldest_queued_age_seconds >= queue_warn_age_seconds:
+            alerts.append(
+                {
+                    "level": "high",
+                    "code": "ai.oldest_job_age_warning",
+                    "message": (
+                        f"Oldest queued AI job age is {oldest_queued_age_seconds}s, above the warning threshold "
+                        f"of {queue_warn_age_seconds}s."
+                    ),
+                }
+            )
+
+    generations_15m = int(ai_metrics.get("generations_15m") or 0)
+    fallback_rate_15m = float(ai_metrics.get("fallback_rate_pct_15m") or 0.0)
+    if generations_15m >= 3 and fallback_rate_15m >= AI_FALLBACK_CRITICAL_RATE_PCT:
+        alerts.append(
+            {
+                "level": "critical",
+                "code": "ai.fallback_rate_critical",
+                "message": (
+                    f"AI fallback rate is {fallback_rate_15m:.2f}% across {generations_15m} generations in the last "
+                    f"{ai_metrics.get('window_minutes') or _REQUEST_WINDOW_MINUTES} minutes."
+                ),
+            }
+        )
+    elif generations_15m >= 3 and fallback_rate_15m >= AI_FALLBACK_WARNING_RATE_PCT:
+        alerts.append(
+            {
+                "level": "high",
+                "code": "ai.fallback_rate_warning",
+                "message": (
+                    f"AI fallback rate is {fallback_rate_15m:.2f}% across {generations_15m} generations in the last "
+                    f"{ai_metrics.get('window_minutes') or _REQUEST_WINDOW_MINUTES} minutes."
+                ),
+            }
+        )
+
+    similarity_candidates = int(ai_metrics.get("last_similarity_candidate_count") or 0)
+    similarity_warn_threshold = int(ai_metrics.get("similarity_candidate_warn_threshold") or 0)
+    similarity_cap = int(ai_metrics.get("similarity_candidate_cap") or 0)
+    if similarity_cap and similarity_candidates >= similarity_cap:
+        alerts.append(
+            {
+                "level": "high",
+                "code": "similarity.candidate_cap_reached",
+                "message": (
+                    f"Last similarity run evaluated {similarity_candidates} candidates, reaching the current cap "
+                    f"of {similarity_cap}."
+                ),
+            }
+        )
+    elif similarity_warn_threshold and similarity_candidates >= similarity_warn_threshold:
+        alerts.append(
+            {
+                "level": "medium",
+                "code": "similarity.high_candidate_count",
+                "message": (
+                    f"Last similarity run evaluated {similarity_candidates} candidates, above the warning threshold "
+                    f"of {similarity_warn_threshold}."
                 ),
             }
         )

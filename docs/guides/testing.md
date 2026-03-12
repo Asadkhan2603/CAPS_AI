@@ -156,6 +156,17 @@ Executes:
 - `npm run test:coverage`
 - `npm run build`
 
+### Job 4: `backend-perf-smoke`
+
+Runs:
+- `python scripts/perf_smoke.py`
+
+Current scope:
+- `/health`
+- `/api/v1/admin/system/health`
+- `/api/v1/auth/login`
+- authenticated teacher submission-list smoke path
+
 ## Static Analysis And Safety Gates
 
 ### Flake8
@@ -352,11 +363,11 @@ There is currently no standard Playwright or Cypress suite in CI.
 Consequence:
 - many route wiring and SPA integration regressions still rely on manual verification
 
-### 4. No Load Or Scale Test Layer
+### 4. Limited Load And Scale Test Layer
 
-Current pipeline does not cover:
-- performance tests
+Current pipeline now includes a lightweight backend performance smoke gate, but it still does not cover:
 - concurrency tests
+- sustained load tests
 - scheduler behavior under scale
 - high-volume analytics behavior
 
@@ -416,6 +427,6 @@ This is not yet a full pyramid with heavy E2E coverage. It is a controlled hybri
 2. add component or page tests for `EntityManager`
 3. widen static analysis coverage to more backend modules once current lint debt is reduced
 4. add API-level integration coverage for modules still validated mostly by direct function tests
-5. add deployment-smoke checks after container startup in CI or release pipelines
+5. expand perf smoke toward concurrent and queue-aware checks, then tie release decisions to `release-governance.md`
 
 

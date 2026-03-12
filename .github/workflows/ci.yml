@@ -120,6 +120,31 @@ jobs:
         run: |
           python scripts/perf_smoke.py
 
+  release-governance-gate:
+    runs-on: ubuntu-latest
+    needs: [backend, backend-perf-smoke]
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Run release governance gate
+        run: |
+          python scripts/release_gate.py
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

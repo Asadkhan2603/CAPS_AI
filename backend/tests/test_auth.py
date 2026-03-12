@@ -35,6 +35,7 @@ from app.core import security as security_core
 from app.services import ai_runtime as ai_runtime_service
 from app.services import audit as audit_service
 from app.services import notifications as notifications_service
+from app.services import operational_alert_routing as operational_alert_routing_service
 from app.services import similarity_pipeline as similarity_pipeline_service
 from app.services import submission_ai as submission_ai_service
 
@@ -115,7 +116,8 @@ class FakeUsersCollection:
         self.items.append(saved)
         return InsertOneResult(inserted_id=inserted_id)
 
-    async def insert_many(self, documents: List[Dict[str, Any]]) -> InsertManyResult:
+    async def insert_many(self, documents: List[Dict[str, Any]], ordered: bool = True) -> InsertManyResult:
+        _ = ordered
         inserted_ids: List[ObjectId] = []
         for document in documents:
             inserted_id = ObjectId()
@@ -169,6 +171,12 @@ class FakeUsersCollection:
                 break
         return type("DeleteResult", (), {"deleted_count": deleted})()
 
+    async def delete_many(self, query: Dict[str, Any]):
+        original_count = len(self.items)
+        self.items = [item for item in self.items if not _matches_query(item, query)]
+        deleted = original_count - len(self.items)
+        return type("DeleteResult", (), {"deleted_count": deleted})()
+
 
 def _matches_query(item: Dict[str, Any], query: Dict[str, Any]) -> bool:
     if not query:
@@ -206,6 +214,10 @@ def _matches_query(item: Dict[str, Any], query: Dict[str, Any]) -> bool:
             continue
         if isinstance(value, dict) and "$lte" in value:
             if item.get(key) is None or item.get(key) > value["$lte"]:
+                return False
+            continue
+        if isinstance(value, dict) and "$lt" in value:
+            if item.get(key) is None or item.get(key) >= value["$lt"]:
                 return False
             continue
         if isinstance(value, dict) and "$gte" in value:
@@ -250,6 +262,8 @@ class FakeDB:
         self.timetable_subject_teacher_maps = FakeUsersCollection()
         self.settings = FakeUsersCollection()
         self.scheduler_locks = FakeUsersCollection()
+        self.system_health_snapshots = FakeUsersCollection()
+        self.operational_alert_routes = FakeUsersCollection()
 
     async def command(self, name: str) -> dict[str, Any]:
         if name != "ping":
@@ -289,6 +303,7 @@ def _setup_fake_db() -> FakeDB:
     enrollments_endpoint.db = fake_db
     timetables_endpoint.db = fake_db
     notifications_service.db = fake_db
+    operational_alert_routing_service.db = fake_db
     audit_service.db = fake_db
     ai_runtime_service.db = fake_db
     similarity_pipeline_service.db = fake_db

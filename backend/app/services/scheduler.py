@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.database import db
 from app.core.observability import observability_state
 from app.core.schema_versions import SCHEDULER_LOCK_SCHEMA_VERSION
-from app.services.ai_jobs import process_ai_jobs_once
+from app.services.ai_jobs import process_ai_jobs_once, sample_ai_queue_metrics
 from app.services.background_jobs import (
     dispatch_scheduled_notice_notifications,
     run_daily_analytics_snapshot_job,
@@ -265,21 +265,23 @@ class AppScheduler:
         sleep_for = max(5, settings.ai_job_poll_seconds)
         while self._running and self._is_leader:
             started = datetime.now(timezone.utc)
+            processed = None
+            success = True
             try:
                 processed = await process_ai_jobs_once(max_jobs=3)
-                observability_state.record_scheduler_job_run(
-                    job_name="ai_jobs",
-                    success=True,
-                    duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
-                    processed_count=processed,
-                )
             except Exception:
-                observability_state.record_scheduler_job_run(
-                    job_name="ai_jobs",
-                    success=False,
-                    duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
-                )
+                success = False
                 logger.exception({"event": "scheduler.ai_jobs.error"})
+            try:
+                await sample_ai_queue_metrics()
+            except Exception:
+                logger.exception({"event": "scheduler.ai_jobs.metrics.error"})
+            observability_state.record_scheduler_job_run(
+                job_name="ai_jobs",
+                success=success,
+                duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+                processed_count=processed,
+            )
             await asyncio.sleep(sleep_for)
 
 

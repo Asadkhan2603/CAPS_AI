@@ -145,7 +145,55 @@ Status: `Completed`
 3. Align and version docs (stop ignoring actionable docs, refresh READMEs/module docs). (completed: root docs, testing guide, mongo versioning guide, recovery docs, and legacy academic compatibility docs now reflect the current runtime and migration baseline)
 
 ### Phase 4 (Continuous): Scale Readiness
-Status: `In Progress`
-1. Load/perf regression tests in CI/CD. (in progress: backend performance smoke gate added in current branch for `/health`, `/auth/login`, `/admin/system/health`, and an authenticated teacher submission-list workflow)
-2. Capacity planning for AI and similarity workloads. (in progress: runtime-derived baseline added in `scripts/ai_capacity_baseline.py` and documented in `docs/guides/ai-capacity-planning.md`)
-3. Release governance with risk budgets and rollback criteria.
+Status: `Completed`
+1. Load/perf regression tests in CI/CD. (completed in current branch: backend performance smoke gate added in current branch for `/health`, `/auth/login`, `/admin/system/health`, an authenticated teacher submission-list workflow, an authenticated admin section-list academic workflow, a write-heavy admin student-create academic workflow, and a mixed teacher review workflow covering submissions, evaluations, and analytics summary)
+2. Capacity planning for AI and similarity workloads. (completed in current branch: runtime-derived baseline added in `scripts/ai_capacity_baseline.py`, documented in `docs/guides/ai-capacity-planning.md`, enforced at runtime via `/api/v1/admin/system/health`, surfaced for operators in `frontend/src/pages/Admin/AdminSystemPage.jsx` and `frontend/src/pages/Admin/AdminObservabilityPage.jsx`, backed by a persisted `system_health_snapshots` store plus live 15-minute history, browser-local retention, auto-refresh, JSON export, retention-bound status metrics, persisted row/prune trend charts, and throttled system-notification alert routing for `system.read` operators)
+3. Release governance with risk budgets and rollback criteria. (completed in current branch: `docs/guides/release-governance.md` now defines release classes, go/no-go gates, current risk budgets, rollback triggers, and watch-window rules; those rules can read live AI pressure metrics from `/api/v1/admin/system/health`, persisted snapshot history, the admin system page, the dedicated observability dashboard, and routed system notifications; `scripts/release_gate.py` plus the `release-governance-gate` CI job enforce the current go/no-go budgets in automation; and `scripts/canary_rollout.py` plus the canary Kubernetes manifests provide staged rollout and rollback control)
+
+#### Phase 4 Exit Criteria
+
+`Item 1: CI/CD perf regression coverage`
+
+- `backend-perf-smoke` must remain green in GitHub Actions on the default branch.
+- The smoke suite must cover:
+  - unauthenticated health
+  - authenticated admin health
+  - authenticated login path
+  - at least one authenticated teacher workflow
+- Thresholds must be versioned in code and intentionally re-baselined when changed.
+- At least one production-like benchmark path must cover a write-heavy or list-heavy academic flow in addition to the current teacher submission list.
+
+Current status:
+
+- all Item 1 exit criteria are met in the current worktree
+
+`Item 2: AI/similarity capacity planning`
+
+- `scripts/ai_capacity_baseline.py` must stay aligned with runtime constants in `backend/app/core/ai_capacity.py`.
+- `/api/v1/admin/system/health` must expose:
+  - live AI pressure metrics
+  - bounded in-memory history
+  - persisted snapshot history
+  - snapshot-store retention status
+- The admin system page and dedicated observability dashboard must render operator-visible status for:
+  - queue depth
+  - oldest queued age
+  - fallback rate
+  - similarity candidate pressure
+  - snapshot-store growth and prune activity
+- Capacity budgets must be documented and mapped to alertable thresholds.
+- Those thresholds must also route outside dashboard pages through an operator-visible notification path.
+
+Current status:
+
+- all Item 2 exit criteria are met in the current worktree
+
+`Item 3: Release governance`
+
+- `docs/guides/release-governance.md` must define release classes, go/no-go checks, rollback triggers, rollback procedures, and watch windows.
+- The release checklist must reference the actual CI jobs and admin health surface used by the repo.
+- Operators must be able to evaluate current risk budgets without reading raw backend JSON.
+
+Current status:
+
+- all Item 3 exit criteria are met in the current worktree

@@ -9,6 +9,7 @@ from pymongo import ReturnDocument
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.observability import observability_state
 from app.core.schema_versions import AI_JOB_SCHEMA_VERSION, SUBMISSION_SCHEMA_VERSION, normalize_schema_version
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
@@ -103,6 +104,36 @@ async def queue_ai_job(
 
 async def get_ai_job(job_id: str) -> dict[str, Any] | None:
     return await db.ai_jobs.find_one({"_id": parse_object_id(job_id)})
+
+
+async def sample_ai_queue_metrics(*, database: Any = db) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    queued_jobs = await database.ai_jobs.count_documents({"status": AI_JOB_STATUS_QUEUED})
+    running_jobs = await database.ai_jobs.count_documents({"status": AI_JOB_STATUS_RUNNING})
+    failed_jobs = await database.ai_jobs.count_documents({"status": AI_JOB_STATUS_FAILED})
+    oldest_queued = await database.ai_jobs.find_one(
+        {"status": AI_JOB_STATUS_QUEUED},
+        sort=[("requested_at", 1)],
+    )
+    requested_at = oldest_queued.get("requested_at") if oldest_queued else None
+    oldest_queued_age_seconds = None
+    if isinstance(requested_at, datetime):
+        if requested_at.tzinfo is None:
+            requested_at = requested_at.replace(tzinfo=timezone.utc)
+        oldest_queued_age_seconds = int((now - requested_at).total_seconds())
+
+    observability_state.record_ai_queue_sample(
+        queued_jobs=queued_jobs,
+        running_jobs=running_jobs,
+        failed_jobs=failed_jobs,
+        oldest_queued_age_seconds=oldest_queued_age_seconds,
+    )
+    return {
+        "queued_jobs": queued_jobs,
+        "running_jobs": running_jobs,
+        "failed_jobs": failed_jobs,
+        "oldest_queued_age_seconds": oldest_queued_age_seconds,
+    }
 
 
 def schedule_ai_job_processing(*, max_jobs: int = 1) -> None:
