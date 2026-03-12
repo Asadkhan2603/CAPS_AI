@@ -9,6 +9,7 @@ from pymongo import ReturnDocument
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import SUBMISSION_SCHEMA_VERSION
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
 from app.services.similarity_pipeline import run_similarity_pipeline
@@ -206,7 +207,7 @@ async def _run_bulk_submission_job(job: dict[str, Any]) -> dict[str, Any]:
 
         await db.submissions.update_one(
             {"_id": item["_id"]},
-            {"$set": {"ai_status": "running", "ai_error": None}},
+            {"$set": {"ai_status": "running", "ai_error": None, "schema_version": SUBMISSION_SCHEMA_VERSION}},
         )
         updated = await evaluate_submission_and_save(
             item["_id"],

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import EVALUATION_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.review_tickets import review_ticket_public
 from app.schemas.review_ticket import (
@@ -93,7 +94,12 @@ async def approve_review_ticket(
     evaluation_id = ticket.get("evaluation_id")
     await db.evaluations.update_one(
         {"_id": parse_object_id(evaluation_id)},
-        {"$set": {"is_finalized": False}},
+        {
+            "$set": {
+                "is_finalized": False,
+                "schema_version": EVALUATION_SCHEMA_VERSION,
+            }
+        },
     )
     await db.review_tickets.update_one(
         {"_id": ticket_obj_id},

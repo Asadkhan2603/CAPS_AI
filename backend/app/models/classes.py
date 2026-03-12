@@ -8,8 +8,6 @@ def class_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'department_id': document.get('department_id'),
         'program_id': document.get('program_id'),
         'specialization_id': document.get('specialization_id'),
-        'course_id': document.get('course_id'),
-        'year_id': document.get('year_id'),
         'batch_id': document.get('batch_id'),
         'semester_id': document.get('semester_id'),
         'name': document.get('name', ''),

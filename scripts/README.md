@@ -33,6 +33,16 @@ Utility scripts for local setup, safety checks, and canonical academic data seed
   - Supports dry-run by default and `--apply` for persistence.
   - Target fields: `is_active`, `deleted_at`, `deleted_by`.
 
+- `python scripts/migrate_submission_schema_version.py`
+  - Backfills `schema_version` on `submissions`.
+  - Supports dry-run by default and `--apply` for persistence.
+  - Current target version: `1`.
+
+- `python scripts/migrate_evaluation_schema_version.py`
+  - Backfills `schema_version` on `evaluations`.
+  - Supports dry-run by default and `--apply` for persistence.
+  - Current target version: `1`.
+
 ## Usage Notes
 
 - Run Python scripts from the repository root so relative imports and paths resolve correctly.

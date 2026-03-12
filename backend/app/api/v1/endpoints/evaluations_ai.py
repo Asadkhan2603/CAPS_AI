@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import EVALUATION_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.evaluations import evaluation_public
 from app.schemas.evaluation import EvaluationAIPreviewOut, EvaluationAIPreviewRequest, EvaluationCreate, EvaluationOut
@@ -105,6 +106,7 @@ async def create_evaluation(
         "is_finalized": payload.is_finalized,
         "finalized_at": now if payload.is_finalized else None,
         "finalized_by_user_id": str(current_user["_id"]) if payload.is_finalized else None,
+        "schema_version": EVALUATION_SCHEMA_VERSION,
         "created_at": now,
         "updated_at": now,
     }
@@ -159,6 +161,7 @@ async def refresh_evaluation_ai(
     )
 
     update_fields = ai_payload_update_fields(ai_payload)
+    update_fields["schema_version"] = EVALUATION_SCHEMA_VERSION
     update_fields["updated_at"] = datetime.now(timezone.utc)
     await database.evaluations.update_one(
         {"_id": evaluation_obj_id},

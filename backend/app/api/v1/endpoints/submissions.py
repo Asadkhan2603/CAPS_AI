@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import SUBMISSION_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.submissions import submission_public
 from app.schemas.submission import SubmissionOut, SubmissionUpdate
@@ -133,6 +134,7 @@ async def upload_submission(
         'ai_feedback': None,
         'ai_provider': None,
         'ai_error': None,
+        'schema_version': SUBMISSION_SCHEMA_VERSION,
         'similarity_score': None,
         'extracted_text': extracted_text,
         'created_at': datetime.now(timezone.utc),
@@ -162,7 +164,10 @@ async def ai_evaluate_submission(
     if item.get('ai_status') == 'completed' and not force:
         return SubmissionOut(**submission_public(item))
 
-    await db.submissions.update_one({'_id': submission_obj_id}, {'$set': {'ai_status': 'running'}})
+    await db.submissions.update_one(
+        {'_id': submission_obj_id},
+        {'$set': {'ai_status': 'running', 'schema_version': SUBMISSION_SCHEMA_VERSION}},
+    )
     updated = await evaluate_submission_and_save(
         submission_obj_id,
         item,
@@ -262,6 +267,7 @@ async def update_submission(
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
+    update_data['schema_version'] = SUBMISSION_SCHEMA_VERSION
     await db.submissions.update_one({'_id': parse_object_id(submission_id)}, {'$set': update_data})
     updated = await db.submissions.find_one({'_id': parse_object_id(submission_id)})
     return SubmissionOut(**submission_public(updated))

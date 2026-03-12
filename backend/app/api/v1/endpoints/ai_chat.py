@@ -9,7 +9,7 @@ from app.services.ai_chat_workflow import normalize_chat_result, upsert_evaluati
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
 
-from .ai_common import ensure_chat_indexes, get_ai_db, resolve_submission, teacher_can_access_assignment_in_scope
+from .ai_common import get_ai_db, resolve_submission, teacher_can_access_assignment_in_scope
 
 router = APIRouter()
 
@@ -19,7 +19,6 @@ async def evaluate_with_ai(
     payload: AIChatEvaluateRequest,
     current_user=Depends(require_roles(["teacher", "admin"])),
 ) -> AIChatEvaluateResponse:
-    await ensure_chat_indexes()
     active_db = get_ai_db()
     actor_id = str(current_user["_id"])
     teacher_id = actor_id if current_user.get("role") == "teacher" else (payload.teacher_id or actor_id)
@@ -90,7 +89,6 @@ async def get_ai_chat_history(
     exam_id: str,
     current_user=Depends(require_roles(["teacher", "admin"])),
 ) -> AIChatThreadOut:
-    await ensure_chat_indexes()
     active_db = get_ai_db()
     actor_id = str(current_user["_id"])
 

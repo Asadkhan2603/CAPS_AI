@@ -5,24 +5,11 @@ from app.core.database import db as core_db
 from app.core.mongo import parse_object_id
 from app.services.access_control import teacher_can_access_assignment
 
-_chat_indexes_ensured = False
-
 
 def get_ai_db() -> Any:
     from app.api.v1.endpoints import ai as ai_endpoint_module
 
     return getattr(ai_endpoint_module, "db", core_db)
-
-
-async def ensure_chat_indexes() -> None:
-    global _chat_indexes_ensured
-    if _chat_indexes_ensured:
-        return
-    active_db = get_ai_db()
-    await active_db.ai_evaluation_chats.create_index([("student_id", 1), ("exam_id", 1)], unique=True)
-    await active_db.ai_evaluation_chats.create_index("teacher_id")
-    await active_db.ai_evaluation_chats.create_index("exam_id")
-    _chat_indexes_ensured = True
 
 
 async def teacher_can_access_assignment_in_scope(teacher_user_id: str, assignment_id: str) -> bool:

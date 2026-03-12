@@ -80,6 +80,7 @@ class EvaluationOut(BaseModel):
     ai_provider: str | None = None
     ai_prompt_version: str | None = None
     ai_runtime_snapshot: dict | None = None
+    schema_version: int = 1
     ai_confidence: float | None = Field(default=None, ge=0, le=1)
     ai_risk_flags: list[str] = []
     ai_strengths: list[str] = []

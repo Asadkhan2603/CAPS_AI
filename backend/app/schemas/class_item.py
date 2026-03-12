@@ -36,8 +36,6 @@ class ClassOut(BaseModel):
     department_id: str | None = None
     program_id: str | None = None
     specialization_id: str | None = None
-    course_id: str | None = None
-    year_id: str | None = None
     batch_id: str | None = None
     semester_id: str | None = None
     name: str

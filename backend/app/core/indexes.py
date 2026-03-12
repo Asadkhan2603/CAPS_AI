@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pymongo import ASCENDING
-from pymongo.errors import DuplicateKeyError, OperationFailure
+from pymongo.errors import OperationFailure
 
 from app.core.database import db
 
@@ -16,6 +16,14 @@ async def _safe_create_index(collection, keys, **kwargs) -> None:
         if getattr(exc, "code", None) in {85, 86, 11000}:
             return
         raise
+
+
+async def _collection_exists(name: str) -> bool:
+    try:
+        existing = await db.list_collection_names()
+    except Exception:
+        return True
+    return name in set(existing)
 
 
 async def ensure_indexes() -> None:
@@ -60,9 +68,6 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.specializations, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.batches, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.semesters, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
-    await _safe_create_index(db.courses, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
-    await _safe_create_index(db.branches, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
-    await _safe_create_index(db.years, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.classes, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.timetables, [('class_id', ASCENDING), ('semester', ASCENDING), ('status', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.timetables, [('entries.teacher_user_id', ASCENDING), ('status', ASCENDING)])
@@ -81,6 +86,9 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.internship_sessions, [('status', ASCENDING), ('clock_in_at', ASCENDING)])
     await _safe_create_index(db.ai_evaluation_runs, [('evaluation_id', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.ai_evaluation_runs, [('submission_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.ai_evaluation_chats, [('student_id', ASCENDING), ('exam_id', ASCENDING)], unique=True)
+    await _safe_create_index(db.ai_evaluation_chats, [('teacher_id', ASCENDING)])
+    await _safe_create_index(db.ai_evaluation_chats, [('exam_id', ASCENDING)])
     await _safe_create_index(db.ai_jobs, [('status', ASCENDING), ('requested_at', ASCENDING)])
     await _safe_create_index(db.ai_jobs, [('job_type', ASCENDING), ('requested_by_user_id', ASCENDING), ('requested_at', ASCENDING)])
     await _safe_create_index(db.ai_jobs, [('job_type', ASCENDING), ('idempotency_key', ASCENDING), ('status', ASCENDING)])
@@ -89,5 +97,11 @@ async def ensure_indexes() -> None:
         [('source_submission_id', ASCENDING), ('matched_submission_id', ASCENDING), ('threshold', ASCENDING), ('engine_version', ASCENDING)],
         unique=True,
     )
+    if await _collection_exists("courses"):
+        await _safe_create_index(db.courses, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    if await _collection_exists("branches"):
+        await _safe_create_index(db.branches, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    if await _collection_exists("years"):
+        await _safe_create_index(db.years, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
 
     _indexes_ensured = True

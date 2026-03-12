@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import EVALUATION_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.evaluations import evaluation_public
 from app.schemas.evaluation import EvaluationOut, EvaluationUpdate
@@ -79,6 +80,7 @@ async def update_evaluation(
             totals_payload={"internal_total": internal, "grand_total": total, "grade": grade},
         )
 
+    update_data["schema_version"] = EVALUATION_SCHEMA_VERSION
     update_data["updated_at"] = datetime.now(timezone.utc)
     await database.evaluations.update_one({"_id": evaluation_obj_id}, {"$set": update_data})
     updated = await database.evaluations.find_one({"_id": evaluation_obj_id})
@@ -113,6 +115,7 @@ async def finalize_evaluation(
                 "is_finalized": True,
                 "finalized_at": datetime.now(timezone.utc),
                 "finalized_by_user_id": str(current_user["_id"]),
+                "schema_version": EVALUATION_SCHEMA_VERSION,
                 "updated_at": datetime.now(timezone.utc),
             }
         },
@@ -148,6 +151,7 @@ async def override_unfinalize_evaluation(
         {
             "$set": {
                 "is_finalized": False,
+                "schema_version": EVALUATION_SCHEMA_VERSION,
                 "updated_at": datetime.now(timezone.utc),
             }
         },

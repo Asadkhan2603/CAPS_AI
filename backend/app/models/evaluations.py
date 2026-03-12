@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from app.core.schema_versions import EVALUATION_SCHEMA_VERSION, normalize_schema_version
+
 
 def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -22,6 +24,10 @@ def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "ai_provider": document.get("ai_provider"),
         "ai_prompt_version": document.get("ai_prompt_version"),
         "ai_runtime_snapshot": document.get("ai_runtime_snapshot"),
+        "schema_version": normalize_schema_version(
+            document.get("schema_version"),
+            default=EVALUATION_SCHEMA_VERSION,
+        ),
         "ai_confidence": document.get("ai_confidence"),
         "ai_risk_flags": list(document.get("ai_risk_flags") or []),
         "ai_strengths": list(document.get("ai_strengths") or []),

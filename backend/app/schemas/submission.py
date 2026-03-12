@@ -20,6 +20,7 @@ class SubmissionOut(BaseModel):
     ai_error: str | None = None
     ai_prompt_version: str | None = None
     ai_runtime_snapshot: dict | None = None
+    schema_version: int = 1
     similarity_score: float | None = None
     extracted_text: str | None = None
     created_at: datetime | None = None

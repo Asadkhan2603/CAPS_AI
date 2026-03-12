@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db
 from app.core.mongo import parse_object_id
+from app.core.schema_versions import SUBMISSION_SCHEMA_VERSION
 from app.services.ai_runtime import AI_SIMILARITY_ENGINE_VERSION
 from app.services.notifications import create_notification
 from app.services.similarity_engine import compute_similarity_scores
@@ -148,7 +149,7 @@ async def run_similarity_pipeline(
 
     await db.submissions.update_one(
         {"_id": parse_object_id(submission_id)},
-        {"$set": {"similarity_score": round(max_score, 4)}},
+        {"$set": {"similarity_score": round(max_score, 4), "schema_version": SUBMISSION_SCHEMA_VERSION}},
     )
     return {
         "items": created_items,
