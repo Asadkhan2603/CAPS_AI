@@ -4,12 +4,11 @@ import Card from '../components/ui/Card';
 import FormInput from '../components/ui/FormInput';
 import Modal from '../components/ui/Modal';
 import SearchableSelect from '../components/ui/SearchableSelect';
+import { PROGRAM_DURATION_TO_SEMESTERS } from '../constants/academicHierarchy';
 import { useToast } from '../hooks/useToast';
 import { apiClient } from '../services/apiClient';
+import { searchLookupOptions } from '../services/paginatedLookups';
 import { formatApiError } from '../utils/apiError';
-
-const PAGE_SIZE = 100;
-const MAX_PAGES = 20;
 
 function buildBatchCodeSuffix(startYear, endYear) {
   if (!startYear || !endYear) return '';
@@ -25,12 +24,18 @@ function buildProgramBatchPrefix(program) {
   return String(program.code || '').trim().toUpperCase();
 }
 
-function buildSuggestedBatchIdentity(program, startYear, endYear) {
+function buildSpecializationBatchPrefix(program, specialization) {
+  const programPrefix = buildProgramBatchPrefix(program);
+  const specializationCode = String(specialization?.code || '').trim().toUpperCase();
+  return [programPrefix, specializationCode].filter(Boolean).join('-');
+}
+
+function buildSuggestedBatchIdentity(program, specialization, startYear, endYear) {
   if (!startYear || !endYear) {
     return { name: '', code: '' };
   }
 
-  const prefix = buildProgramBatchPrefix(program);
+  const prefix = buildSpecializationBatchPrefix(program, specialization);
   const suffix = buildBatchCodeSuffix(startYear, endYear);
   return {
     name: `Batch ${startYear}-${endYear}`,
@@ -41,33 +46,6 @@ function buildSuggestedBatchIdentity(program, startYear, endYear) {
 function normalizeYearInput(value) {
   if (value === '' || value === null || value === undefined) return '';
   return String(value);
-}
-
-async function listAll(path, params = {}) {
-  const rows = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const response = await apiClient.get(path, {
-      params: { ...params, skip: page * PAGE_SIZE, limit: PAGE_SIZE }
-    });
-    const items = Array.isArray(response.data) ? response.data : [];
-    rows.push(...items);
-    if (items.length < PAGE_SIZE) break;
-  }
-  return rows;
-}
-
-async function listAllBatches() {
-  const [activeRows, inactiveRows] = await Promise.all([
-    listAll('/batches/', { is_active: true }),
-    listAll('/batches/', { is_active: false })
-  ]);
-  const merged = new Map();
-  [...activeRows, ...inactiveRows].forEach((item) => {
-    if (item?.id) {
-      merged.set(item.id, item);
-    }
-  });
-  return Array.from(merged.values());
 }
 
 function sortBatches(rows) {
@@ -108,19 +86,66 @@ export default function BatchesPage() {
   const [formValues, setFormValues] = useState(createEmptyForm());
   const [identityTouched, setIdentityTouched] = useState({ name: false, code: false, endYear: false });
   const [error, setError] = useState('');
+  const [skip, setSkip] = useState(0);
+  const [limit, setLimit] = useState(50);
+
+  function mergeById(setter, rows) {
+    setter((prev) => {
+      const merged = new Map((prev || []).map((item) => [String(item.id), item]));
+      (rows || []).forEach((item) => {
+        if (item?.id) {
+          merged.set(String(item.id), item);
+        }
+      });
+      return Array.from(merged.values());
+    });
+  }
+
+  async function hydrateBatchRelations(batchRows) {
+    const programIds = Array.from(new Set((batchRows || []).map((item) => item.program_id).filter(Boolean)));
+    const specializationIds = Array.from(new Set((batchRows || []).map((item) => item.specialization_id).filter(Boolean)));
+
+    const knownProgramIds = new Set(programs.map((item) => item.id));
+    const knownSpecializationIds = new Set(specializations.map((item) => item.id));
+
+    const missingProgramIds = programIds.filter((id) => !knownProgramIds.has(id));
+    const missingSpecializationIds = specializationIds.filter((id) => !knownSpecializationIds.has(id));
+
+    const [programResponses, specializationResponses] = await Promise.all([
+      Promise.allSettled(missingProgramIds.map((id) => apiClient.get(`/programs/${id}`))),
+      Promise.allSettled(missingSpecializationIds.map((id) => apiClient.get(`/specializations/${id}`)))
+    ]);
+
+    mergeById(
+      setPrograms,
+      programResponses
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value.data)
+    );
+    mergeById(
+      setSpecializations,
+      specializationResponses
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value.data)
+    );
+  }
 
   async function loadPageData() {
     setLoading(true);
     setError('');
     try {
-      const [programRows, specializationRows, batchRows] = await Promise.all([
-        listAll('/programs/', { is_active: true }),
-        listAll('/specializations/', { is_active: true }),
-        listAllBatches()
-      ]);
-      setPrograms(programRows);
-      setSpecializations(specializationRows);
+      const response = await apiClient.get('/batches/', {
+        params: {
+          skip,
+          limit,
+          q: searchQuery || undefined,
+          program_id: programFilter || undefined,
+          is_active: showInactive ? undefined : true
+        }
+      });
+      const batchRows = Array.isArray(response.data) ? response.data : [];
       setBatches(batchRows);
+      await hydrateBatchRelations(batchRows);
     } catch (err) {
       const message = formatApiError(err, 'Failed to load batches');
       setError(message);
@@ -132,7 +157,7 @@ export default function BatchesPage() {
 
   useEffect(() => {
     loadPageData();
-  }, []);
+  }, [limit, programFilter, searchQuery, showInactive, skip]);
 
   const programMap = useMemo(() => Object.fromEntries(programs.map((item) => [item.id, item])), [programs]);
   const specializationMap = useMemo(() => Object.fromEntries(specializations.map((item) => [item.id, item])), [specializations]);
@@ -179,15 +204,38 @@ export default function BatchesPage() {
       if (normalizedQuery && !searchText.includes(normalizedQuery)) return;
 
       if (!grouped.has(program.id)) {
-        grouped.set(program.id, { program, batches: [] });
+        grouped.set(program.id, { program, specializationGroups: new Map() });
       }
-      grouped.get(program.id).batches.push(batch);
+
+      const specializationKey = batch.specialization_id || '__unassigned__';
+      const specialization =
+        specializationMap[batch.specialization_id] || {
+          id: specializationKey,
+          name: 'Program-level Batch',
+          code: ''
+        };
+
+      const programGroup = grouped.get(program.id);
+      if (!programGroup.specializationGroups.has(specializationKey)) {
+        programGroup.specializationGroups.set(specializationKey, {
+          specialization,
+          batches: []
+        });
+      }
+      programGroup.specializationGroups.get(specializationKey).batches.push(batch);
     });
 
     return Array.from(grouped.values())
       .map((group) => ({
         ...group,
-        batches: sortBatches(group.batches)
+        specializationGroups: Array.from(group.specializationGroups.values())
+          .map((specializationGroup) => ({
+            ...specializationGroup,
+            batches: sortBatches(specializationGroup.batches)
+          }))
+          .sort((left, right) =>
+            String(left.specialization.name || '').localeCompare(String(right.specialization.name || ''))
+          )
       }))
       .sort((left, right) => String(left.program.name || '').localeCompare(String(right.program.name || '')));
   }, [batches, programFilter, programMap, searchQuery, showInactive, specializationMap]);
@@ -208,6 +256,7 @@ export default function BatchesPage() {
   }, [expandedProgramId, visibleGroups]);
 
   const selectedProgram = programMap[formValues.program_id] || null;
+  const selectedSpecialization = specializationMap[formValues.specialization_id] || null;
   const selectedProgramDuration = Number(selectedProgram?.duration_years || 0);
   const startYearValue = Number(formValues.start_year || 0);
   const endYearValue = Number(formValues.end_year || 0);
@@ -215,10 +264,11 @@ export default function BatchesPage() {
     () =>
       buildSuggestedBatchIdentity(
         selectedProgram,
+        selectedSpecialization,
         startYearValue || null,
         endYearValue || null
       ),
-    [selectedProgram, startYearValue, endYearValue]
+    [selectedProgram, selectedSpecialization, startYearValue, endYearValue]
   );
 
   useEffect(() => {
@@ -263,6 +313,38 @@ export default function BatchesPage() {
     () => specializationOptions.filter((item) => item.program_id === formValues.program_id),
     [formValues.program_id, specializationOptions]
   );
+
+  async function loadProgramOptions(query) {
+    const options = await searchLookupOptions({
+      path: '/programs/',
+      q: query,
+      params: { is_active: true },
+      mapOption: (item) => ({ value: item.id, label: `${item.name} (${item.code})`, name: item.name, code: item.code })
+    });
+    mergeById(setPrograms, options.map((item) => ({ id: item.value, name: item.name, code: item.code })));
+    return options;
+  }
+
+  async function loadSpecializationOptions(query) {
+    if (!formValues.program_id) return [];
+    const options = await searchLookupOptions({
+      path: '/specializations/',
+      q: query,
+      params: { is_active: true, program_id: formValues.program_id },
+      mapOption: (item) => ({
+        value: item.id,
+        label: `${item.name} (${item.code})`,
+        name: item.name,
+        code: item.code,
+        program_id: item.program_id
+      })
+    });
+    mergeById(
+      setSpecializations,
+      options.map((item) => ({ id: item.value, name: item.name, code: item.code, program_id: item.program_id }))
+    );
+    return options;
+  }
 
   function openCreateModal() {
     setEditingBatch(null);
@@ -385,6 +467,84 @@ export default function BatchesPage() {
     }
   }
 
+  function renderBatchGroups(specializationGroups) {
+    if (!Array.isArray(specializationGroups) || specializationGroups.length === 0) {
+      return null;
+    }
+
+    return specializationGroups.map((specializationGroup) => (
+      <div key={specializationGroup.specialization.id}>
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 bg-slate-100/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
+          <span className="text-sm font-semibold text-slate-900 dark:text-white">
+            {specializationGroup.specialization.name}
+          </span>
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+            {specializationGroup.specialization.code ||
+              (specializationGroup.specialization.id === '__unassigned__' ? 'No specialization' : 'Specialization')}
+          </span>
+          <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-200">
+            {specializationGroup.batches.length} batch{specializationGroup.batches.length === 1 ? '' : 'es'}
+          </span>
+        </div>
+
+        <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          {specializationGroup.batches.map((batch) => {
+            const specialization = specializationMap[batch.specialization_id];
+            const universityLabel = batch.university_code || batch.university_name || '-';
+            return (
+              <div
+                key={batch.id}
+                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.2fr)_170px_180px_140px_130px_100px_110px] md:items-center"
+              >
+                <div>
+                  <p className="font-semibold text-slate-900 dark:text-white">{batch.name}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Start {batch.start_year || '-'} | End {batch.end_year || '-'}
+                  </p>
+                </div>
+                <div className="text-sm font-medium text-slate-700 dark:text-slate-200">{batch.code || '-'}</div>
+                <div className="text-sm text-slate-600 dark:text-slate-300">{specialization?.name || '-'}</div>
+                <div className="text-sm text-slate-600 dark:text-slate-300">{batch.academic_span_label || '-'}</div>
+                <div className="text-sm text-slate-600 dark:text-slate-300">{universityLabel}</div>
+                <div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      batch.is_active === false
+                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200'
+                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+                    }`}
+                  >
+                    {batch.is_active === false ? 'Archived' : 'Active'}
+                  </span>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary !p-2"
+                    onClick={() => openEditModal(batch)}
+                    title="Edit batch"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  {batch.is_active === false ? null : (
+                    <button
+                      type="button"
+                      className="btn-secondary !p-2 !text-rose-600"
+                      onClick={() => deleteBatch(batch)}
+                      title="Archive batch"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    ));
+  }
+
   return (
     <div className="space-y-5 page-fade">
       <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
@@ -392,8 +552,8 @@ export default function BatchesPage() {
           <p className="font-semibold">Batch spans follow join year to pass-out year.</p>
           <p>
             For the Indian academic cycle, an August 2022 intake finishing in May 2026 remains a 4-year batch labeled
-            <span className="font-semibold"> 2022-2026</span>. Auto-generated codes now use the course prefix, for example
-            <span className="font-semibold"> B.Sc.-B22-26</span>.
+            <span className="font-semibold"> 2022-2026</span>. Auto-generated codes use the program prefix, while specialization-specific batches can add an extra code layer when needed, for example
+            <span className="font-semibold"> B.Sc.-B22-26</span> or <span className="font-semibold"> B.Sc.-AI-B22-26</span>.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -417,10 +577,15 @@ export default function BatchesPage() {
               label="Program"
               value={programFilter}
               options={programOptions}
+              loadOptions={loadProgramOptions}
+              selectedLabel={programMap[programFilter] ? `${programMap[programFilter].name} (${programMap[programFilter].code})` : ''}
               allowEmpty
               emptyLabel="All Programs"
               placeholder="Filter by program"
-              onValueChange={setProgramFilter}
+              onValueChange={(value) => {
+                setProgramFilter(value);
+                setSkip(0);
+              }}
             />
           </div>
           <div className="min-w-[240px] flex-1">
@@ -428,14 +593,20 @@ export default function BatchesPage() {
               label="Search"
               value={searchQuery}
               placeholder="Search by batch, code, specialization, university"
-              onChange={(event) => setSearchQuery(event.target.value)}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setSkip(0);
+              }}
             />
           </div>
           <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
             <input
               type="checkbox"
               checked={showInactive}
-              onChange={(event) => setShowInactive(event.target.checked)}
+              onChange={(event) => {
+                setShowInactive(event.target.checked);
+                setSkip(0);
+              }}
             />
             Show archived batches
           </label>
@@ -453,6 +624,10 @@ export default function BatchesPage() {
           {visibleGroups.map((group) => {
             const expanded = expandedProgramId === group.program.id;
             const programPrefix = buildProgramBatchPrefix(group.program);
+            const totalBatches = group.specializationGroups.reduce(
+              (count, specializationGroup) => count + specializationGroup.batches.length,
+              0
+            );
 
             return (
               <div key={group.program.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -468,11 +643,11 @@ export default function BatchesPage() {
                         {group.program.code}
                       </span>
                       <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-200">
-                        {group.batches.length} batch{group.batches.length === 1 ? '' : 'es'}
+                        {totalBatches} batch{totalBatches === 1 ? '' : 'es'}
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Course prefix: {programPrefix || '-'} • {group.program.duration_years || 4} year course
+                      Program prefix: {programPrefix || '-'} | {group.program.duration_years || 4} year program | {(PROGRAM_DURATION_TO_SEMESTERS[Number(group.program.duration_years || 4)] || PROGRAM_DURATION_TO_SEMESTERS[4])} semesters
                     </p>
                   </div>
                   {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -491,56 +666,27 @@ export default function BatchesPage() {
                     </div>
 
                     <div className="divide-y divide-slate-200 dark:divide-slate-800">
-                      {group.batches.map((batch) => {
-                        const specialization = specializationMap[batch.specialization_id];
-                        const universityLabel = batch.university_code || batch.university_name || '-';
-                        return (
-                          <div key={batch.id} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.2fr)_170px_180px_140px_130px_100px_110px] md:items-center">
-                            <div>
-                              <p className="font-semibold text-slate-900 dark:text-white">{batch.name}</p>
-                              <p className="text-sm text-slate-500 dark:text-slate-400">
-                                Start {batch.start_year || '-'} • End {batch.end_year || '-'}
-                              </p>
-                            </div>
-                            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">{batch.code || '-'}</div>
-                            <div className="text-sm text-slate-600 dark:text-slate-300">{specialization?.name || '-'}</div>
-                            <div className="text-sm text-slate-600 dark:text-slate-300">{batch.academic_span_label || '-'}</div>
-                            <div className="text-sm text-slate-600 dark:text-slate-300">{universityLabel}</div>
-                            <div>
-                              <span
-                                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                  batch.is_active === false
-                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200'
-                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
-                                }`}
-                              >
-                                {batch.is_active === false ? 'Archived' : 'Active'}
-                              </span>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                              <button type="button" className="btn-secondary !p-2" onClick={() => openEditModal(batch)} title="Edit batch">
-                                <Pencil size={16} />
-                              </button>
-                              {batch.is_active === false ? null : (
-                                <button
-                                  type="button"
-                                  className="btn-secondary !p-2 !text-rose-600"
-                                  onClick={() => deleteBatch(batch)}
-                                  title="Archive batch"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                      {renderBatchGroups(group.specializationGroups)}
                     </div>
                   </div>
                 ) : null}
               </div>
             );
           })}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button type="button" className="btn-secondary" disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - limit))}>
+            Prev
+          </button>
+          <span className="text-xs text-slate-500">skip: {skip}</span>
+          <button type="button" className="btn-secondary" disabled={batches.length < limit} onClick={() => setSkip(skip + limit)}>
+            Next
+          </button>
+          <select className="input w-24" value={limit} onChange={(event) => { setLimit(Number(event.target.value)); setSkip(0); }}>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
         </div>
       </Card>
 
@@ -550,6 +696,8 @@ export default function BatchesPage() {
             label="Program"
             value={formValues.program_id}
             options={programOptions}
+            loadOptions={loadProgramOptions}
+            selectedLabel={selectedProgram ? `${selectedProgram.name} (${selectedProgram.code})` : ''}
             placeholder="Select program"
             onValueChange={(value) => {
               updateFormValue('program_id', value);
@@ -562,8 +710,11 @@ export default function BatchesPage() {
             label="Specialization"
             value={formValues.specialization_id}
             options={filteredSpecializationOptions}
+            loadOptions={loadSpecializationOptions}
+            selectedLabel={selectedSpecialization ? `${selectedSpecialization.name} (${selectedSpecialization.code})` : ''}
             allowEmpty
-            emptyLabel="No specialization"
+            disabled={!formValues.program_id}
+            emptyLabel="Program-level batch"
             placeholder={formValues.program_id ? 'Select specialization' : 'Select program first'}
             onValueChange={(value) => updateFormValue('specialization_id', value)}
           />
@@ -593,7 +744,7 @@ export default function BatchesPage() {
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-            Suggested identity: <span className="font-semibold">{suggestedIdentity.name || 'Batch 2022-2026'}</span> •{' '}
+            Suggested identity: <span className="font-semibold">{suggestedIdentity.name || 'Batch 2022-2026'}</span> |{' '}
             <span className="font-semibold">{suggestedIdentity.code || 'B.Sc.-B22-26'}</span>
           </div>
 

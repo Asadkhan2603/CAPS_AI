@@ -72,12 +72,101 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.assignments, [('is_deleted', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.club_events, [('is_deleted', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.notices, [('is_deleted', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(db.universities, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(
+        db.universities,
+        [('university_id', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
     await _safe_create_index(db.faculties, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(
+        db.faculties,
+        [('faculty_id', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(
+        db.faculties,
+        [('faculty_code', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(
+        db.faculties,
+        [('university_id', ASCENDING), ('faculty_name', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(db.faculties, [('university_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.departments, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(
+        db.departments,
+        [('department_id', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(
+        db.departments,
+        [('faculty_id', ASCENDING), ('department_code', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(
+        db.departments,
+        [('faculty_id', ASCENDING), ('department_name', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(db.departments, [('faculty_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.programs, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(
+        db.programs,
+        [('program_id', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(
+        db.programs,
+        [('department_id', ASCENDING), ('program_code', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(
+        db.programs,
+        [('department_id', ASCENDING), ('program_name', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(db.programs, [('department_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.specializations, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(
+        db.specializations,
+        [('specialization_id', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(
+        db.specializations,
+        [('program_id', ASCENDING), ('specialization_code', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(
+        db.specializations,
+        [('program_id', ASCENDING), ('specialization_name', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
+    await _safe_create_index(db.specializations, [('program_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.batches, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.semesters, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(
+        db.semesters,
+        [('batch_id', ASCENDING), ('semester_number', ASCENDING)],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
     await _safe_create_index(db.classes, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.timetables, [('class_id', ASCENDING), ('semester', ASCENDING), ('status', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.timetables, [('entries.teacher_user_id', ASCENDING), ('status', ASCENDING)])
@@ -86,6 +175,21 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.groups, [('section_id', ASCENDING), ('code', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.groups, [('section_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.course_offerings, [('section_id', ASCENDING), ('semester_id', ASCENDING), ('academic_year', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(
+        db.course_offerings,
+        [
+            ('subject_id', ASCENDING),
+            ('teacher_user_id', ASCENDING),
+            ('batch_id', ASCENDING),
+            ('semester_id', ASCENDING),
+            ('section_id', ASCENDING),
+            ('group_id', ASCENDING),
+            ('academic_year', ASCENDING),
+            ('offering_type', ASCENDING),
+        ],
+        unique=True,
+        partialFilterExpression={'is_active': True},
+    )
     await _safe_create_index(db.course_offerings, [('teacher_user_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.class_slots, [('course_offering_id', ASCENDING), ('day', ASCENDING), ('start_time', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.class_slots, [('day', ASCENDING), ('room_code', ASCENDING), ('is_active', ASCENDING)])

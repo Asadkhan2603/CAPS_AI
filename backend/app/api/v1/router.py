@@ -34,15 +34,18 @@ from app.api.v1.endpoints import (
     subjects,
     submissions,
     timetables,
+    universities,
     users,
     programs,
 )
-
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
-# Canonical academic model:
-# Faculty -> Department -> Program -> Specialization -> Batch -> Semester -> Section
+# Academic hierarchy:
+# University -> Faculty -> Department -> Program -> (optional) Specialization -> Batch -> Semester -> Section -> Group
+# Programs may own direct batches or specialization-bound batches. Once a batch is specialization-bound,
+# its semesters, sections, groups, and course delivery records must stay inside that specialization branch.
+api_router.include_router(universities.router, prefix="/universities", tags=["universities"])
 api_router.include_router(programs.router, prefix="/programs", tags=["programs"])
 api_router.include_router(departments.router, prefix="/departments", tags=["departments"])
 api_router.include_router(faculties.router, prefix="/faculties", tags=["faculties"])

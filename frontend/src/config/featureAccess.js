@@ -45,6 +45,10 @@ export const FEATURE_ACCESS = {
     allowedRoles: ['admin'],
     requiredAdminTypes: ['super_admin', 'admin']
   },
+  universities: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin']
+  },
   faculties: {
     allowedRoles: ['admin'],
     requiredAdminTypes: ['super_admin', 'admin', 'academic_admin']

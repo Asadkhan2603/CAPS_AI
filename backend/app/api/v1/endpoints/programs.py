@@ -21,28 +21,85 @@ from app.services.academic_batching import (
     build_semester_document,
     resolve_program_academic_context,
 )
+from app.services.academic_hierarchy import (
+    expected_total_semesters,
+    validate_duration_and_semesters,
+    validate_program_duration,
+)
+from app.services.master_hierarchy import (
+    build_program_business_id,
+    coalesce_code,
+    coalesce_text,
+    ensure_master_hierarchy_change_is_safe,
+    normalize_code,
+)
 from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
 
 router = APIRouter()
 
-MIN_DURATION_YEARS = 3
-MAX_DURATION_YEARS = 5
 AUTO_BATCH_START_YEAR = 2022
 
 
 def _validate_duration_years(duration_years: int) -> int:
-    if duration_years < MIN_DURATION_YEARS:
+    try:
+        return validate_program_duration(duration_years)
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Course duration must be at least 3 years.",
-        )
-    if duration_years > MAX_DURATION_YEARS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Course duration cannot exceed 5 years.",
-        )
-    return int(duration_years)
+            detail=str(exc),
+        ) from exc
+
+
+def _materialize_program_fields(payload: ProgramCreate | ProgramUpdate) -> tuple[str | None, str | None, str | None]:
+    program_name = coalesce_text(getattr(payload, "program_name", None), getattr(payload, "name", None))
+    program_code = coalesce_code(getattr(payload, "program_code", None), getattr(payload, "code", None))
+    program_id = normalize_code(getattr(payload, "program_id", None))
+    return program_name, program_code, program_id
+
+
+def _normalized_total_semesters(payload: ProgramCreate | ProgramUpdate, duration_years: int) -> int:
+    try:
+        _, total_semesters = validate_duration_and_semesters(duration_years, getattr(payload, "total_semesters", None))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return total_semesters
+
+
+async def _safe_find_department(department_id: str | None) -> dict[str, Any] | None:
+    if not department_id:
+        return None
+    try:
+        return await db.departments.find_one({"_id": parse_object_id(department_id)})
+    except HTTPException:
+        return None
+
+
+async def _safe_find_faculty(faculty_id: str | None) -> dict[str, Any] | None:
+    if not faculty_id:
+        return None
+    try:
+        return await db.faculties.find_one({"_id": parse_object_id(str(faculty_id))})
+    except HTTPException:
+        return None
+
+
+def _resolve_department_code(department: dict[str, Any] | None) -> str:
+    code = str((department or {}).get("department_code") or (department or {}).get("code") or "").strip().upper()
+    if code:
+        return code
+    department_business_id = str((department or {}).get("department_id") or "").strip().upper()
+    parts = [part for part in department_business_id.split("-") if part]
+    return parts[-1] if parts else "GEN"
+
+
+def _resolve_faculty_code(*, faculty: dict[str, Any] | None, department: dict[str, Any] | None) -> str:
+    code = str((faculty or {}).get("faculty_code") or (faculty or {}).get("code") or "").strip().upper()
+    if code:
+        return code
+    department_business_id = str((department or {}).get("department_id") or "").strip().upper()
+    parts = [part for part in department_business_id.split("-") if part]
+    return parts[1] if len(parts) >= 3 else "GEN"
 
 
 async def _program_has_enrolled_semester_students(program_id: str) -> bool:
@@ -265,8 +322,11 @@ async def list_programs(
         query["department_id"] = department_id
     if q:
         query["$or"] = [
+            {"program_name": {"$regex": q, "$options": "i"}},
             {"name": {"$regex": q, "$options": "i"}},
+            {"program_code": {"$regex": q, "$options": "i"}},
             {"code": {"$regex": q, "$options": "i"}},
+            {"program_id": {"$regex": q, "$options": "i"}},
         ]
     apply_is_active_filter(query, is_active)
     items = await db.programs.find(query).skip(skip).limit(limit).to_list(length=limit)
@@ -293,16 +353,43 @@ async def create_program(
     if not department:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department not found for provided department_id")
     duration_years = _validate_duration_years(payload.duration_years)
-    normalized_code = payload.code.strip().upper()
-    existing = await db.programs.find_one({"code": normalized_code})
+    total_semesters = _normalized_total_semesters(payload, duration_years)
+    program_name, program_code, program_business_id = _materialize_program_fields(payload)
+    if not program_name or not program_code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program name and code are required")
+    faculty = await _safe_find_faculty(department.get("faculty_id"))
+    if not program_business_id:
+        program_business_id = build_program_business_id(
+            faculty_code=_resolve_faculty_code(faculty=faculty, department=department),
+            department_code=_resolve_department_code(department),
+            program_code=program_code,
+        )
+    existing = await db.programs.find_one(
+        {
+            "$or": [
+                {"program_id": program_business_id},
+                {"department_id": payload.department_id, "program_code": program_code},
+                {"department_id": payload.department_id, "code": program_code},
+            ]
+        }
+    )
     if existing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program code already exists")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program ID or code already exists")
     document = {
-        "name": payload.name.strip(),
-        "code": normalized_code,
+        "program_id": program_business_id,
+        "program_code": program_code,
+        "program_name": program_name,
+        "name": program_name,
+        "code": program_code,
         "department_id": payload.department_id,
         "duration_years": duration_years,
-        "total_semesters": duration_years * SEMESTERS_PER_YEAR,
+        "total_semesters": total_semesters,
+        "department_master_id": department.get("department_id"),
+        "department_name": department.get("department_name") or department.get("name"),
+        "department_code": department.get("department_code") or department.get("code"),
+        "faculty_master_id": department.get("faculty_master_id"),
+        "faculty_code": department.get("faculty_code"),
+        "degree_type": coalesce_text(payload.degree_type),
         "description": payload.description,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
@@ -337,17 +424,58 @@ async def update_program(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
 
     update_data = payload.model_dump(exclude_none=True)
-    if "name" in update_data and update_data["name"]:
-        update_data["name"] = update_data["name"].strip()
-    if "code" in update_data and update_data["code"]:
-        update_data["code"] = update_data["code"].strip().upper()
-        duplicate = await db.programs.find_one({"code": update_data["code"]})
-        if duplicate and duplicate.get("_id") != program_obj_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program code already exists")
+    if any(key in update_data for key in ("department_master_id", "department_name", "department_code", "faculty_master_id", "faculty_code")) and "department_id" not in update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Program lineage fields are derived from the selected department and cannot be edited independently.",
+        )
+    department = None
     if "department_id" in update_data:
+        if update_data["department_id"] != current.get("department_id"):
+            try:
+                await ensure_master_hierarchy_change_is_safe(
+                    db,
+                    entity_kind="program",
+                    entity_doc_id=program_id,
+                    operation="move to another department",
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         department = await db.departments.find_one({"_id": parse_object_id(update_data["department_id"])})
         if not department:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department not found for provided department_id")
+    else:
+        department = await _safe_find_department(current.get("department_id"))
+    faculty = await _safe_find_faculty(department.get("faculty_id") if department else None)
+    program_name, program_code, program_business_id = _materialize_program_fields(payload)
+    if any(key in update_data for key in ("program_name", "name")):
+        update_data["program_name"] = program_name
+        update_data["name"] = program_name
+    if any(key in update_data for key in ("program_code", "code")):
+        update_data["program_code"] = program_code
+        update_data["code"] = program_code
+    if any(key in update_data for key in ("program_id", "program_code", "code", "department_id")) and not update_data.get("program_id"):
+        effective_program_code = update_data.get("program_code", current.get("program_code") or current.get("code"))
+        update_data["program_id"] = build_program_business_id(
+            faculty_code=_resolve_faculty_code(faculty=faculty, department=department),
+            department_code=_resolve_department_code(department),
+            program_code=effective_program_code,
+        )
+    next_code = update_data.get("program_code", current.get("program_code") or current.get("code"))
+    next_program_id = update_data.get("program_id", current.get("program_id"))
+    if next_code or next_program_id:
+        duplicate = await db.programs.find_one(
+            {
+                "_id": {"$ne": program_obj_id},
+                "$or": [
+                    {"program_id": next_program_id},
+                    {"department_id": update_data.get("department_id", current.get("department_id")), "program_code": next_code},
+                    {"department_id": update_data.get("department_id", current.get("department_id")), "code": next_code},
+                ],
+            }
+        )
+        if duplicate and duplicate.get("_id") != program_obj_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program ID or code already exists")
 
     if "duration_years" in update_data:
         new_duration_years = _validate_duration_years(int(update_data["duration_years"]))
@@ -358,7 +486,25 @@ async def update_program(
                 detail="Cannot change course duration because students are already enrolled in existing semesters.",
             )
         update_data["duration_years"] = new_duration_years
-        update_data["total_semesters"] = new_duration_years * SEMESTERS_PER_YEAR
+    effective_duration_years = int(update_data.get("duration_years", current.get("duration_years") or 4))
+    if "duration_years" in update_data or "total_semesters" in update_data:
+        try:
+            _, total_semesters = validate_duration_and_semesters(
+                effective_duration_years,
+                update_data.get("total_semesters", current.get("total_semesters")),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        update_data["total_semesters"] = total_semesters
+    if department:
+        if any(field in update_data for field in ("department_id", "program_code", "code", "program_id")):
+            update_data["department_master_id"] = department.get("department_id")
+            update_data["department_name"] = department.get("department_name") or department.get("name")
+            update_data["department_code"] = department.get("department_code") or department.get("code")
+            update_data["faculty_master_id"] = department.get("faculty_master_id")
+            update_data["faculty_code"] = department.get("faculty_code")
+    if "degree_type" in update_data and update_data["degree_type"]:
+        update_data["degree_type"] = str(update_data["degree_type"]).strip()
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
@@ -367,8 +513,15 @@ async def update_program(
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
     updated = await db.programs.find_one({"_id": program_obj_id})
-    if "duration_years" in update_data:
-        await _sync_auto_generated_batches(program_id, int(update_data["duration_years"]))
+    if updated and any(field in update_data for field in ("duration_years", "name", "code", "department_id")):
+        await _sync_auto_generated_batches(program_id, int(updated.get("duration_years") or 4))
+        from app.api.v1.endpoints.specializations import _sync_specialization_batches
+
+        specializations = await db.specializations.find({"program_id": program_id}, {"_id": 1}).to_list(length=1000)
+        for specialization in specializations:
+            specialization_id = str(specialization.get("_id") or "")
+            if specialization_id:
+                await _sync_specialization_batches(specialization_id)
     return ProgramOut(**program_public(updated))
 
 
@@ -378,6 +531,15 @@ async def delete_program(
     review_id: str | None = Query(default=None),
     current_user=Depends(require_permission("programs.manage")),
 ) -> dict:
+    try:
+        await ensure_master_hierarchy_change_is_safe(
+            db,
+            entity_kind="program",
+            entity_doc_id=program_id,
+            operation="archive",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     actor_user_id = str(current_user.get("_id") or "") or None
     await log_destructive_action_event(
         actor_user_id=actor_user_id,

@@ -11,10 +11,27 @@ from app.core.soft_delete import apply_is_active_filter, build_soft_delete_updat
 from app.models.semesters import semester_public
 from app.schemas.semester_item import SemesterCreate, SemesterOut, SemesterUpdate
 from app.services.academic_batching import build_semester_academic_year
+from app.services.academic_hierarchy import validate_semester_number_for_program
 from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
 
 router = APIRouter()
+
+
+async def _resolve_program_for_batch(batch: dict[str, Any]) -> dict[str, Any]:
+    program_id = batch.get("program_id")
+    if not program_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Batch is missing its parent program reference.",
+        )
+    program = await db.programs.find_one({"_id": parse_object_id(program_id)})
+    if not program:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Program not found for the batch linked to this semester.",
+        )
+    return program
 
 
 @router.get("/", response_model=List[SemesterOut])
@@ -58,6 +75,11 @@ async def create_semester(
     batch = await db.batches.find_one({"_id": parse_object_id(payload.batch_id)})
     if not batch:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch not found for provided batch_id")
+    program = await _resolve_program_for_batch(batch)
+    try:
+        validate_semester_number_for_program(payload.semester_number, program=program)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     duplicate = await db.semesters.find_one({"batch_id": payload.batch_id, "semester_number": payload.semester_number})
     if duplicate:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Semester already exists for this batch")
@@ -107,6 +129,11 @@ async def update_semester(
         batch = await db.batches.find_one({"_id": parse_object_id(target_batch_id)})
         if not batch:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch not found for provided batch_id")
+        program = await _resolve_program_for_batch(batch)
+        try:
+            validate_semester_number_for_program(target_sem_number, program=program)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         academic_year_start, academic_year_end, academic_year_label = build_semester_academic_year(
             batch_start_year=batch.get("start_year"),
             semester_number=int(target_sem_number),

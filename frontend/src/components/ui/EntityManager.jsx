@@ -22,6 +22,7 @@ const DEFAULT_DELETE_REVIEW_CONFIG = {
     'This delete operation requires an approved governance review. Enter the approved review_id and any supporting metadata before retrying the delete.',
   metadataFields: []
 };
+const EMPTY_DELETE_GOVERNANCE = Object.freeze({});
 
 function getFeatureKeyFromPath(...paths) {
   const rawPath = paths.find(Boolean);
@@ -162,7 +163,7 @@ export default function EntityManager({
   const updatePath = ensureTrailingSlash(updateEndpoint || endpoint);
   const deletePath = (deleteEndpoint || listEndpoint || endpoint).replace(/\/+$/, '');
   const resolvedFeatureKey = featureKey || getFeatureKeyFromPath(deleteEndpoint, listEndpoint, endpoint);
-  const configuredDeleteGovernance = FEATURE_ACCESS[resolvedFeatureKey]?.deleteGovernance || {};
+  const configuredDeleteGovernance = FEATURE_ACCESS[resolvedFeatureKey]?.deleteGovernance ?? EMPTY_DELETE_GOVERNANCE;
   const deleteReviewConfig = useMemo(() => {
     const merged = {
       ...DEFAULT_DELETE_REVIEW_CONFIG,
@@ -325,6 +326,27 @@ export default function EntityManager({
     }
 
     return options.filter((option) => String(option?.[matchKey]) === String(parentValue));
+  }
+
+  function resolveSelectedLabel(field, mode, nextCreateValues = createValues, nextFilterValues = searchDraftValues) {
+    if (typeof field.selectedLabelResolver === 'function') {
+      return (
+        field.selectedLabelResolver({
+          mode,
+          createValues: nextCreateValues,
+          filterValues: nextFilterValues,
+          rows
+        }) || ''
+      );
+    }
+
+    const currentValue = mode === 'create' ? nextCreateValues?.[field.name] : nextFilterValues?.[field.name];
+    if (currentValue === '' || currentValue === null || currentValue === undefined) {
+      return '';
+    }
+    const options = resolveFieldOptions(field, mode, nextCreateValues, nextFilterValues);
+    const selected = options.find((option) => String(option.value) === String(currentValue));
+    return selected?.label || '';
   }
 
   function onSearchDraftChange(name, value) {
@@ -650,7 +672,20 @@ export default function EntityManager({
                   key={field.name}
                   label={field.label}
                   value={searchDraftValues[field.name]}
+                  loadOptions={
+                    typeof field.loadOptions === 'function'
+                      ? (query) =>
+                          field.loadOptions({
+                            query,
+                            mode: 'filter',
+                            createValues,
+                            filterValues: searchDraftValues,
+                            rows
+                          })
+                      : undefined
+                  }
                   options={resolveFieldOptions(field, 'filter', createValues, searchDraftValues)}
+                  selectedLabel={resolveSelectedLabel(field, 'filter', createValues, searchDraftValues)}
                   placeholder={field.placeholder || `Search ${field.label}`}
                   allowEmpty
                   emptyLabel={field.placeholder || `All ${field.label}`}
@@ -729,9 +764,23 @@ export default function EntityManager({
                   key={field.name}
                   label={field.label}
                   value={createValues[field.name]}
+                  loadOptions={
+                    typeof field.loadOptions === 'function'
+                      ? (query) =>
+                          field.loadOptions({
+                            query,
+                            mode: 'create',
+                            createValues,
+                            filterValues: searchDraftValues,
+                            rows
+                          })
+                      : undefined
+                  }
                   options={resolveFieldOptions(field, 'create', createValues, searchDraftValues)}
+                  selectedLabel={resolveSelectedLabel(field, 'create', createValues, searchDraftValues)}
                   placeholder={field.placeholder || `Search ${field.label}`}
                   required={field.required}
+                  disabled={Boolean(field.disabledWhen?.({ createValues, filterValues: searchDraftValues, rows }))}
                   allowEmpty={!field.required}
                   emptyLabel={field.placeholder || `Select ${field.label}`}
                   onValueChange={(nextValue) => onCreateChange(field.name, nextValue)}

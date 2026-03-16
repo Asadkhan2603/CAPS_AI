@@ -9,6 +9,7 @@ from app.core.schema_versions import COURSE_OFFERING_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.course_offerings import course_offering_public
 from app.schemas.course_offering import CourseOfferingCreate, CourseOfferingOut, CourseOfferingUpdate
+from app.services.academic_hierarchy import validate_section_branch
 
 router = APIRouter()
 
@@ -70,6 +71,14 @@ async def _validate_payload(payload: CourseOfferingCreate | CourseOfferingUpdate
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Semester not found")
     if semester.get("batch_id") != merged["batch_id"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="semester_id does not belong to provided batch_id")
+    try:
+        validate_section_branch(
+            section=section,
+            batch_id=merged["batch_id"],
+            semester_id=merged["semester_id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     if merged.get("group_id"):
         group = await db.groups.find_one({"_id": parse_object_id(merged["group_id"]), "is_active": True})
@@ -129,15 +138,18 @@ async def list_course_offerings(
     section_ids = [item.get("section_id") for item in items if item.get("section_id")]
     group_ids = [item.get("group_id") for item in items if item.get("group_id")]
     semester_ids = [item.get("semester_id") for item in items if item.get("semester_id")]
+    batch_ids = [item.get("batch_id") for item in items if item.get("batch_id")]
 
     subjects = await db.subjects.find({"_id": {"$in": _safe_object_ids(subject_ids)}}, {"name": 1, "code": 1}).to_list(length=5000)
     teachers = await db.users.find({"_id": {"$in": _safe_object_ids(teacher_ids)}}, {"full_name": 1}).to_list(length=5000)
+    batches = await db.batches.find({"_id": {"$in": _safe_object_ids(batch_ids)}}, {"name": 1, "code": 1}).to_list(length=5000)
     sections = await db.classes.find({"_id": {"$in": _safe_object_ids(section_ids)}}, {"name": 1}).to_list(length=5000)
     groups = await db.groups.find({"_id": {"$in": _safe_object_ids(group_ids)}}, {"name": 1}).to_list(length=5000)
     semesters = await db.semesters.find({"_id": {"$in": _safe_object_ids(semester_ids)}}, {"label": 1}).to_list(length=5000)
 
     subject_map = {str(item["_id"]): item for item in subjects if item.get("_id")}
     teacher_map = {str(item["_id"]): item for item in teachers if item.get("_id")}
+    batch_map = {str(item["_id"]): item for item in batches if item.get("_id")}
     section_map = {str(item["_id"]): item for item in sections if item.get("_id")}
     group_map = {str(item["_id"]): item for item in groups if item.get("_id")}
     semester_map = {str(item["_id"]): item for item in semesters if item.get("_id")}
@@ -147,12 +159,14 @@ async def list_course_offerings(
         payload = course_offering_public(item)
         subject = subject_map.get(payload["subject_id"], {})
         teacher = teacher_map.get(payload["teacher_user_id"], {})
+        batch = batch_map.get(payload["batch_id"], {})
         section = section_map.get(payload["section_id"], {})
         group = group_map.get(payload["group_id"], {})
         semester = semester_map.get(payload["semester_id"], {})
         payload["subject_name"] = subject.get("name")
         payload["subject_code"] = subject.get("code")
         payload["teacher_name"] = teacher.get("full_name")
+        payload["batch_name"] = batch.get("name")
         payload["section_name"] = section.get("name")
         payload["group_name"] = group.get("name")
         payload["semester_label"] = semester.get("label")

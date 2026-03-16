@@ -56,13 +56,24 @@ def build_program_batch_prefix(*, program_name: str | None, program_code: str | 
     return None
 
 
-def build_batch_identity(*, program_batch_prefix: str | None, start_year: int, end_year: int, university_code: str | None = None) -> tuple[str, str]:
+def build_batch_identity(
+    *,
+    program_batch_prefix: str | None,
+    start_year: int,
+    end_year: int,
+    university_code: str | None = None,
+    specialization_code: str | None = None,
+) -> tuple[str, str]:
     start_short = str(start_year)[-2:]
     end_short = str(end_year)[-2:]
     span_label = build_batch_span_label(start_year, end_year) or str(start_year)
 
     name = f"Batch {span_label}"
-    code_parts = [str(program_batch_prefix or "").strip(), f"B{start_short}-{end_short}"]
+    code_parts = [
+        str(program_batch_prefix or "").strip(),
+        str(specialization_code or "").strip().upper(),
+        f"B{start_short}-{end_short}",
+    ]
     code = "-".join(part for part in code_parts if part)
     if not code and university_code:
         code = f"{str(university_code).strip().upper()}-B{start_short}-{end_short}"
@@ -112,19 +123,21 @@ async def resolve_program_academic_context(db, *, program: dict[str, Any]) -> di
         university_name = university_name or faculty.get("university_name") or None
         university_code = university_code or faculty.get("university_code") or None
 
+    resolved_university_code = university_code or (department.get("university_master_id") if department else None)
+
     return {
         "faculty_id": faculty_id,
         "department_id": department_id,
         "program_id": str(program.get("_id")) if program.get("_id") else program.get("id"),
-        "program_name": str(program.get("name") or "").strip() or None,
-        "program_code": str(program.get("code") or "").strip().upper() or None,
+        "program_name": str(program.get("program_name") or program.get("name") or "").strip() or None,
+        "program_code": str(program.get("program_code") or program.get("code") or "").strip().upper() or None,
         "program_batch_prefix": build_program_batch_prefix(
-            program_name=program.get("name"),
-            program_code=program.get("code"),
-            university_code=university_code,
+            program_name=program.get("program_name") or program.get("name"),
+            program_code=program.get("program_code") or program.get("code"),
+            university_code=resolved_university_code,
         ),
         "university_name": university_name,
-        "university_code": str(university_code).strip().upper() if university_code else None,
+        "university_code": str(resolved_university_code).strip().upper() if resolved_university_code else None,
     }
 
 

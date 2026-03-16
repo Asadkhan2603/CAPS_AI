@@ -10,6 +10,7 @@ from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.classes import class_public
 from app.schemas.class_item import ClassCreate, ClassOut, ClassUpdate
+from app.services.academic_hierarchy import validate_batch_specialization_scope
 from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
 
@@ -58,8 +59,13 @@ async def _validate_section_relations(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Batch not found for provided batch_id')
         if program_id and batch.get('program_id') != program_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='batch_id does not belong to provided program_id')
-        if specialization_id and batch.get('specialization_id') and batch.get('specialization_id') != specialization_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='batch_id does not belong to provided specialization_id')
+        try:
+            validate_batch_specialization_scope(
+                batch_specialization_id=batch.get('specialization_id'),
+                child_specialization_id=specialization_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     if semester_id:
         semester = await db.semesters.find_one({'_id': parse_object_id(semester_id)})
@@ -171,7 +177,7 @@ async def update_class(
     if not current:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
 
-    update_data = payload.model_dump(exclude_none=True)
+    update_data = payload.model_dump(exclude_unset=True)
     if 'name' in update_data and update_data['name']:
         update_data['name'] = update_data['name'].strip()
     if 'faculty_name' in update_data and update_data['faculty_name']:

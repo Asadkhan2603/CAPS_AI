@@ -23,6 +23,7 @@ const TimetablePage = lazy(() => import('../pages/TimetablePage'));
 const AcademicStructurePage = lazy(() => import('../pages/AcademicStructurePage'));
 const AnalyticsPage = lazy(() => import('../pages/AnalyticsPage'));
 const ProgramsPage = lazy(() => import('../pages/ProgramsPage'));
+const UniversitiesPage = lazy(() => import('../pages/UniversitiesPage'));
 const FacultiesPage = lazy(() => import('../pages/FacultiesPage'));
 const DepartmentsPage = lazy(() => import('../pages/DepartmentsPage'));
 const SpecializationsPage = lazy(() => import('../pages/SpecializationsPage'));
@@ -56,7 +57,7 @@ const EvaluateSubmissionPage = lazy(() => import('../pages/Teacher/EvaluateSubmi
 const workspaceRouteMap = {
   '/admin/dashboard': { access: FEATURE_ACCESS.adminDashboard, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'], element: <AdminDashboardPage /> },
   '/admin/governance': { access: FEATURE_ACCESS.adminGovernance, requiredAdminTypes: ['super_admin', 'admin'], element: <AdminGovernancePage /> },
-  '/admin/academic-structure': { access: FEATURE_ACCESS.adminAcademicStructure, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'], element: <Navigate to="/faculties" replace /> },
+  '/admin/academic-structure': { access: FEATURE_ACCESS.adminAcademicStructure, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'], element: <Navigate to="/academic-structure" replace /> },
   '/admin/operations': { access: FEATURE_ACCESS.adminOperations, requiredAdminTypes: ['super_admin', 'admin'], element: <Navigate to="/students" replace /> },
   '/admin/clubs': { access: FEATURE_ACCESS.adminClubs, requiredAdminTypes: ['super_admin', 'admin'], element: <Navigate to="/clubs" replace /> },
   '/admin/communication': { access: FEATURE_ACCESS.adminCommunication, requiredAdminTypes: ['super_admin', 'admin'], element: <Navigate to="/communication/announcements" replace /> },
@@ -94,6 +95,7 @@ const workspaceRouteMap = {
   '/audit-logs': { access: FEATURE_ACCESS.auditLogs, element: <AuditLogsPage /> },
   '/developer-panel': { access: FEATURE_ACCESS.developerPanel, element: <DeveloperPanelPage /> },
   '/users': { access: FEATURE_ACCESS.users, element: <UsersPage /> },
+  '/universities': { access: FEATURE_ACCESS.universities, element: <UniversitiesPage /> },
   '/faculties': { access: FEATURE_ACCESS.faculties, element: <FacultiesPage /> },
   '/departments': { access: FEATURE_ACCESS.departments, element: <DepartmentsPage /> },
   '/programs': { access: FEATURE_ACCESS.programs, element: <ProgramsPage /> },
@@ -201,6 +203,7 @@ export function AppRoutes() {
           <Route path="/workspace/:groupKey/*" element={<WorkspaceModuleRoute />} />
           <Route path="/academic-structure" element={<WorkspaceRedirect path="/academic-structure" />} />
           <Route path="/faculties" element={<WorkspaceRedirect path="/faculties" />} />
+          <Route path="/universities" element={<WorkspaceRedirect path="/universities" />} />
           <Route path="/courses" element={<Navigate to="/programs" replace />} />
           <Route path="/programs" element={<WorkspaceRedirect path="/programs" />} />
           <Route path="/departments" element={<WorkspaceRedirect path="/departments" />} />

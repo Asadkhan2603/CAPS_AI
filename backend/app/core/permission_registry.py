@@ -26,6 +26,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, set[str]]] = {
         "admin_types": {"super_admin", "admin"},
         "teacher_extensions": {"year_head", "class_coordinator", "club_coordinator"},
     },
+    "universities.manage": _admin_rule("super_admin", "admin", "academic_admin"),
     "faculties.manage": _admin_rule("super_admin", "admin", "academic_admin"),
     "departments.manage": _admin_rule("super_admin", "admin", "academic_admin"),
     "programs.manage": _admin_rule("super_admin", "admin", "academic_admin", "department_admin"),
@@ -55,6 +56,12 @@ PERMISSION_REGISTRY: dict[str, dict[str, set[str]]] = {
 
 
 ACADEMIC_ROUTE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
+    "/universities": {
+        "GET": "role:admin|teacher",
+        "POST": "universities.manage",
+        "PUT": "universities.manage",
+        "DELETE": "universities.manage",
+    },
     "/faculties": {
         "GET": "role:admin|teacher",
         "POST": "faculties.manage",

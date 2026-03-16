@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
+import SearchableSelect from '../components/ui/SearchableSelect';
 import Table from '../components/ui/Table';
-import { apiClient } from '../services/apiClient';
 import { createSection, getSections } from '../services/sectionsApi';
+import { apiClient } from '../services/apiClient';
+import { searchLookupOptions } from '../services/paginatedLookups';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../hooks/useAuth';
 import { formatApiError } from '../utils/apiError';
@@ -53,9 +55,15 @@ export default function ClassesPage() {
     () => Object.fromEntries(specializations.map((item) => [item.id, item.name])),
     [specializations]
   );
+  const batchById = useMemo(() => Object.fromEntries(batches.map((item) => [item.id, item])), [batches]);
   const batchNameById = useMemo(() => Object.fromEntries(batches.map((item) => [item.id, item.name])), [batches]);
   const semesterLabelById = useMemo(() => Object.fromEntries(semesters.map((item) => [item.id, item.label])), [semesters]);
   const teacherNameById = useMemo(() => Object.fromEntries(teachers.map((item) => [item.id, item.full_name])), [teachers]);
+
+  const selectedFormBatch = form.batch_id ? batchById[form.batch_id] || null : null;
+  const selectedFilterBatch = filters.batch_id ? batchById[filters.batch_id] || null : null;
+  const formBatchSpecializationId = selectedFormBatch?.specialization_id || '';
+  const filterBatchSpecializationId = selectedFilterBatch?.specialization_id || '';
 
   const availableDepartmentsForForm = useMemo(
     () => departments.filter((item) => !form.faculty_id || item.faculty_id === form.faculty_id),
@@ -66,8 +74,16 @@ export default function ClassesPage() {
     [programs, form.department_id]
   );
   const availableSpecializationsForForm = useMemo(
-    () => specializations.filter((item) => !form.program_id || item.program_id === form.program_id),
-    [specializations, form.program_id]
+    () => {
+      if (formBatchSpecializationId) {
+        return specializations.filter((item) => item.id === formBatchSpecializationId);
+      }
+      if (selectedFormBatch && !selectedFormBatch.specialization_id) {
+        return [];
+      }
+      return specializations.filter((item) => !form.program_id || item.program_id === form.program_id);
+    },
+    [form.program_id, formBatchSpecializationId, selectedFormBatch, specializations]
   );
   const availableBatchesForForm = useMemo(
     () =>
@@ -92,8 +108,16 @@ export default function ClassesPage() {
     [programs, filters.department_id]
   );
   const availableSpecializationsForFilters = useMemo(
-    () => specializations.filter((item) => !filters.program_id || item.program_id === filters.program_id),
-    [specializations, filters.program_id]
+    () => {
+      if (filterBatchSpecializationId) {
+        return specializations.filter((item) => item.id === filterBatchSpecializationId);
+      }
+      if (selectedFilterBatch && !selectedFilterBatch.specialization_id) {
+        return [];
+      }
+      return specializations.filter((item) => !filters.program_id || item.program_id === filters.program_id);
+    },
+    [filterBatchSpecializationId, filters.program_id, selectedFilterBatch, specializations]
   );
   const availableBatchesForFilters = useMemo(
     () =>
@@ -109,29 +133,158 @@ export default function ClassesPage() {
     [semesters, filters.batch_id]
   );
 
-  async function loadLookups() {
-    const requests = [
-      apiClient.get('/faculties/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/departments/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/programs/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/specializations/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/batches/', { params: { skip: 0, limit: 100 } }),
-      apiClient.get('/semesters/', { params: { skip: 0, limit: 100 } })
-    ];
-    if (isAdmin) requests.push(apiClient.get('/users/'));
-    const results = await Promise.allSettled(requests);
+  function mergeRows(setter, rows) {
+    setter((prev) => {
+      const merged = new Map((prev || []).map((item) => [String(item.id), item]));
+      (rows || []).forEach((item) => {
+        if (item?.id) {
+          merged.set(String(item.id), item);
+        }
+      });
+      return Array.from(merged.values());
+    });
+  }
 
-    setFaculties(results[0].status === 'fulfilled' ? results[0].value.data || [] : []);
-    setDepartments(results[1].status === 'fulfilled' ? results[1].value.data || [] : []);
-    setPrograms(results[2].status === 'fulfilled' ? results[2].value.data || [] : []);
-    setSpecializations(results[3].status === 'fulfilled' ? results[3].value.data || [] : []);
-    setBatches(results[4].status === 'fulfilled' ? results[4].value.data || [] : []);
-    setSemesters(results[5].status === 'fulfilled' ? results[5].value.data || [] : []);
-    setTeachers(
-      isAdmin && results[6]?.status === 'fulfilled'
-        ? (results[6].value.data || []).filter((item) => item.role === 'teacher')
-        : []
+  async function hydrateRows(loadedRows) {
+    const facultyIds = Array.from(new Set((loadedRows || []).map((item) => item.faculty_id).filter(Boolean)));
+    const departmentIds = Array.from(new Set((loadedRows || []).map((item) => item.department_id).filter(Boolean)));
+    const programIds = Array.from(new Set((loadedRows || []).map((item) => item.program_id).filter(Boolean)));
+    const specializationIds = Array.from(new Set((loadedRows || []).map((item) => item.specialization_id).filter(Boolean)));
+    const batchIds = Array.from(new Set((loadedRows || []).map((item) => item.batch_id).filter(Boolean)));
+    const semesterIds = Array.from(new Set((loadedRows || []).map((item) => item.semester_id).filter(Boolean)));
+    const teacherIds = Array.from(new Set((loadedRows || []).map((item) => item.class_coordinator_user_id).filter(Boolean)));
+
+    const knownFacultyIds = new Set(faculties.map((item) => item.id));
+    const knownDepartmentIds = new Set(departments.map((item) => item.id));
+    const knownProgramIds = new Set(programs.map((item) => item.id));
+    const knownSpecializationIds = new Set(specializations.map((item) => item.id));
+    const knownBatchIds = new Set(batches.map((item) => item.id));
+    const knownSemesterIds = new Set(semesters.map((item) => item.id));
+    const knownTeacherIds = new Set(teachers.map((item) => item.id));
+
+    const [facultyResponses, departmentResponses, programResponses, specializationResponses, batchResponses, semesterResponses, teacherResponses] =
+      await Promise.all([
+        Promise.allSettled(facultyIds.filter((id) => !knownFacultyIds.has(id)).map((id) => apiClient.get(`/faculties/${id}`))),
+        Promise.allSettled(departmentIds.filter((id) => !knownDepartmentIds.has(id)).map((id) => apiClient.get(`/departments/${id}`))),
+        Promise.allSettled(programIds.filter((id) => !knownProgramIds.has(id)).map((id) => apiClient.get(`/programs/${id}`))),
+        Promise.allSettled(specializationIds.filter((id) => !knownSpecializationIds.has(id)).map((id) => apiClient.get(`/specializations/${id}`))),
+        Promise.allSettled(batchIds.filter((id) => !knownBatchIds.has(id)).map((id) => apiClient.get(`/batches/${id}`))),
+        Promise.allSettled(semesterIds.filter((id) => !knownSemesterIds.has(id)).map((id) => apiClient.get(`/semesters/${id}`))),
+        Promise.allSettled(teacherIds.filter((id) => !knownTeacherIds.has(id)).map((id) => apiClient.get(`/users/${id}`)))
+      ]);
+
+    mergeRows(setFaculties, facultyResponses.filter((result) => result.status === 'fulfilled').map((result) => result.value.data));
+    mergeRows(setDepartments, departmentResponses.filter((result) => result.status === 'fulfilled').map((result) => result.value.data));
+    mergeRows(setPrograms, programResponses.filter((result) => result.status === 'fulfilled').map((result) => result.value.data));
+    mergeRows(
+      setSpecializations,
+      specializationResponses.filter((result) => result.status === 'fulfilled').map((result) => result.value.data)
     );
+    mergeRows(setBatches, batchResponses.filter((result) => result.status === 'fulfilled').map((result) => result.value.data));
+    mergeRows(setSemesters, semesterResponses.filter((result) => result.status === 'fulfilled').map((result) => result.value.data));
+    mergeRows(
+      setTeachers,
+      teacherResponses.filter((result) => result.status === 'fulfilled').map((result) => result.value.data)
+    );
+  }
+
+  async function loadFacultyOptions(query) {
+    const options = await searchLookupOptions({
+      path: '/faculties/',
+      q: query,
+      params: { is_active: true },
+      mapOption: (item) => ({ value: item.id, label: item.name })
+    });
+    mergeRows(setFaculties, options.map((item) => ({ id: item.value, name: item.label })));
+    return options;
+  }
+
+  async function loadDepartmentOptions(query, facultyId) {
+    if (!facultyId) return [];
+    const options = await searchLookupOptions({
+      path: '/departments/',
+      q: query,
+      params: { is_active: true, faculty_id: facultyId },
+      mapOption: (item) => ({ value: item.id, label: item.name, faculty_id: item.faculty_id })
+    });
+    mergeRows(setDepartments, options.map((item) => ({ id: item.value, name: item.label, faculty_id: item.faculty_id })));
+    return options;
+  }
+
+  async function loadProgramOptions(query, departmentId) {
+    if (!departmentId) return [];
+    const options = await searchLookupOptions({
+      path: '/programs/',
+      q: query,
+      params: { is_active: true, department_id: departmentId },
+      mapOption: (item) => ({ value: item.id, label: item.name, department_id: item.department_id })
+    });
+    mergeRows(setPrograms, options.map((item) => ({ id: item.value, name: item.label, department_id: item.department_id })));
+    return options;
+  }
+
+  async function loadSpecializationOptions(query, programId) {
+    if (!programId) return [];
+    const options = await searchLookupOptions({
+      path: '/specializations/',
+      q: query,
+      params: { is_active: true, program_id: programId },
+      mapOption: (item) => ({ value: item.id, label: item.name, program_id: item.program_id })
+    });
+    mergeRows(setSpecializations, options.map((item) => ({ id: item.value, name: item.label, program_id: item.program_id })));
+    return options;
+  }
+
+  async function loadBatchOptions(query, programId, specializationId) {
+    if (!programId) return [];
+    const options = await searchLookupOptions({
+      path: '/batches/',
+      q: query,
+      params: { is_active: true, program_id: programId, specialization_id: specializationId || undefined },
+      mapOption: (item) => ({
+        value: item.id,
+        label: item.name,
+        program_id: item.program_id,
+        specialization_id: item.specialization_id
+      })
+    });
+    mergeRows(
+      setBatches,
+      options.map((item) => ({
+        id: item.value,
+        name: item.label,
+        program_id: item.program_id,
+        specialization_id: item.specialization_id
+      }))
+    );
+    return options;
+  }
+
+  async function loadSemesterOptions(query, batchId) {
+    if (!batchId) return [];
+    const options = await searchLookupOptions({
+      path: '/semesters/',
+      q: query,
+      params: { is_active: true, batch_id: batchId },
+      mapOption: (item) => ({ value: item.id, label: item.label, batch_id: item.batch_id })
+    });
+    mergeRows(setSemesters, options.map((item) => ({ id: item.value, label: item.label, batch_id: item.batch_id })));
+    return options;
+  }
+
+  async function loadTeacherOptions(query) {
+    if (!isAdmin) return [];
+    const options = await searchLookupOptions({
+      path: '/users/',
+      q: query,
+      params: { role: 'teacher', is_active: true, limit: 20 },
+      mapOption: (item) => ({ value: item.id, label: `${item.full_name} (${item.email})`, full_name: item.full_name })
+    });
+    mergeRows(
+      setTeachers,
+      options.map((item) => ({ id: item.value, full_name: item.full_name || item.label }))
+    );
+    return options;
   }
 
   async function loadSections() {
@@ -159,12 +312,32 @@ export default function ClassesPage() {
   }
 
   useEffect(() => {
-    loadLookups();
-  }, []);
-
-  useEffect(() => {
     loadSections();
   }, [skip, limit, filters]);
+
+  useEffect(() => {
+    hydrateRows(rows);
+  }, [rows]);
+
+  function handleFormBatchChange(batchId) {
+    const nextBatch = batchId ? batchById[batchId] || null : null;
+    setForm((prev) => ({
+      ...prev,
+      batch_id: batchId,
+      semester_id: '',
+      specialization_id: nextBatch?.specialization_id || ''
+    }));
+  }
+
+  function handleFilterBatchChange(batchId) {
+    const nextBatch = batchId ? batchById[batchId] || null : null;
+    setFilters((prev) => ({
+      ...prev,
+      batch_id: batchId,
+      semester_id: '',
+      specialization_id: nextBatch?.specialization_id || ''
+    }));
+  }
 
   async function onCreate(event) {
     event.preventDefault();
@@ -242,48 +415,83 @@ export default function ClassesPage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Faculty</span>
-            <select className="input" value={filters.faculty_id} onChange={(e) => setFilters((prev) => ({ ...prev, faculty_id: e.target.value, department_id: '', program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}>
-              <option value="">All Faculties</option>
-              {faculties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Department</span>
-            <select className="input" value={filters.department_id} onChange={(e) => setFilters((prev) => ({ ...prev, department_id: e.target.value, program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}>
-              <option value="">All Departments</option>
-              {availableDepartmentsForFilters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Program</span>
-            <select className="input" value={filters.program_id} onChange={(e) => setFilters((prev) => ({ ...prev, program_id: e.target.value, specialization_id: '', batch_id: '', semester_id: '' }))}>
-              <option value="">All Programs</option>
-              {availableProgramsForFilters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Specialization</span>
-            <select className="input" value={filters.specialization_id} onChange={(e) => setFilters((prev) => ({ ...prev, specialization_id: e.target.value, batch_id: '', semester_id: '' }))}>
-              <option value="">All Specializations</option>
-              {availableSpecializationsForFilters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Batch</span>
-            <select className="input" value={filters.batch_id} onChange={(e) => setFilters((prev) => ({ ...prev, batch_id: e.target.value, semester_id: '' }))}>
-              <option value="">All Batches</option>
-              {availableBatchesForFilters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Semester</span>
-            <select className="input" value={filters.semester_id} onChange={(e) => setFilters((prev) => ({ ...prev, semester_id: e.target.value }))}>
-              <option value="">All Semesters</option>
-              {availableSemestersForFilters.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-          </label>
+          <SearchableSelect
+            label="Faculty"
+            value={filters.faculty_id}
+            options={faculties.map((item) => ({ value: item.id, label: item.name }))}
+            loadOptions={loadFacultyOptions}
+            selectedLabel={facultyNameById[filters.faculty_id] || ''}
+            allowEmpty
+            emptyLabel="All Faculties"
+            placeholder="Search faculty"
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, faculty_id: value, department_id: '', program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}
+          />
+          <SearchableSelect
+            label="Department"
+            value={filters.department_id}
+            options={availableDepartmentsForFilters.map((item) => ({ value: item.id, label: item.name }))}
+            loadOptions={(query) => loadDepartmentOptions(query, filters.faculty_id)}
+            selectedLabel={departmentNameById[filters.department_id] || ''}
+            allowEmpty
+            disabled={!filters.faculty_id}
+            emptyLabel="All Departments"
+            placeholder={filters.faculty_id ? 'Search department' : 'Select faculty first'}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, department_id: value, program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}
+          />
+          <SearchableSelect
+            label="Program"
+            value={filters.program_id}
+            options={availableProgramsForFilters.map((item) => ({ value: item.id, label: item.name }))}
+            loadOptions={(query) => loadProgramOptions(query, filters.department_id)}
+            selectedLabel={programNameById[filters.program_id] || ''}
+            allowEmpty
+            disabled={!filters.department_id}
+            emptyLabel="All Programs"
+            placeholder={filters.department_id ? 'Search program' : 'Select department first'}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, program_id: value, specialization_id: '', batch_id: '', semester_id: '' }))}
+          />
+          <SearchableSelect
+            label="Specialization"
+            value={filters.specialization_id}
+            options={availableSpecializationsForFilters.map((item) => ({ value: item.id, label: item.name }))}
+            loadOptions={(query) => loadSpecializationOptions(query, filters.program_id)}
+            selectedLabel={specializationNameById[filters.specialization_id] || ''}
+            allowEmpty
+            disabled={Boolean(selectedFilterBatch) || !filters.program_id}
+            emptyLabel={
+              selectedFilterBatch
+                ? selectedFilterBatch.specialization_id
+                  ? 'Batch specialization'
+                  : 'Program-level batch'
+                : 'All Specializations'
+            }
+            placeholder={filters.program_id ? 'Search specialization' : 'Select program first'}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, specialization_id: value, batch_id: '', semester_id: '' }))}
+          />
+          <SearchableSelect
+            label="Batch"
+            value={filters.batch_id}
+            options={availableBatchesForFilters.map((item) => ({ value: item.id, label: item.name }))}
+            loadOptions={(query) => loadBatchOptions(query, filters.program_id, filters.specialization_id)}
+            selectedLabel={batchNameById[filters.batch_id] || ''}
+            allowEmpty
+            disabled={!filters.program_id}
+            emptyLabel="All Batches"
+            placeholder={filters.program_id ? 'Search batch' : 'Select program first'}
+            onValueChange={handleFilterBatchChange}
+          />
+          <SearchableSelect
+            label="Semester"
+            value={filters.semester_id}
+            options={availableSemestersForFilters.map((item) => ({ value: item.id, label: item.label }))}
+            loadOptions={(query) => loadSemesterOptions(query, filters.batch_id)}
+            selectedLabel={semesterLabelById[filters.semester_id] || ''}
+            allowEmpty
+            disabled={!filters.batch_id}
+            emptyLabel="All Semesters"
+            placeholder={filters.batch_id ? 'Search semester' : 'Select batch first'}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, semester_id: value }))}
+          />
         </div>
       </Card>
 
@@ -291,59 +499,94 @@ export default function ClassesPage() {
         <Card>
           <h2 className="mb-3 text-lg font-semibold">Create Section</h2>
           <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <label className="block space-y-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Faculty</span>
-              <select className="input" value={form.faculty_id} onChange={(e) => setForm((prev) => ({ ...prev, faculty_id: e.target.value, department_id: '', program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}>
-                <option value="">Select Faculty</option>
-                {faculties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Department</span>
-              <select className="input" value={form.department_id} onChange={(e) => setForm((prev) => ({ ...prev, department_id: e.target.value, program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}>
-                <option value="">Select Department</option>
-                {availableDepartmentsForForm.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Program</span>
-              <select className="input" value={form.program_id} onChange={(e) => setForm((prev) => ({ ...prev, program_id: e.target.value, specialization_id: '', batch_id: '', semester_id: '' }))}>
-                <option value="">Select Program</option>
-                {availableProgramsForForm.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Specialization</span>
-              <select className="input" value={form.specialization_id} onChange={(e) => setForm((prev) => ({ ...prev, specialization_id: e.target.value, batch_id: '', semester_id: '' }))}>
-                <option value="">Select Specialization</option>
-                {availableSpecializationsForForm.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Batch</span>
-              <select className="input" value={form.batch_id} onChange={(e) => setForm((prev) => ({ ...prev, batch_id: e.target.value, semester_id: '' }))}>
-                <option value="">Select Batch</option>
-                {availableBatchesForForm.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Semester</span>
-              <select className="input" value={form.semester_id} onChange={(e) => setForm((prev) => ({ ...prev, semester_id: e.target.value }))}>
-                <option value="">Select Semester</option>
-                {availableSemestersForForm.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </label>
+            <SearchableSelect
+              label="Faculty"
+              value={form.faculty_id}
+              options={faculties.map((item) => ({ value: item.id, label: item.name }))}
+              loadOptions={loadFacultyOptions}
+              selectedLabel={facultyNameById[form.faculty_id] || ''}
+              placeholder="Search faculty"
+              onValueChange={(value) => setForm((prev) => ({ ...prev, faculty_id: value, department_id: '', program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}
+              required
+            />
+            <SearchableSelect
+              label="Department"
+              value={form.department_id}
+              options={availableDepartmentsForForm.map((item) => ({ value: item.id, label: item.name }))}
+              loadOptions={(query) => loadDepartmentOptions(query, form.faculty_id)}
+              selectedLabel={departmentNameById[form.department_id] || ''}
+              disabled={!form.faculty_id}
+              placeholder={form.faculty_id ? 'Search department' : 'Select faculty first'}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, department_id: value, program_id: '', specialization_id: '', batch_id: '', semester_id: '' }))}
+              required
+            />
+            <SearchableSelect
+              label="Program"
+              value={form.program_id}
+              options={availableProgramsForForm.map((item) => ({ value: item.id, label: item.name }))}
+              loadOptions={(query) => loadProgramOptions(query, form.department_id)}
+              selectedLabel={programNameById[form.program_id] || ''}
+              disabled={!form.department_id}
+              placeholder={form.department_id ? 'Search program' : 'Select department first'}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, program_id: value, specialization_id: '', batch_id: '', semester_id: '' }))}
+              required
+            />
+            <SearchableSelect
+              label="Specialization"
+              value={form.specialization_id}
+              options={availableSpecializationsForForm.map((item) => ({ value: item.id, label: item.name }))}
+              loadOptions={(query) => loadSpecializationOptions(query, form.program_id)}
+              selectedLabel={specializationNameById[form.specialization_id] || ''}
+              disabled={Boolean(selectedFormBatch) || !form.program_id}
+              allowEmpty
+              emptyLabel={
+                selectedFormBatch
+                  ? selectedFormBatch.specialization_id
+                    ? 'Locked to batch specialization'
+                    : 'Program-level batch'
+                  : 'Select Specialization'
+              }
+              placeholder={form.program_id ? 'Search specialization' : 'Select program first'}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, specialization_id: value, batch_id: '', semester_id: '' }))}
+            />
+            <SearchableSelect
+              label="Batch"
+              value={form.batch_id}
+              options={availableBatchesForForm.map((item) => ({ value: item.id, label: item.name }))}
+              loadOptions={(query) => loadBatchOptions(query, form.program_id, form.specialization_id)}
+              selectedLabel={batchNameById[form.batch_id] || ''}
+              disabled={!form.program_id}
+              placeholder={form.program_id ? 'Search batch' : 'Select program first'}
+              onValueChange={handleFormBatchChange}
+              required
+            />
+            <SearchableSelect
+              label="Semester"
+              value={form.semester_id}
+              options={availableSemestersForForm.map((item) => ({ value: item.id, label: item.label }))}
+              loadOptions={(query) => loadSemesterOptions(query, form.batch_id)}
+              selectedLabel={semesterLabelById[form.semester_id] || ''}
+              disabled={!form.batch_id}
+              placeholder={form.batch_id ? 'Search semester' : 'Select batch first'}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, semester_id: value }))}
+              required
+            />
             <label className="block space-y-1">
               <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Section Name</span>
               <input className="input" required value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="e.g. CSE 4A" />
             </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Coordinator</span>
-              <select className="input" value={form.class_coordinator_user_id} onChange={(e) => setForm((prev) => ({ ...prev, class_coordinator_user_id: e.target.value }))}>
-                <option value="">No Coordinator</option>
-                {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.full_name} ({teacher.email})</option>)}
-              </select>
-            </label>
+            <SearchableSelect
+              label="Coordinator"
+              value={form.class_coordinator_user_id}
+              options={teachers.map((teacher) => ({ value: teacher.id, label: teacher.full_name }))}
+              loadOptions={loadTeacherOptions}
+              selectedLabel={teacherNameById[form.class_coordinator_user_id] || ''}
+              disabled={!isAdmin}
+              allowEmpty
+              emptyLabel="No Coordinator"
+              placeholder={isAdmin ? 'Search teacher' : 'Unavailable'}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, class_coordinator_user_id: value }))}
+            />
             <div className="flex items-end">
               <button type="submit" className="btn-primary w-full">Create</button>
             </div>

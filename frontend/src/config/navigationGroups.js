@@ -33,7 +33,7 @@ const adminTeacherNavigationGroups = [
     items: [
       { to: '/admin/dashboard', label: 'Admin Dashboard', featureKey: 'adminDashboard', icon: LayoutDashboard, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'] },
       { to: '/admin/governance', label: 'Governance', featureKey: 'adminGovernance', icon: Shield, requiredAdminTypes: ['super_admin', 'admin'] },
-      { to: '/faculties', label: 'Academic Structure', featureKey: 'adminAcademicStructure', icon: Network, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'] },
+      { to: '/academic-structure', label: 'Academic Structure', featureKey: 'adminAcademicStructure', icon: Network, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'] },
       { to: '/students', label: 'Operations', featureKey: 'adminOperations', icon: Wrench, requiredAdminTypes: ['super_admin', 'admin'] },
       { to: '/clubs', label: 'Clubs', featureKey: 'adminClubs', icon: Users, requiredAdminTypes: ['super_admin', 'admin'] },
       { to: '/communication/announcements', label: 'Communication', featureKey: 'adminCommunication', icon: Megaphone, requiredAdminTypes: ['super_admin', 'admin'] },
@@ -63,7 +63,7 @@ const adminTeacherNavigationGroups = [
       { to: '/students', label: 'Students', featureKey: 'students', icon: GraduationCap },
       { to: '/groups', label: 'Groups', featureKey: 'groups', icon: Users },
       { to: '/subjects', label: 'Subjects', featureKey: 'subjects', icon: BookOpen },
-      { to: '/course-offerings', label: 'Course Offerings', featureKey: 'courseOfferings', icon: Library },
+      { to: '/course-offerings', label: 'Course Delivery', featureKey: 'courseOfferings', icon: Library },
       { to: '/class-slots', label: 'Class Slots', featureKey: 'classSlots', icon: CalendarRange },
       { to: '/attendance-records', label: 'Attendance', featureKey: 'attendanceRecords', icon: ClipboardCheck },
       { to: '/assignments', label: 'Assignments', featureKey: 'assignments', icon: FileText },
@@ -105,6 +105,7 @@ const adminTeacherNavigationGroups = [
     key: 'setup',
     label: 'Academic Setup',
     items: [
+      { to: '/universities', label: 'Universities', featureKey: 'universities', icon: Building2 },
       { to: '/faculties', label: 'Faculties', featureKey: 'faculties', icon: Building2 },
       { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
       { to: '/programs', label: 'Programs', featureKey: 'programs', icon: Library },

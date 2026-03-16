@@ -1,56 +1,81 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import EntityManager from '../components/ui/EntityManager';
-import { apiClient } from '../services/apiClient';
+import { mergeLookupItems, searchLookupOptions } from '../services/paginatedLookups';
 
 export default function DepartmentsPage() {
   const [faculties, setFaculties] = useState([]);
 
-  useEffect(() => {
-    async function loadFaculties() {
-      try {
-        const response = await apiClient.get('/faculties/', { params: { skip: 0, limit: 100 } });
-        setFaculties(response.data || []);
-      } catch {
-        setFaculties([]);
-      }
-    }
-    loadFaculties();
-  }, []);
-
-  const facultyOptions = useMemo(
-    () => faculties.map((faculty) => ({ value: faculty.id, label: `${faculty.name} (${faculty.code})` })),
-    [faculties]
-  );
+  async function loadFacultyOptions({ query }) {
+    const options = await searchLookupOptions({
+      path: '/faculties/',
+      q: query,
+      params: { is_active: true },
+      mapOption: (item) => ({
+        value: item.id,
+        label: `${item.faculty_name || item.name} (${item.faculty_code || item.code})`,
+        faculty_name: item.faculty_name || item.name,
+        faculty_code: item.faculty_code || item.code
+      })
+    });
+    setFaculties((current) =>
+      mergeLookupItems(
+        current,
+        options.map((item) => ({
+          id: item.value,
+          faculty_name: item.faculty_name,
+          faculty_code: item.faculty_code
+        }))
+      )
+    );
+    return options;
+  }
 
   const facultyNameById = useMemo(
-    () => Object.fromEntries(faculties.map((faculty) => [faculty.id, faculty.name])),
+    () => Object.fromEntries(faculties.map((faculty) => [faculty.id, faculty.faculty_name])),
     [faculties]
   );
 
   const filters = useMemo(
     () => [
       { name: 'q', label: 'Search' },
-      { name: 'faculty_id', label: 'Faculty', type: 'select', options: facultyOptions, placeholder: 'All Faculties' },
+      {
+        name: 'faculty_id',
+        label: 'Faculty',
+        type: 'select',
+        searchable: true,
+        placeholder: 'All Faculties',
+        loadOptions: loadFacultyOptions,
+        selectedLabelResolver: ({ filterValues }) => facultyNameById[filterValues.faculty_id] || ''
+      },
       { name: 'is_active', label: 'Active', type: 'switch', defaultValue: null }
     ],
-    [facultyOptions]
+    [facultyNameById]
   );
 
   const createFields = useMemo(
     () => [
-      { name: 'name', label: 'Department Name', required: true },
-      { name: 'code', label: 'Department Code', required: true },
-      { name: 'faculty_id', label: 'Faculty', type: 'select', options: facultyOptions, nullable: true },
-      { name: 'university_name', label: 'University Name', defaultValue: 'UM University', nullable: true },
-      { name: 'university_code', label: 'University Code', defaultValue: 'UM', nullable: true }
+      { name: 'department_id', label: 'Department ID', nullable: true },
+      { name: 'department_name', label: 'Department Name', required: true },
+      { name: 'department_code', label: 'Department Code', required: true },
+      {
+        name: 'faculty_id',
+        label: 'Faculty',
+        type: 'select',
+        searchable: true,
+        required: true,
+        placeholder: 'Search faculty',
+        loadOptions: loadFacultyOptions,
+        selectedLabelResolver: ({ createValues }) => facultyNameById[createValues.faculty_id] || ''
+      }
     ],
-    [facultyOptions]
+    [facultyNameById]
   );
 
   const columns = useMemo(
     () => [
-      { key: 'name', label: 'Department' },
-      { key: 'code', label: 'Code' },
+      { key: 'department_id', label: 'Department ID', render: (row) => row.department_id || '-' },
+      { key: 'department_name', label: 'Department', render: (row) => row.department_name || row.name || '-' },
+      { key: 'department_code', label: 'Code', render: (row) => row.department_code || row.code || '-' },
       { key: 'faculty_id', label: 'Faculty', render: (row) => facultyNameById[row.faculty_id] || '-' },
       { key: 'university_name', label: 'University', render: (row) => row.university_name || '-' },
       { key: 'is_active', label: 'Active', render: (row) => (row.is_active ? 'Yes' : 'No') }

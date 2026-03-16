@@ -21,9 +21,24 @@ ROLE_ALLOWED_EXTENSIONS = {
 
 @router.get("/", response_model=List[UserOut])
 async def list_users(
+    q: str | None = Query(default=None, min_length=1, max_length=100),
+    role: str | None = Query(default=None, min_length=1, max_length=50),
+    is_active: bool | None = Query(default=None),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=1000, ge=1, le=1000),
     _current_user=Depends(require_permission("users.read")),
 ) -> List[UserOut]:
-    users = await db.users.find({}).to_list(length=1000)
+    query = {}
+    if q:
+        query["$or"] = [
+            {"full_name": {"$regex": q, "$options": "i"}},
+            {"email": {"$regex": q, "$options": "i"}},
+        ]
+    if role:
+        query["role"] = role
+    if is_active is not None:
+        query["is_active"] = is_active
+    users = await db.users.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [UserOut(**user_public(user)) for user in users]
 
 
@@ -69,6 +84,17 @@ async def create_user(
     result = await db.users.insert_one(document)
     created = await db.users.find_one({"_id": result.inserted_id})
     return UserOut(**user_public(created))
+
+
+@router.get("/{user_id}", response_model=UserOut)
+async def get_user(
+    user_id: str,
+    _current_user=Depends(require_permission("users.read")),
+) -> UserOut:
+    user = await db.users.find_one({"_id": parse_object_id(user_id)})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return UserOut(**user_public(user))
 
 
 @router.patch("/{user_id}/extensions", response_model=UserOut)

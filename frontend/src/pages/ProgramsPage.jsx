@@ -1,79 +1,101 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import EntityManager from '../components/ui/EntityManager';
-import { apiClient } from '../services/apiClient';
+import { PROGRAM_DURATION_OPTIONS } from '../constants/academicHierarchy';
 import { useAuthContext } from '../context/AuthContext';
+import { mergeLookupItems, searchLookupOptions } from '../services/paginatedLookups';
 
 export default function ProgramsPage() {
   const { user } = useAuthContext();
   const [departments, setDepartments] = useState([]);
 
-  useEffect(() => {
-    async function loadDepartments() {
-      try {
-        const response = await apiClient.get('/departments/', { params: { skip: 0, limit: 100 } });
-        setDepartments(response.data || []);
-      } catch {
-        setDepartments([]);
-      }
-    }
-    loadDepartments();
-  }, []);
+  async function loadDepartmentOptions({ query }) {
+    const options = await searchLookupOptions({
+      path: '/departments/',
+      q: query,
+      params: { is_active: true },
+      mapOption: (item) => ({
+        value: item.id,
+        label: `${item.department_name || item.name} (${item.department_code || item.code})`,
+        department_name: item.department_name || item.name,
+        department_code: item.department_code || item.code
+      })
+    });
+    setDepartments((current) =>
+      mergeLookupItems(
+        current,
+        options.map((item) => ({
+          id: item.value,
+          department_name: item.department_name,
+          department_code: item.department_code
+        }))
+      )
+    );
+    return options;
+  }
 
-  const departmentOptions = useMemo(
-    () => departments.map((department) => ({ value: department.id, label: `${department.name} (${department.code})` })),
+  const departmentNameById = useMemo(
+    () => Object.fromEntries(departments.map((department) => [department.id, department.department_name])),
     [departments]
   );
-
-  const departmentCodeById = useMemo(
-    () => Object.fromEntries(departments.map((department) => [department.id, department.code])),
-    [departments]
-  );
-
-  const inferDepartmentCodeFromProgramCode = (programCode) => {
-    const text = String(programCode || '').trim();
-    if (!text) return '';
-    const parts = text.split('-');
-    if (parts.length >= 3) {
-      return `${parts[0]}-${parts[1]}`;
-    }
-    return '';
-  };
 
   const filters = useMemo(
     () => [
       { name: 'q', label: 'Search' },
-      { name: 'department_id', label: 'Department', type: 'select', options: departmentOptions, placeholder: 'All Departments' },
+      {
+        name: 'department_id',
+        label: 'Department',
+        type: 'select',
+        searchable: true,
+        placeholder: 'All Departments',
+        loadOptions: loadDepartmentOptions,
+        selectedLabelResolver: ({ filterValues }) => departmentNameById[filterValues.department_id] || ''
+      },
       { name: 'is_active', label: 'Active', type: 'switch', defaultValue: null }
     ],
-    [departmentOptions]
+    [departmentNameById]
   );
 
   const createFields = useMemo(
     () => [
-      { name: 'name', label: 'Program Name', required: true },
-      { name: 'code', label: 'Program Code', required: true },
-      { name: 'department_id', label: 'Department', type: 'select', options: departmentOptions, required: true },
-      { name: 'duration_years', label: 'Course Duration (Years)', type: 'number', min: 3, max: 5, required: true, defaultValue: 4 },
+      { name: 'program_id', label: 'Program ID', nullable: true },
+      { name: 'program_name', label: 'Program Name', required: true },
+      { name: 'program_code', label: 'Program Code', required: true },
+      {
+        name: 'department_id',
+        label: 'Department',
+        type: 'select',
+        searchable: true,
+        required: true,
+        placeholder: 'Search department',
+        loadOptions: loadDepartmentOptions,
+        selectedLabelResolver: ({ createValues }) => departmentNameById[createValues.department_id] || ''
+      },
+      {
+        name: 'duration_years',
+        label: 'Program Duration',
+        type: 'select',
+        options: PROGRAM_DURATION_OPTIONS,
+        required: true,
+        defaultValue: 4
+      },
+      { name: 'degree_type', label: 'Degree Type', nullable: true },
       { name: 'description', label: 'Description', nullable: true }
     ],
-    [departmentOptions]
+    [departmentNameById]
   );
 
   const columns = useMemo(
     () => [
-      { key: 'name', label: 'Program' },
-      { key: 'code', label: 'Code' },
-      {
-        key: 'department_id',
-        label: 'Department',
-        render: (row) =>
-          departmentCodeById[row.department_id] || inferDepartmentCodeFromProgramCode(row.code) || '-'
-      },
+      { key: 'program_id', label: 'Program ID', render: (row) => row.program_id || '-' },
+      { key: 'program_name', label: 'Program', render: (row) => row.program_name || row.name || '-' },
+      { key: 'program_code', label: 'Code', render: (row) => row.program_code || row.code || '-' },
+      { key: 'department_id', label: 'Department', render: (row) => departmentNameById[row.department_id] || '-' },
+      { key: 'degree_type', label: 'Degree Type', render: (row) => row.degree_type || '-' },
       { key: 'duration_years', label: 'Duration (Years)' },
       { key: 'total_semesters', label: 'Total Semesters' },
       { key: 'description', label: 'Description' }
     ],
-    [departmentCodeById]
+    [departmentNameById]
   );
 
   const canManageProgramDuration =
@@ -82,7 +104,7 @@ export default function ProgramsPage() {
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-        Total Semesters is auto-generated from Course Duration. Base batches are also auto-created from 2022 through the current year.
+        Total semesters are auto-generated from the selected duration: 1 year = 2 semesters through 5 years = 10 semesters. Base batches are also auto-created from 2022 through the current year.
       </div>
       <EntityManager
         title="Programs"

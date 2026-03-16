@@ -17,6 +17,10 @@ from app.services.academic_batching import (
     resolve_batch_years,
     resolve_program_academic_context,
 )
+from app.services.academic_hierarchy import (
+    normalize_program_duration_record,
+    validate_batch_specialization_scope,
+)
 from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
 
@@ -24,25 +28,49 @@ router = APIRouter()
 
 
 def _normalize_program_duration(program: dict[str, Any]) -> tuple[int, int]:
-    try:
-        raw_duration_years = program.get("duration_years")
-        if raw_duration_years is None:
-            raise TypeError
-        duration_years = int(raw_duration_years)
-    except (TypeError, ValueError):
-        duration_years = 4
-    duration_years = max(3, min(5, duration_years))
+    return normalize_program_duration_record(program)
 
-    try:
-        raw_total_semesters = program.get("total_semesters")
-        if raw_total_semesters is None:
-            raise TypeError
-        total_semesters = int(raw_total_semesters)
-    except (TypeError, ValueError):
-        total_semesters = duration_years * 2
-    if total_semesters <= 0:
-        total_semesters = duration_years * 2
-    return duration_years, total_semesters
+
+async def _ensure_batch_update_preserves_descendants(
+    *,
+    batch_id: str,
+    current_batch: dict[str, Any],
+    target_program_id: str | None,
+    target_specialization_id: str | None,
+) -> None:
+    sections = await db.classes.find({"batch_id": batch_id, "is_active": True}).to_list(length=5000)
+    if not sections:
+        return
+
+    if target_program_id and target_program_id != current_batch.get("program_id"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Batch program cannot be changed while active sections still belong to this batch. "
+                "Move or archive descendant sections before re-parenting the batch."
+            ),
+        )
+
+    incompatible_sections: list[str] = []
+    for section in sections:
+        try:
+            validate_batch_specialization_scope(
+                batch_specialization_id=target_specialization_id,
+                child_specialization_id=section.get("specialization_id"),
+            )
+        except ValueError:
+            incompatible_sections.append(str(section.get("name") or section.get("_id") or "Unknown section"))
+
+    if incompatible_sections:
+        sample = ", ".join(incompatible_sections[:3])
+        suffix = "" if len(incompatible_sections) <= 3 else f" and {len(incompatible_sections) - 3} more"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Batch specialization update would invalidate descendant sections: "
+                f"{sample}{suffix}. Update or archive those sections before changing the batch specialization."
+            ),
+        )
 
 
 @router.get("/", response_model=List[BatchOut])
@@ -159,7 +187,7 @@ async def update_batch(
     current = await db.batches.find_one({"_id": batch_obj_id})
     if not current:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
-    update_data = payload.model_dump(exclude_none=True)
+    update_data = payload.model_dump(exclude_unset=True)
     target_program_id = update_data.get("program_id", current.get("program_id"))
     target_specialization_id = update_data.get("specialization_id", current.get("specialization_id"))
     if "name" in update_data and update_data["name"]:
@@ -196,6 +224,16 @@ async def update_batch(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Specialization not found for provided specialization_id")
         if specialization.get("program_id") != target_program_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="specialization_id does not belong to program_id")
+    if (
+        target_program_id != current.get("program_id")
+        or target_specialization_id != current.get("specialization_id")
+    ):
+        await _ensure_batch_update_preserves_descendants(
+            batch_id=batch_id,
+            current_batch=current,
+            target_program_id=target_program_id,
+            target_specialization_id=target_specialization_id,
+        )
 
     resolved_start_year, resolved_end_year = resolve_batch_years(
         start_year=update_data.get("start_year", current.get("start_year")),

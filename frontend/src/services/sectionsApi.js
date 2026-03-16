@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { listAllPages } from './paginatedLookups';
 
 export async function getSections(params = {}) {
   return await apiClient.get('/sections/', { params });
@@ -9,18 +10,7 @@ export async function createSection(payload) {
 }
 
 export async function getAllSections(pageSize = 100) {
-  const all = [];
-  let skip = 0;
-  while (true) {
-    const response = await getSections({ skip, limit: pageSize });
-    const batch = response.data || [];
-    all.push(...batch);
-    if (batch.length < pageSize) {
-      break;
-    }
-    skip += pageSize;
-  }
-  return all;
+  return listAllPages('/sections/', {}, pageSize);
 }
 
 export async function getTeacherSectionsAnalytics() {

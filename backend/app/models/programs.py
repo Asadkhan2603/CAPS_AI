@@ -1,26 +1,29 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import PROGRAM_SCHEMA_VERSION, normalize_schema_version
-
-
-def _normalize_duration_years(raw_value: Any) -> int:
-    try:
-        duration_years = int(raw_value)
-    except (TypeError, ValueError):
-        duration_years = 4
-    return max(3, min(5, duration_years))
+from app.services.academic_hierarchy import normalize_program_duration_record
 
 
 def program_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    duration_years = _normalize_duration_years(document.get("duration_years"))
-    total_semesters = duration_years * 2
+    duration_years, total_semesters = normalize_program_duration_record(document)
+    program_name = document.get("program_name") or document.get("name", "")
+    program_code = document.get("program_code") or document.get("code", "")
     return {
         "id": str(document["_id"]),
-        "name": document.get("name", ""),
-        "code": document.get("code", ""),
+        "program_id": document.get("program_id") or program_code or str(document.get("_id")),
+        "program_code": program_code,
+        "program_name": program_name,
+        "name": program_name,
+        "code": program_code,
         "department_id": document.get("department_id"),
+        "department_master_id": document.get("department_master_id"),
+        "department_name": document.get("department_name"),
+        "department_code": document.get("department_code"),
+        "faculty_master_id": document.get("faculty_master_id"),
+        "faculty_code": document.get("faculty_code"),
         "duration_years": duration_years,
         "total_semesters": total_semesters,
+        "degree_type": document.get("degree_type"),
         "description": document.get("description"),
         "is_active": document.get("is_active", True),
         "deleted_at": document.get("deleted_at"),

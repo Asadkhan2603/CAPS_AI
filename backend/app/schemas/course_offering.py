@@ -43,6 +43,7 @@ class CourseOfferingOut(BaseModel):
     subject_name: str | None = None
     subject_code: str | None = None
     teacher_name: str | None = None
+    batch_name: str | None = None
     section_name: str | None = None
     group_name: str | None = None
     semester_label: str | None = None
