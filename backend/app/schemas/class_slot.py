@@ -25,6 +25,8 @@ class ClassSlotUpdate(BaseModel):
 
 class ClassSlotOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     course_offering_id: str
     day: DayName
     start_time: str

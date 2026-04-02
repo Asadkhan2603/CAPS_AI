@@ -21,10 +21,13 @@ class AttendanceRecordBulkCreate(BaseModel):
 
 class AttendanceRecordOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     class_slot_id: str
     student_id: str
     status: AttendanceStatus
     note: str | None = None
     marked_by_user_id: str
+    marked_by_label: str | None = None
     marked_at: datetime | None = None
     schema_version: int = 1

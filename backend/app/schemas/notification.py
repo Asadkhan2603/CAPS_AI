@@ -13,12 +13,16 @@ class NotificationCreate(BaseModel):
 
 class NotificationOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     title: str
     message: str
     priority: str
     scope: str
     target_user_id: str | None = None
+    target_user_label: str | None = None
     created_by: str | None = None
+    created_by_label: str | None = None
     is_read: bool = False
     created_at: datetime | None = None
     schema_version: int = 1

@@ -10,6 +10,7 @@ from app.models.users import user_public
 from app.schemas.user import UserCreate, UserExtensionRolesUpdate, UserOut
 from app.services.audit import log_audit_event
 from app.services.governance import enforce_review_approval
+from app.services.section_read_models import sync_section_read_models_for_ids
 
 router = APIRouter()
 
@@ -130,12 +131,18 @@ async def update_user_extension_roles(
     previous_extensions = list(user.get("extended_roles") or [])
     previous_scope = dict(user.get("role_scope") or {})
     role_scope = payload.role_scope.model_dump(exclude_none=True) if payload.role_scope else {}
+    affected_section_ids = {
+        str(item.get("_id"))
+        for item in await db.classes.find({"class_coordinator_user_id": user_id}, {"_id": 1}).to_list(length=5000)
+        if item.get("_id")
+    }
 
     if role == "teacher":
         if "class_coordinator" in payload.extended_roles:
             class_scope = role_scope.get("class_coordinator", {}) if isinstance(role_scope, dict) else {}
             class_id = class_scope.get("class_id")
             if class_id:
+                affected_section_ids.add(class_id)
                 class_doc = await db.classes.find_one({"_id": parse_object_id(class_id)})
                 if not class_doc:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Class not found for class coordinator scope")
@@ -211,6 +218,13 @@ async def update_user_extension_roles(
         new_value={"extended_roles": payload.extended_roles, "role_scope": role_scope},
         severity="medium",
     )
+    affected_section_ids.update(
+        str(item.get("_id"))
+        for item in await db.classes.find({"class_coordinator_user_id": user_id}, {"_id": 1}).to_list(length=5000)
+        if item.get("_id")
+    )
+    if affected_section_ids:
+        await sync_section_read_models_for_ids(section_ids=sorted(affected_section_ids), database=db)
     return UserOut(**user_public(updated))
 
 
@@ -226,6 +240,11 @@ async def deactivate_user(
     user = await db.users.find_one({"_id": user_obj_id})
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    affected_section_ids = {
+        str(item.get("_id"))
+        for item in await db.classes.find({"class_coordinator_user_id": user_id}, {"_id": 1}).to_list(length=5000)
+        if item.get("_id")
+    }
 
     await db.users.update_one(
         {"_id": user_obj_id},
@@ -252,4 +271,6 @@ async def deactivate_user(
         detail="User deactivated by super admin",
         severity="high",
     )
+    if affected_section_ids:
+        await sync_section_read_models_for_ids(section_ids=sorted(affected_section_ids), database=db)
     return {"message": "User deactivated"}

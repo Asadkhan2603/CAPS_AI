@@ -1,10 +1,11 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import SUBMISSION_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def submission_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         'id': str(document['_id']),
         'assignment_id': document.get('assignment_id'),
         'student_user_id': document.get('student_user_id'),
@@ -26,3 +27,4 @@ def submission_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'extracted_text': document.get('extracted_text'),
         'created_at': document.get('created_at'),
     }
+    return apply_public_identity(payload, kind="submission", document=document, display_name=document.get("original_filename"))

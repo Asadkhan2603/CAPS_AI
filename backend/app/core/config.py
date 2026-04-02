@@ -46,6 +46,12 @@ def _merge_cors_origins(raw_origins: str) -> List[str]:
     return ordered
 
 
+def _as_csv_list(raw_value: str | None) -> List[str]:
+    if not raw_value:
+        return []
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
 @dataclass
 class Settings:
     environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development").lower())
@@ -119,12 +125,26 @@ class Settings:
     response_envelope_enabled: bool = field(
         default_factory=lambda: _as_bool(os.getenv("RESPONSE_ENVELOPE_ENABLED"), False)
     )
+    response_envelope_skip_paths: List[str] = field(
+        default_factory=lambda: _as_csv_list(
+            os.getenv(
+                "RESPONSE_ENVELOPE_SKIP_PATHS",
+                "/api/v1/auth/me,/api/v1/session/bootstrap,/api/v1/analytics/dashboard,/api/v1/analytics/summary,/api/v1/notices/unread-count",
+            )
+        )
+    )
     redis_enabled: bool = field(
         default_factory=lambda: _as_bool(os.getenv("REDIS_ENABLED"), False)
     )
     redis_url: str = field(default_factory=lambda: os.getenv("REDIS_URL", "redis://localhost:6379/0"))
     analytics_cache_ttl_seconds: int = field(
         default_factory=lambda: _as_int(os.getenv("ANALYTICS_CACHE_TTL_SECONDS", "120"), 120)
+    )
+    analytics_snapshot_freshness_hours: int = field(
+        default_factory=lambda: _as_int(os.getenv("ANALYTICS_SNAPSHOT_FRESHNESS_HOURS", "36"), 36)
+    )
+    system_health_snapshot_freshness_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("SYSTEM_HEALTH_SNAPSHOT_FRESHNESS_SECONDS", "60"), 60)
     )
     scheduler_enabled: bool = field(
         default_factory=lambda: _as_bool(os.getenv("SCHEDULER_ENABLED"), False)

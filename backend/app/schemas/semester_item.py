@@ -18,11 +18,19 @@ class SemesterUpdate(BaseModel):
 
 class SemesterOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     batch_id: str
+    batch_name: str | None = None
+    batch_code: str | None = None
     faculty_id: str | None = None
     department_id: str | None = None
     program_id: str | None = None
+    program_name: str | None = None
+    program_code: str | None = None
     specialization_id: str | None = None
+    specialization_name: str | None = None
+    specialization_code: str | None = None
     semester_number: int
     label: str
     academic_year_start: int | None = None

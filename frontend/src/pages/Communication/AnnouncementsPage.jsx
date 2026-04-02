@@ -8,7 +8,6 @@ import { apiClient } from '../../services/apiClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
 import { pushApiErrorToast } from '../../utils/errorToast';
-import { isNoticeRead, markNoticeRead, markNoticesRead, unreadNoticeCount } from '../../utils/noticeReadTracker';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -17,6 +16,12 @@ const FILTERS = [
   { key: 'expired', label: 'Expired' },
   { key: 'mine', label: 'My Published' }
 ];
+
+function notifyNoticeBadgeRefresh() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('caps-ai:notices-changed'));
+  }
+}
 
 export default function AnnouncementsPage() {
   const { user } = useAuth();
@@ -33,7 +38,6 @@ export default function AnnouncementsPage() {
   const [batches, setBatches] = useState([]);
   const [sections, setSections] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [noticeReadVersion, setNoticeReadVersion] = useState(0);
 
   const canCreate = user?.role === 'admin' || user?.role === 'teacher';
   const isStudent = user?.role === 'student';
@@ -202,9 +206,12 @@ export default function AnnouncementsPage() {
     });
 
     return filtered;
-  }, [activeFilter, notices, search, user?.id, noticeReadVersion]);
+  }, [activeFilter, notices, search, user?.id]);
 
-  const unreadCount = useMemo(() => unreadNoticeCount(user?.id, visibleNotices), [user?.id, visibleNotices, noticeReadVersion]);
+  const unreadCount = useMemo(
+    () => visibleNotices.filter((item) => item?.id && !item?.is_read).length,
+    [visibleNotices]
+  );
 
   const paged = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -248,6 +255,7 @@ export default function AnnouncementsPage() {
       }
       setShowCreate(false);
       await loadNotices();
+      notifyNoticeBadgeRefresh();
     } catch (err) {
       pushApiErrorToast(pushToast, err, 'Unable to publish announcement');
     } finally {
@@ -256,15 +264,34 @@ export default function AnnouncementsPage() {
     }
   }
 
-  function handleMarkRead(noticeId) {
-    markNoticeRead(user?.id, noticeId);
-    setNoticeReadVersion((v) => v + 1);
+  async function handleMarkRead(noticeId) {
+    if (!noticeId) return;
+    try {
+      const response = await apiClient.post(`/notices/${noticeId}/read`);
+      const updatedNotice = response.data;
+      setNotices((current) => current.map((item) => (item.id === noticeId ? updatedNotice : item)));
+      notifyNoticeBadgeRefresh();
+    } catch (err) {
+      pushApiErrorToast(pushToast, err, 'Unable to mark announcement as read');
+    }
   }
 
-  function handleMarkAllRead() {
-    markNoticesRead(user?.id, visibleNotices.map((item) => item.id));
-    setNoticeReadVersion((v) => v + 1);
-    pushToast({ title: 'Done', description: 'All visible announcements marked as read.', variant: 'success' });
+  async function handleMarkAllRead() {
+    const unreadIds = visibleNotices.filter((item) => !item?.is_read).map((item) => item.id);
+    if (unreadIds.length === 0) {
+      pushToast({ title: 'Up to date', description: 'All visible announcements are already read.', variant: 'info' });
+      return;
+    }
+    try {
+      const response = await apiClient.post('/notices/read', { notice_ids: unreadIds });
+      const updatedItems = Array.isArray(response.data?.items) ? response.data.items : [];
+      const updatedById = new Map(updatedItems.map((item) => [item.id, item]));
+      setNotices((current) => current.map((item) => updatedById.get(item.id) || item));
+      notifyNoticeBadgeRefresh();
+      pushToast({ title: 'Done', description: 'All visible announcements marked as read.', variant: 'success' });
+    } catch (err) {
+      pushApiErrorToast(pushToast, err, 'Unable to mark announcements as read');
+    }
   }
 
   return (
@@ -326,7 +353,7 @@ export default function AnnouncementsPage() {
                 key={notice.id}
                 notice={notice}
                 audienceText={audienceText}
-                isRead={isNoticeRead(user?.id, notice.id)}
+                isRead={Boolean(notice?.is_read)}
                 onMarkRead={handleMarkRead}
               />
             );

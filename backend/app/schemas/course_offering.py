@@ -32,6 +32,8 @@ class CourseOfferingUpdate(BaseModel):
 
 class CourseOfferingOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     subject_id: str
     teacher_user_id: str
     batch_id: str

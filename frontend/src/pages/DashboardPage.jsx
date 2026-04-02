@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, BookOpenCheck, ChartLine, FileText, Sparkles, ArrowRight, Clock3, ShieldAlert, CalendarClock } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import { Link } from 'react-router-dom';
 import StatCard from '../components/ui/StatCard';
 import Card from '../components/ui/Card';
@@ -11,10 +10,11 @@ import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { useToast } from '../hooks/useToast';
 import { apiClient } from '../services/apiClient';
-import { getTeacherSectionsAnalytics } from '../services/sectionsApi';
 import { canAccessFeature } from '../utils/permissions';
 import { formatApiError } from '../utils/apiError';
 import { FEATURE_ACCESS } from '../config/featureAccess';
+
+const DashboardTrendChart = lazy(() => import('../components/analytics/DashboardTrendChart'));
 
 const performanceData = [
   { month: 'Jan', avg: 67, submissions: 41 },
@@ -24,7 +24,6 @@ const performanceData = [
   { month: 'May', avg: 79, submissions: 62 },
   { month: 'Jun', avg: 81, submissions: 65 }
 ];
-const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function isTruthyEligibility(value) {
   if (typeof value === 'boolean') return value;
@@ -43,14 +42,14 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState({});
   const [teacherTiles, setTeacherTiles] = useState([]);
   const [urgentNotices, setUrgentNotices] = useState([]);
-  const [studentAssignments, setStudentAssignments] = useState([]);
-  const [studentSubmissions, setStudentSubmissions] = useState([]);
-  const [studentClassSlots, setStudentClassSlots] = useState([]);
-  const [studentOfferings, setStudentOfferings] = useState([]);
+  const [studentDeadlines, setStudentDeadlines] = useState([]);
+  const [studentTimetable, setStudentTimetable] = useState([]);
   const [internshipStatus, setInternshipStatus] = useState(null);
   const [internshipBusy, setInternshipBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [loadTrendChart, setLoadTrendChart] = useState(false);
+  const trendChartRef = useRef(null);
 
   const roleActions = useMemo(() => {
     if (user?.role === 'admin') {
@@ -115,62 +114,22 @@ export default function DashboardPage() {
       setLoading(true);
     }
     try {
-      const teacherTilesRequest = user?.role === 'teacher'
-        ? getTeacherSectionsAnalytics()
-        : Promise.resolve({ data: { items: [] } });
-      const studentAssignmentsRequest = user?.role === 'student'
-        ? apiClient.get('/assignments/', { params: { skip: 0, limit: 100 } })
-        : Promise.resolve({ data: [] });
-      const studentSubmissionsRequest = user?.role === 'student'
-        ? apiClient.get('/submissions/', { params: { skip: 0, limit: 100 } })
-        : Promise.resolve({ data: [] });
-      const studentClassSlotsRequest = user?.role === 'student'
-        ? apiClient.get('/class-slots/my')
-        : Promise.resolve({ data: [] });
-      const studentOfferingsRequest = user?.role === 'student'
-        ? apiClient.get('/course-offerings/', { params: { skip: 0, limit: 100 } })
-        : Promise.resolve({ data: [] });
-      const internshipStatusRequest = user?.role === 'student'
-        ? apiClient.get('/attendance-records/internship/status')
-        : Promise.resolve({ data: null });
-      const [
-        summaryResp,
-        tilesResp,
-        noticesResp,
-        studentAssignmentsResp,
-        studentSubmissionsResp,
-        studentClassSlotsResp,
-        studentOfferingsResp,
-        internshipStatusResp
-      ] =
-        await Promise.allSettled([
-          apiClient.get('/analytics/summary'),
-          teacherTilesRequest,
-          apiClient.get('/notices/', { params: { priority: 'urgent', limit: 3 } }),
-          studentAssignmentsRequest,
-          studentSubmissionsRequest,
-          studentClassSlotsRequest,
-          studentOfferingsRequest,
-          internshipStatusRequest
-        ]);
-
-      setSummary(summaryResp.status === 'fulfilled' ? summaryResp.value.data?.summary || {} : {});
-      setTeacherTiles(tilesResp.status === 'fulfilled' ? tilesResp.value.data?.items || [] : []);
-      setUrgentNotices(noticesResp.status === 'fulfilled' ? noticesResp.value.data || [] : []);
-      setStudentAssignments(studentAssignmentsResp.status === 'fulfilled' ? studentAssignmentsResp.value.data || [] : []);
-      setStudentSubmissions(studentSubmissionsResp.status === 'fulfilled' ? studentSubmissionsResp.value.data || [] : []);
-      setStudentClassSlots(studentClassSlotsResp.status === 'fulfilled' ? studentClassSlotsResp.value.data || [] : []);
-      setStudentOfferings(studentOfferingsResp.status === 'fulfilled' ? studentOfferingsResp.value.data || [] : []);
-      setInternshipStatus(internshipStatusResp.status === 'fulfilled' ? internshipStatusResp.value.data || null : null);
-      setLastUpdated(new Date());
+      const dashboardResp = await apiClient.get('/analytics/dashboard');
+      const dashboardPayload = dashboardResp.data || {};
+      const studentDashboard = dashboardPayload.student_dashboard || {};
+      setSummary(dashboardPayload.summary || {});
+      setTeacherTiles(dashboardPayload.teacher_sections || []);
+      setUrgentNotices(dashboardPayload.urgent_notices || []);
+      setStudentDeadlines(studentDashboard.deadlines || []);
+      setStudentTimetable(studentDashboard.timetable || []);
+      setInternshipStatus(studentDashboard.internship_status || null);
+      setLastUpdated(dashboardPayload.generated_at ? new Date(dashboardPayload.generated_at) : new Date());
     } catch {
       setSummary({});
       setTeacherTiles([]);
       setUrgentNotices([]);
-      setStudentAssignments([]);
-      setStudentSubmissions([]);
-      setStudentClassSlots([]);
-      setStudentOfferings([]);
+      setStudentDeadlines([]);
+      setStudentTimetable([]);
       setInternshipStatus(null);
     } finally {
       if (!silent) {
@@ -207,7 +166,52 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadDashboardData(true);
-  }, [user?.role]);
+  }, [user?.id, user?.role]);
+
+  useEffect(() => {
+    if (user?.role === 'student' || loadTrendChart) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let cancelIdleLoad = () => {};
+    const loadChart = () => {
+      if (!cancelled) {
+        setLoadTrendChart(true);
+      }
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(loadChart, { timeout: 2500 });
+      cancelIdleLoad = () => window.cancelIdleCallback(idleId);
+    } else {
+      const timeoutId = window.setTimeout(loadChart, 1200);
+      cancelIdleLoad = () => window.clearTimeout(timeoutId);
+    }
+
+    if (typeof window !== 'undefined' && 'IntersectionObserver' in window && trendChartRef.current) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            loadChart();
+            observer.disconnect();
+          }
+        },
+        { rootMargin: '180px 0px' }
+      );
+      observer.observe(trendChartRef.current);
+      return () => {
+        cancelled = true;
+        cancelIdleLoad();
+        observer.disconnect();
+      };
+    }
+
+    return () => {
+      cancelled = true;
+      cancelIdleLoad();
+    };
+  }, [loadTrendChart, user?.role]);
 
   const statItems = useMemo(() => {
     const value = (key) => String(summary[key] ?? 0);
@@ -242,55 +246,6 @@ export default function DashboardPage() {
       withAccess({ title: 'Similarity Alerts', value: value('my_similarity_flags'), hint: 'Open analytics', to: '/analytics', featureKey: 'analytics' })
     ];
   }, [summary, urgentNotices.length, user]);
-
-  const studentDeadlines = useMemo(() => {
-    if (user?.role !== 'student') return [];
-    const now = Date.now();
-    return studentAssignments
-      .filter((item) => item?.due_date)
-      .map((item) => {
-        const dueTs = new Date(item.due_date).getTime();
-        const hoursLeft = Math.floor((dueTs - now) / (1000 * 60 * 60));
-        let urgency = 'normal';
-        if (hoursLeft < 0) urgency = 'overdue';
-        else if (hoursLeft <= 24) urgency = 'high';
-        else if (hoursLeft <= 72) urgency = 'medium';
-        return {
-          id: item.id,
-          title: item.title,
-          dueDate: item.due_date,
-          urgency,
-          hoursLeft
-        };
-      })
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-      .slice(0, 8);
-  }, [studentAssignments, user?.role]);
-
-  const studentTimetable = useMemo(() => {
-    if (user?.role !== 'student') return [];
-    const offeringMap = new Map(studentOfferings.map((item) => [item.id, item]));
-    const grouped = {};
-    for (const slot of studentClassSlots) {
-      const day = slot.day || 'Unknown';
-      const offering = offeringMap.get(slot.course_offering_id) || {};
-      if (!grouped[day]) grouped[day] = [];
-      grouped[day].push({
-        time: `${slot.start_time}-${slot.end_time}`,
-        subject: offering.subject_name || offering.subject_code || offering.subject_id || 'Subject',
-        teacher: offering.teacher_name || offering.teacher_user_id || 'Teacher',
-        room: slot.room_code || '-',
-        type: offering.offering_type || '-',
-        group: offering.group_name || ''
-      });
-    }
-    return Object.entries(grouped)
-      .map(([day, sessions]) => ({
-        day,
-        sessions: [...sessions].sort((a, b) => String(a.time).localeCompare(String(b.time)))
-      }))
-      .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
-  }, [studentClassSlots, studentOfferings, user?.role]);
 
   const todayTimetable = useMemo(() => {
     const dayName = new Date().toLocaleDateString(undefined, { weekday: 'long' });
@@ -560,36 +515,22 @@ export default function DashboardPage() {
               ) : null}
             </div>
           </div>
-          <div className="h-72 min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={performanceData}>
-                <defs>
-                  <linearGradient id="avgGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="month"
-                  tick={{ fill: chartChrome.axis, fontSize: 12 }}
-                  axisLine={{ stroke: chartChrome.grid }}
-                  tickLine={{ stroke: chartChrome.grid }}
-                />
-                <Tooltip
-                  cursor={{ stroke: chartChrome.grid, strokeWidth: 1 }}
-                  contentStyle={{
-                    background: chartChrome.tooltipBg,
-                    borderColor: chartChrome.tooltipBorder,
-                    borderRadius: '1rem',
-                    color: chartChrome.tooltipText
-                  }}
-                  labelStyle={{ color: chartChrome.tooltipText, fontWeight: 600 }}
-                  itemStyle={{ color: chartChrome.tooltipText }}
-                />
-                <Area type="monotone" dataKey="avg" stroke="#4f46e5" fill="url(#avgGradient)" strokeWidth={2.5} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div ref={trendChartRef} className="h-72 min-w-0">
+            {loadTrendChart ? (
+              <Suspense
+                fallback={
+                  <div className="grid h-full place-items-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-500 dark:border-slate-700">
+                    Loading trend chart...
+                  </div>
+                }
+              >
+                <DashboardTrendChart chartChrome={chartChrome} data={performanceData} />
+              </Suspense>
+            ) : (
+              <div className="grid h-full place-items-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-500 dark:border-slate-700">
+                Preparing trend chart...
+              </div>
+            )}
           </div>
         </Card>
 

@@ -47,6 +47,8 @@ class ClubEventUpdate(BaseModel):
 
 class ClubEventOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     club_id: str
     title: str
     description: str | None = None

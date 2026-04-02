@@ -29,8 +29,7 @@ async def _logo_file_path_async() -> Path | None:
     return await run_in_threadpool(_logo_file_path)
 
 
-@router.get("/logo/meta")
-async def get_logo_meta() -> dict:
+async def get_logo_meta_payload() -> dict:
     record = await db.settings.find_one({"key": "branding_logo"})
     path = await _logo_file_path_async()
     if not record or not path:
@@ -42,12 +41,20 @@ async def get_logo_meta() -> dict:
     }
 
 
+@router.get("/logo/meta")
+async def get_logo_meta() -> dict:
+    return await get_logo_meta_payload()
+
+
 @router.get("/logo")
 async def get_logo_file() -> FileResponse:
     path = await _logo_file_path_async()
     if not path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
-    return FileResponse(path)
+    return FileResponse(
+        path,
+        headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=86400"},
+    )
 
 
 @router.post("/logo")

@@ -9,6 +9,7 @@ import type { SidebarState } from './types';
 
 type AppLayoutProps = {
   user: any;
+  sessionBootstrap?: any;
   isDark: boolean;
   onToggleTheme: () => void;
   onLogout: () => void;
@@ -31,6 +32,7 @@ function readPinnedState() {
 
 export default function AppLayout({
   user,
+  sessionBootstrap,
   isDark,
   onToggleTheme,
   onLogout,
@@ -113,6 +115,8 @@ export default function AppLayout({
     <div className="relative h-screen overflow-hidden bg-[radial-gradient(1200px_500px_at_15%_-10%,rgba(14,165,233,0.18),transparent),radial-gradient(900px_500px_at_90%_0%,rgba(99,102,241,0.18),transparent)] dark:bg-[radial-gradient(1200px_520px_at_12%_-8%,rgba(56,189,248,0.18),transparent),radial-gradient(900px_560px_at_88%_0%,rgba(99,102,241,0.22),transparent),linear-gradient(180deg,rgba(2,6,23,0.96),rgba(8,17,31,0.98))]">
       <Header
         user={user}
+        initialNoticeCount={sessionBootstrap?.unread_notice_count}
+        initialLogoVersion={sessionBootstrap?.branding?.updated_at ? String(sessionBootstrap.branding.updated_at) : ''}
         isDark={isDark}
         onToggleTheme={onToggleTheme}
         onOpenMobile={() => setIsMobileOpen(true)}

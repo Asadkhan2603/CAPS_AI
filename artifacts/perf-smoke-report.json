@@ -1,0 +1,84 @@
+{
+  "generated_at": "2026-04-02T06:50:24.947974+00:00",
+  "thresholds": {
+    "health_check": {
+      "p95_ms": 120.0,
+      "avg_ms": 40.0
+    },
+    "admin_system_health": {
+      "p95_ms": 350.0,
+      "avg_ms": 180.0
+    },
+    "auth_login": {
+      "p95_ms": 450.0,
+      "avg_ms": 330.0
+    },
+    "teacher_submission_list": {
+      "p95_ms": 220.0,
+      "avg_ms": 120.0
+    },
+    "admin_section_list": {
+      "p95_ms": 260.0,
+      "avg_ms": 150.0
+    },
+    "admin_student_create": {
+      "p95_ms": 320.0,
+      "avg_ms": 180.0
+    },
+    "teacher_review_workflow": {
+      "p95_ms": 800.0,
+      "avg_ms": 450.0
+    }
+  },
+  "metrics": [
+    {
+      "label": "health_check",
+      "iterations": 25.0,
+      "avg_ms": 3.2888359999924432,
+      "p95_ms": 6.413000000065949,
+      "max_ms": 6.513599999834696
+    },
+    {
+      "label": "admin_system_health",
+      "iterations": 20.0,
+      "avg_ms": 4.24450999992132,
+      "p95_ms": 6.663399999979447,
+      "max_ms": 9.15579999991678
+    },
+    {
+      "label": "auth_login",
+      "iterations": 15.0,
+      "avg_ms": 231.20665333332605,
+      "p95_ms": 259.62340000023687,
+      "max_ms": 289.9643000000651
+    },
+    {
+      "label": "teacher_submission_list",
+      "iterations": 15.0,
+      "avg_ms": 5.775599999924452,
+      "p95_ms": 8.813200000076904,
+      "max_ms": 9.941199999957462
+    },
+    {
+      "label": "admin_section_list",
+      "iterations": 15.0,
+      "avg_ms": 10.182480000063757,
+      "p95_ms": 12.025200000152836,
+      "max_ms": 12.460599999940314
+    },
+    {
+      "label": "admin_student_create",
+      "iterations": 12.0,
+      "avg_ms": 11.662699999988035,
+      "p95_ms": 15.927899999951478,
+      "max_ms": 16.000999999960186
+    },
+    {
+      "label": "teacher_review_workflow",
+      "iterations": 12.0,
+      "avg_ms": 21.99767500011755,
+      "p95_ms": 27.957600000263483,
+      "max_ms": 33.23099999988699
+    }
+  ]
+}

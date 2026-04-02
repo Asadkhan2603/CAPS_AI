@@ -12,7 +12,7 @@ export default function SpecializationsPage() {
       params: { is_active: true },
       mapOption: (item) => ({
         value: item.id,
-        label: `${item.program_name || item.name} (${item.program_code || item.code})`,
+        label: item.display_label || `${item.program_name || item.name} (${item.public_id || item.program_code || item.code})`,
         program_name: item.program_name || item.name,
         program_code: item.program_code || item.code
       })
@@ -54,7 +54,7 @@ export default function SpecializationsPage() {
 
   const createFields = useMemo(
     () => [
-      { name: 'specialization_id', label: 'Specialization ID', nullable: true },
+      { name: 'specialization_id', label: 'Legacy Business ID (Optional)', nullable: true },
       { name: 'specialization_name', label: 'Specialization Name', required: true },
       { name: 'specialization_code', label: 'Specialization Code', required: true },
       {
@@ -74,7 +74,7 @@ export default function SpecializationsPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'specialization_id', label: 'Specialization ID', render: (row) => row.specialization_id || '-' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || row.specialization_id || '-' },
       { key: 'specialization_name', label: 'Specialization', render: (row) => row.specialization_name || row.name || '-' },
       { key: 'specialization_code', label: 'Code', render: (row) => row.specialization_code || row.code || '-' },
       { key: 'program_id', label: 'Program', render: (row) => programNameById[row.program_id] || row.program_id || '-' },

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import Card from '../../components/ui/Card';
 import AdminDomainNav from '../../components/admin/AdminDomainNav';
+import SafeResponsiveContainer from '../../components/charts/SafeResponsiveContainer';
 import { apiClient } from '../../services/apiClient';
 import { formatApiError } from '../../utils/apiError';
 
@@ -127,7 +128,7 @@ export default function AdminObservabilityPage() {
       </Card>
       <div className="grid gap-3 xl:grid-cols-3">
         <ChartCard title="Live Queue Depth" empty={!liveHistoryData.length}>
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer>
             <AreaChart data={liveHistoryData}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
@@ -135,10 +136,10 @@ export default function AdminObservabilityPage() {
               <Tooltip />
               <Area type="monotone" dataKey="queuedJobs" stroke="#2563eb" fill="#93c5fd" fillOpacity={0.35} strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </ChartCard>
         <ChartCard title="Live Fallback Rate" empty={!liveHistoryData.length}>
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer>
             <AreaChart data={liveHistoryData}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
@@ -146,10 +147,10 @@ export default function AdminObservabilityPage() {
               <Tooltip formatter={(value) => [`${Number(value).toFixed(2)}%`, 'Fallback Rate']} />
               <Area type="monotone" dataKey="fallbackRatePct" stroke="#d97706" fill="#fcd34d" fillOpacity={0.35} strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </ChartCard>
         <ChartCard title="Live Similarity Candidates" empty={!liveHistoryData.length}>
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer>
             <AreaChart data={liveHistoryData}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
@@ -157,12 +158,12 @@ export default function AdminObservabilityPage() {
               <Tooltip />
               <Area type="monotone" dataKey="similarityCandidates" stroke="#7c3aed" fill="#c4b5fd" fillOpacity={0.35} strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </ChartCard>
       </div>
       <div className="grid gap-3 xl:grid-cols-3">
         <ChartCard title="Persisted Queue Depth" empty={!persistedHistoryData.length}>
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer>
             <AreaChart data={persistedHistoryData}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
@@ -170,10 +171,10 @@ export default function AdminObservabilityPage() {
               <Tooltip />
               <Area type="monotone" dataKey="queuedJobs" stroke="#0f766e" fill="#5eead4" fillOpacity={0.35} strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </ChartCard>
         <ChartCard title="Persisted Fallback Rate" empty={!persistedHistoryData.length}>
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer>
             <AreaChart data={persistedHistoryData}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
@@ -181,10 +182,10 @@ export default function AdminObservabilityPage() {
               <Tooltip formatter={(value) => [`${Number(value).toFixed(2)}%`, 'Fallback Rate']} />
               <Area type="monotone" dataKey="fallbackRatePct" stroke="#be123c" fill="#fda4af" fillOpacity={0.35} strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </ChartCard>
         <ChartCard title="Persisted Snapshot Rows" empty={!persistedHistoryData.length}>
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer>
             <AreaChart data={persistedHistoryData}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
@@ -192,12 +193,12 @@ export default function AdminObservabilityPage() {
               <Tooltip />
               <Area type="monotone" dataKey="retainedRows" stroke="#15803d" fill="#86efac" fillOpacity={0.35} strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </ChartCard>
       </div>
       <div className="grid gap-3 xl:grid-cols-2">
         <ChartCard title="Persisted Prune Activity" empty={!persistedHistoryData.length}>
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer>
             <AreaChart data={persistedHistoryData}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
@@ -205,7 +206,7 @@ export default function AdminObservabilityPage() {
               <Tooltip />
               <Area type="monotone" dataKey="prunedDeletedCount" stroke="#b91c1c" fill="#fca5a5" fillOpacity={0.35} strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </ChartCard>
         <Card className="space-y-2">
           <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Current Observability Notes</p>

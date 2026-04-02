@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GraduationCap, ShieldCheck } from 'lucide-react';
 import Card from '../components/ui/Card';
 import FormInput from '../components/ui/FormInput';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
+import { apiClient } from '../services/apiClient';
+import { formatApiError } from '../utils/apiError';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -18,7 +20,41 @@ export default function RegisterPage() {
     admin_type: 'super_admin'
   });
   const [loading, setLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [bootstrapStatus, setBootstrapStatus] = useState(null);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBootstrapStatus() {
+      setStatusLoading(true);
+      try {
+        const response = await apiClient.get('/auth/bootstrap-status');
+        if (!cancelled) {
+          setBootstrapStatus(response.data);
+        }
+      } catch {
+        if (!cancelled) {
+          setBootstrapStatus(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setStatusLoading(false);
+        }
+      }
+    }
+
+    loadBootstrapStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const recoveryMode = Boolean(
+    bootstrapStatus?.local_auth_recovery_enabled && bootstrapStatus?.has_admin && !bootstrapStatus?.can_self_register_admin
+  );
+  const isBootstrapOpen = Boolean(bootstrapStatus?.can_self_register_admin);
 
   function onChange(event) {
     const { name, value } = event.target;
@@ -30,14 +66,26 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     try {
-      await register(form);
+      if (recoveryMode) {
+        await apiClient.post('/auth/dev/bootstrap-admin', {
+          full_name: form.full_name,
+          email: form.email,
+          password: form.password
+        });
+      } else {
+        await register(form);
+      }
       await login(form.email, form.password);
-      pushToast({ title: 'Bootstrap complete', description: 'Super admin created successfully.', variant: 'success' });
+      pushToast({
+        title: recoveryMode ? 'Local admin repaired' : 'Bootstrap complete',
+        description: recoveryMode ? 'Super admin access restored successfully.' : 'Super admin created successfully.',
+        variant: 'success'
+      });
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      const detail = err?.response?.data?.detail || 'Registration failed';
-      setError(String(detail));
-      pushToast({ title: 'Registration failed', description: String(detail), variant: 'error' });
+      const message = formatApiError(err, recoveryMode ? 'Local admin recovery failed' : 'Registration failed');
+      setError(message);
+      pushToast({ title: recoveryMode ? 'Local admin recovery failed' : 'Registration failed', description: message, variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -68,7 +116,7 @@ export default function RegisterPage() {
               <GraduationCap size={24} />
             </div>
             <p className="text-xs uppercase tracking-widest text-brand-500">CAPS AI</p>
-            <h1 className="mt-1 text-2xl font-semibold">Bootstrap super admin</h1>
+            <h1 className="mt-1 text-2xl font-semibold">{recoveryMode ? 'Repair local super admin' : 'Bootstrap super admin'}</h1>
           </div>
 
           <form className="grid gap-3" onSubmit={onSubmit}>
@@ -77,12 +125,24 @@ export default function RegisterPage() {
             <FormInput label="Password" name="password" type="password" minLength={8} required value={form.password} onChange={onChange} />
             <FormInput label="Role" name="role" value="admin" readOnly disabled />
             <FormInput label="Admin Type" name="admin_type" value="super_admin" readOnly disabled />
-            <p className="text-xs text-slate-500">
-              Bootstrap-only route: this page works only when no admin exists. After bootstrap, users must be provisioned by admin from the users module.
-            </p>
+            {statusLoading ? (
+              <p className="text-xs text-slate-500">Checking bootstrap status...</p>
+            ) : recoveryMode ? (
+              <p className="text-xs text-slate-500">
+                This local database already has an admin. In development, this form repairs or replaces local super admin access so you can log in again.
+              </p>
+            ) : isBootstrapOpen ? (
+              <p className="text-xs text-slate-500">
+                Bootstrap-only route: this page works only when no admin exists. After bootstrap, users must be provisioned by admin from the users module.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Self-registration is closed for this environment. Ask an existing administrator to provision your account.
+              </p>
+            )}
 
-            <button className="btn-primary !bg-sky-600 hover:!bg-sky-700" type="submit" disabled={loading}>
-              {loading ? 'Creating super admin...' : 'Create Super Admin'}
+            <button className="btn-primary !bg-sky-600 hover:!bg-sky-700" type="submit" disabled={loading || (!statusLoading && !recoveryMode && !isBootstrapOpen)}>
+              {loading ? (recoveryMode ? 'Repairing local admin...' : 'Creating super admin...') : recoveryMode ? 'Repair Local Admin' : 'Create Super Admin'}
             </button>
           </form>
 

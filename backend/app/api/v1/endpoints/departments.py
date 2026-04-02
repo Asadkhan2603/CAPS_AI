@@ -17,8 +17,10 @@ from app.services.master_hierarchy import (
     ensure_master_hierarchy_change_is_safe,
     normalize_code,
 )
+from app.services.public_ids import persist_public_id, persist_public_id_update
 from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
+from app.services.section_read_models import sync_section_read_models_for_query
 
 router = APIRouter()
 
@@ -147,6 +149,7 @@ async def create_department(
         'created_at': datetime.now(timezone.utc),
         'schema_version': DEPARTMENT_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind='department')
     result = await db.departments.insert_one(document)
     created = await db.departments.find_one({'_id': result.inserted_id})
     if not created:
@@ -235,6 +238,7 @@ async def update_department(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Department ID or code already exists')
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
+    persist_public_id_update(current, update_data, kind='department')
     update_data['schema_version'] = DEPARTMENT_SCHEMA_VERSION
 
     result = await db.departments.update_one({'_id': department_obj_id}, build_state_update(update_data))
@@ -253,6 +257,7 @@ async def update_department(
             {'department_code': current.get('department_code') or current.get('code')},
             {'$set': branch_set},
         )
+    await sync_section_read_models_for_query(query={"department_id": department_id}, database=db)
     return DepartmentOut(**department_public(updated))
 
 
@@ -310,6 +315,7 @@ async def delete_department(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Department not found')
+    await sync_section_read_models_for_query(query={"department_id": department_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,
         action="departments.delete",

@@ -22,7 +22,15 @@ from app.services.academic_hierarchy import (
     validate_batch_specialization_scope,
 )
 from app.services.audit import log_destructive_action_event
+from app.services.batch_read_models import (
+    get_batch_read_model,
+    hydrate_batches_from_read_models,
+    sync_batch_read_model,
+)
 from app.services.governance import enforce_review_approval
+from app.services.semester_read_models import sync_semester_read_models_for_query
+from app.services.section_read_models import sync_section_read_models_for_query
+from app.services.public_ids import persist_public_id_update
 
 router = APIRouter()
 
@@ -95,6 +103,7 @@ async def list_batches(
         ]
     apply_is_active_filter(query, is_active)
     items = await db.batches.find(query).skip(skip).limit(limit).to_list(length=limit)
+    items = await hydrate_batches_from_read_models(source_batches=items, database=db)
     return [BatchOut(**batch_public(item)) for item in items]
 
 
@@ -104,6 +113,9 @@ async def get_batch(
     _current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> BatchOut:
     item = await db.batches.find_one({"_id": parse_object_id(batch_id)})
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    item = await get_batch_read_model(batch_id=batch_id, database=db)
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
     return BatchOut(**batch_public(item))
@@ -174,6 +186,8 @@ async def create_batch(
         await db.semesters.insert_many(semester_docs)
 
     created = await db.batches.find_one({"_id": result.inserted_id})
+    created = await sync_batch_read_model(batch=created, database=db)
+    await sync_semester_read_models_for_query(query={"batch_id": batch_id}, database=db)
     return BatchOut(**batch_public(created))
 
 
@@ -251,6 +265,7 @@ async def update_batch(
         update_data["university_code"] = program_context.get("university_code")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="batch")
     update_data["schema_version"] = BATCH_SCHEMA_VERSION
     result = await db.batches.update_one({"_id": batch_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
@@ -282,6 +297,7 @@ async def update_batch(
                 "university_code": semester_payload.get("university_code"),
                 "schema_version": SEMESTER_SCHEMA_VERSION,
             }
+            persist_public_id_update(semester, update_fields, kind="semester")
             current_label = str(semester.get("label") or "").strip()
             if not current_label or current_label.startswith("Semester "):
                 update_fields["label"] = semester_payload.get("label")
@@ -289,6 +305,9 @@ async def update_batch(
                 {"_id": semester["_id"]},
                 build_state_update(update_fields),
             )
+    updated = await sync_batch_read_model(batch=updated, database=db)
+    await sync_semester_read_models_for_query(query={"batch_id": batch_id}, database=db)
+    await sync_section_read_models_for_query(query={"batch_id": batch_id}, database=db)
     return BatchOut(**batch_public(updated))
 
 
@@ -325,6 +344,11 @@ async def delete_batch(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    archived = await db.batches.find_one({"_id": parse_object_id(batch_id)})
+    if archived:
+        await sync_batch_read_model(batch=archived, database=db)
+    await sync_semester_read_models_for_query(query={"batch_id": batch_id}, database=db)
+    await sync_section_read_models_for_query(query={"batch_id": batch_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,
         action="batches.delete",

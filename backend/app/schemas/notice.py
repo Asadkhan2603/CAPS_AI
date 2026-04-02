@@ -37,7 +37,12 @@ class NoticeOut(BaseModel):
     scheduled_at: datetime | None = None
     read_count: int = 0
     seen_by: list[str] = Field(default_factory=list)
+    is_read: bool = False
     created_by: str | None = None
     is_active: bool = True
     created_at: datetime | None = None
     schema_version: int = 1
+
+
+class NoticeReadBatchRequest(BaseModel):
+    notice_ids: list[str] = Field(default_factory=list)

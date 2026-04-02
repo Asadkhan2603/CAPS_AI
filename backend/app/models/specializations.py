@@ -1,12 +1,13 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import SPECIALIZATION_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def specialization_public(document: Dict[str, Any]) -> Dict[str, Any]:
     specialization_name = document.get("specialization_name") or document.get("name", "")
     specialization_code = document.get("specialization_code") or document.get("code", "")
-    return {
+    payload = {
         "id": str(document["_id"]),
         "specialization_id": document.get("specialization_id") or specialization_code or str(document.get("_id")),
         "specialization_code": specialization_code,
@@ -31,3 +32,4 @@ def specialization_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=SPECIALIZATION_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="specialization", document=document, display_name=specialization_name)

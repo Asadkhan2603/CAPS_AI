@@ -1,21 +1,28 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import CLASS_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def class_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         'id': str(document['_id']),
         'faculty_id': document.get('faculty_id'),
         'department_id': document.get('department_id'),
+        'department_name': document.get('department_name'),
         'program_id': document.get('program_id'),
+        'program_name': document.get('program_name'),
         'specialization_id': document.get('specialization_id'),
+        'specialization_name': document.get('specialization_name'),
         'batch_id': document.get('batch_id'),
+        'batch_name': document.get('batch_name'),
         'semester_id': document.get('semester_id'),
+        'semester_label': document.get('semester_label'),
         'name': document.get('name', ''),
         'faculty_name': document.get('faculty_name'),
         'branch_name': document.get('branch_name'),
         'class_coordinator_user_id': document.get('class_coordinator_user_id'),
+        'class_coordinator_name': document.get('class_coordinator_name'),
         'is_active': document.get('is_active', True),
         'deleted_at': document.get('deleted_at'),
         'deleted_by': document.get('deleted_by'),
@@ -25,3 +32,4 @@ def class_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=CLASS_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="section", document=document, display_name=document.get("name"))

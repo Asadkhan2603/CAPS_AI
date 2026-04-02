@@ -2,13 +2,14 @@ from typing import Any, Dict
 
 from app.core.schema_versions import PROGRAM_SCHEMA_VERSION, normalize_schema_version
 from app.services.academic_hierarchy import normalize_program_duration_record
+from app.services.public_ids import apply_public_identity
 
 
 def program_public(document: Dict[str, Any]) -> Dict[str, Any]:
     duration_years, total_semesters = normalize_program_duration_record(document)
     program_name = document.get("program_name") or document.get("name", "")
     program_code = document.get("program_code") or document.get("code", "")
-    return {
+    payload = {
         "id": str(document["_id"]),
         "program_id": document.get("program_id") or program_code or str(document.get("_id")),
         "program_code": program_code,
@@ -34,3 +35,4 @@ def program_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=PROGRAM_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="program", document=document, display_name=program_name)

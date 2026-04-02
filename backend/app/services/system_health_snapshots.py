@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.core.config import settings
 from app.core.database import db
 from app.core.schema_versions import SYSTEM_HEALTH_SNAPSHOT_SCHEMA_VERSION
 from app.models.system_health_snapshots import system_health_snapshot_public
@@ -20,6 +22,20 @@ def _minute_bucket(value: datetime) -> str:
 
 def _retention_cutoff_bucket(value: datetime) -> str:
     return _minute_bucket(value.replace(second=0, microsecond=0) - timedelta(minutes=SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES))
+
+
+def _snapshot_store_status_from_document(document: dict[str, Any]) -> dict[str, Any]:
+    retained_rows = int(document.get("retained_rows") or 0)
+    max_retained_rows = int(document.get("max_retained_rows") or (SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES + 1))
+    return {
+        "retention_minutes": SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES,
+        "max_retained_rows": max_retained_rows,
+        "retained_rows": retained_rows,
+        "last_pruned_bucket": document.get("last_pruned_bucket") or _last_pruned_bucket,
+        "last_pruned_at": document.get("last_pruned_at") or _last_pruned_at,
+        "last_pruned_deleted_count": int(document.get("last_pruned_deleted_count") or 0),
+        "is_within_retention_bound": bool(document.get("is_within_retention_bound", retained_rows <= max_retained_rows)),
+    }
 
 
 async def prune_system_health_snapshots(
@@ -86,12 +102,18 @@ async def persist_system_health_snapshot(
         "retained_rows": retained_rows,
         "max_retained_rows": max_retained_rows,
         "last_pruned_deleted_count": int(_last_pruned_deleted_count),
+        "last_pruned_bucket": _last_pruned_bucket,
+        "last_pruned_at": _last_pruned_at,
         "is_within_retention_bound": retained_rows <= max_retained_rows,
     }
+    stored_payload = deepcopy(payload)
+    stored_payload.pop("snapshot_history", None)
+    stored_payload["snapshot_store"] = _snapshot_store_status_from_document({**document, **retention_fields})
+    document["payload"] = stored_payload
     document.update(retention_fields)
     await database.system_health_snapshots.update_one(
         {"bucket_minute": document["bucket_minute"]},
-        {"$set": retention_fields},
+        {"$set": {"payload": stored_payload, **retention_fields}},
         upsert=False,
     )
     return system_health_snapshot_public(document)
@@ -122,3 +144,36 @@ async def get_system_health_snapshot_store_status(
         "last_pruned_deleted_count": int(_last_pruned_deleted_count),
         "is_within_retention_bound": int(retained_rows) <= max_retained_rows,
     }
+
+
+async def get_latest_system_health_snapshot_payload(
+    *,
+    max_age_seconds: int | None = None,
+    database: Any = db,
+) -> tuple[dict[str, Any] | None, int | None]:
+    document = await database.system_health_snapshots.find_one({}, sort=[("recorded_at", -1)])
+    if not document:
+        return None, None
+
+    recorded_at = document.get("recorded_at")
+    if not isinstance(recorded_at, datetime):
+        return None, None
+    if recorded_at.tzinfo is None:
+        recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+    else:
+        recorded_at = recorded_at.astimezone(timezone.utc)
+
+    age_seconds = max(0, int((datetime.now(timezone.utc) - recorded_at).total_seconds()))
+    freshness_seconds = max_age_seconds
+    if freshness_seconds is None:
+        freshness_seconds = max(1, int(settings.system_health_snapshot_freshness_seconds))
+    if age_seconds > freshness_seconds:
+        return None, age_seconds
+
+    payload = deepcopy(document.get("payload") or {})
+    if not payload:
+        return None, age_seconds
+
+    payload["snapshot_store"] = _snapshot_store_status_from_document(document)
+    payload["snapshot_history"] = await get_system_health_snapshot_history(database=database)
+    return payload, age_seconds

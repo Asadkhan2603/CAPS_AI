@@ -127,6 +127,7 @@ Base manifests are kept in the repository root:
 - `k8s-mongodb.yaml`
 - `k8s-redis.yaml`
 - `k8s-backend.yaml`
+- `k8s-backend-hpa.yaml`
 - `k8s-frontend.yaml`
 - `k8s-ingress.yaml`
 - `k8s-configmap.yaml`

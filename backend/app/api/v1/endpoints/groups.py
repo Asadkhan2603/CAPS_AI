@@ -9,6 +9,7 @@ from app.core.schema_versions import GROUP_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.groups import group_public
 from app.schemas.group_item import GroupCreate, GroupOut, GroupUpdate
+from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -76,6 +77,7 @@ async def create_group(
         "created_at": datetime.now(timezone.utc),
         "schema_version": GROUP_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="group")
     result = await db.groups.insert_one(document)
     created = await db.groups.find_one({"_id": result.inserted_id})
     return GroupOut(**group_public(created))
@@ -104,6 +106,7 @@ async def update_group(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group code already exists in this section")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="group")
     await db.groups.update_one(
         {"_id": group_obj_id},
         {"$set": {**update_data, "schema_version": GROUP_SCHEMA_VERSION}},

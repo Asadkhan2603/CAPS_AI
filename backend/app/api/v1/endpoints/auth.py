@@ -16,11 +16,21 @@ from app.core.security import (
 )
 from app.domains.auth.repository import AuthRepository
 from app.domains.auth.service import AuthService
+from app.api.v1.endpoints.branding import get_logo_meta_payload
+from app.api.v1.endpoints.notices import get_unread_notice_count_payload
 from app.models.users import user_public
-from app.schemas.auth import ChangePasswordRequest, RefreshTokenRequest, Token
+from app.schemas.auth import (
+    BootstrapStatus,
+    ChangePasswordRequest,
+    DevBootstrapAdminRequest,
+    RefreshTokenRequest,
+    SessionBootstrapResponse,
+    Token,
+)
 from app.schemas.user import UserCreate, UserLogin, UserOut, UserProfileUpdate
 
 router = APIRouter()
+session_router = APIRouter()
 PROFILE_UPLOAD_DIR = Path("uploads/profiles")
 MAX_AVATAR_SIZE = 3 * 1024 * 1024
 ALLOWED_AVATAR_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -28,9 +38,29 @@ ALLOWED_AVATAR_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 auth_service = AuthService(AuthRepository(lambda: db))
 
 
+def _is_loopback_request(request: Request) -> bool:
+    host = (request.client.host if request.client else "") or ""
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
+@router.get("/bootstrap-status", response_model=BootstrapStatus)
+async def get_bootstrap_status() -> BootstrapStatus:
+    return await auth_service.get_bootstrap_status()
+
+
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register_user(payload: UserCreate) -> UserOut:
     return await auth_service.register(payload)
+
+
+@router.post("/dev/bootstrap-admin", response_model=UserOut)
+async def dev_bootstrap_admin(payload: DevBootstrapAdminRequest, request: Request) -> UserOut:
+    if not _is_loopback_request(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Local auth recovery is available only from the host machine.",
+        )
+    return await auth_service.bootstrap_or_recover_admin(payload)
 
 
 @router.post("/login", response_model=Token)
@@ -70,6 +100,20 @@ async def logout_user(
 @router.get("/me", response_model=UserOut)
 async def get_me(current_user=Depends(get_current_user)) -> UserOut:
     return UserOut(**user_public(current_user))
+
+
+@session_router.get("/bootstrap", response_model=SessionBootstrapResponse)
+async def get_session_bootstrap(
+    current_user=Depends(get_current_user),
+) -> SessionBootstrapResponse:
+    branding = await get_logo_meta_payload()
+    unread_notice_count = await get_unread_notice_count_payload(current_user)
+    return SessionBootstrapResponse(
+        user=UserOut(**user_public(current_user)),
+        unread_notice_count=int(unread_notice_count.get("count") or 0),
+        branding=branding,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 @router.post("/change-password", response_model=UserOut)
@@ -190,4 +234,7 @@ async def get_profile_avatar(
     file_path = PROFILE_UPLOAD_DIR / file_name
     if not await run_in_threadpool(file_path.exists):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avatar file missing")
-    return FileResponse(file_path)
+    return FileResponse(
+        file_path,
+        headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=86400"},
+    )

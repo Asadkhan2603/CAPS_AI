@@ -24,10 +24,17 @@ class BatchUpdate(BaseModel):
 
 class BatchOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     faculty_id: str | None = None
     department_id: str | None = None
     program_id: str
+    program_name: str | None = None
+    program_code: str | None = None
+    program_duration_years: int | None = None
     specialization_id: str | None = None
+    specialization_name: str | None = None
+    specialization_code: str | None = None
     name: str
     code: str
     start_year: int | None = None

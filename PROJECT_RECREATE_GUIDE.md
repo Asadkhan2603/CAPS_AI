@@ -1,7 +1,7 @@
 # PROJECT_RECREATE_GUIDE (Master)
 
 Status: authoritative recreate + validation guide for CAPS_AI.
-Last updated: 2026-03-05 (Asia/Calcutta).
+Last updated: 2026-04-02 (Asia/Calcutta).
 
 ## 1. Master rule (mandatory)
 Whenever any repository code/config/infra changes:
@@ -62,6 +62,18 @@ Invoke-WebRequest -UseBasicParsing `
   -Uri "http://localhost:8000/api/v1/auth/login" `
   -Method POST -ContentType "application/json" -Body $login
 ```
+
+Bootstrap status and local recovery:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://localhost:8000/api/v1/auth/bootstrap-status
+```
+
+If local login is blocked by a stale MongoDB admin record during development, recover local super admin access from the UI:
+
+- Open `/register`
+- Submit full name, email, and password
+- In development, the page will repair or recreate local super admin access when self-registration is otherwise closed
 
 ## 5. Kubernetes deploy + hard validation
 Use a real context first:
@@ -158,6 +170,24 @@ In non-secure execution contexts (certain browser automation runtimes), this can
 Local real browser on `http://localhost` generally works, but this is still a portability risk.
 
 ## 11. Master change log
+### 2026-04-02 15:10 +05:30
+- Changed:
+  - `backend/app/api/v1/endpoints/auth.py`
+  - `backend/app/domains/auth/service.py`
+  - `backend/app/domains/auth/repository.py`
+  - `backend/app/schemas/auth.py`
+  - `frontend/src/pages/LoginPage.jsx`
+  - `frontend/src/pages/RegisterPage.jsx`
+  - `PROJECT_RECREATE_GUIDE.md`
+  - `code_recreate.md`
+- Reason:
+  - Fixed local/LAN auth dead-ends by adding bootstrap status reporting, development-only local admin recovery, and clearer login/register guidance when stale local MongoDB users block bootstrap.
+  - Added case-insensitive fallback email lookup for legacy or manually inserted users.
+- Validation:
+  - Code review confirmed `GET /api/v1/auth/bootstrap-status` is public and `POST /api/v1/auth/dev/bootstrap-admin` is restricted to development plus loopback requests.
+  - Frontend register flow now switches between bootstrap and recovery modes based on backend bootstrap status.
+  - Frontend login flow continues to surface backend auth failures and now points fresh local setups toward `/register`.
+
 ### 2026-03-03
 - Changed:
   - `k8s-backend.yaml`

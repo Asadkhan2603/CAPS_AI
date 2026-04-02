@@ -17,11 +17,16 @@ class ReviewTicketDecision(BaseModel):
 
 class ReviewTicketOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     evaluation_id: str
+    evaluation_label: str | None = None
     requested_by_user_id: str
+    requested_by_label: str | None = None
     reason: str
     status: ReviewTicketStatus = "pending"
     resolved_by_user_id: str | None = None
+    resolved_by_label: str | None = None
     resolved_at: datetime | None = None
     created_at: datetime | None = None
     schema_version: int = 1

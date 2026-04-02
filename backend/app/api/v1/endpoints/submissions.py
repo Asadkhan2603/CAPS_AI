@@ -17,6 +17,7 @@ from app.services.ai_jobs import AI_JOB_TYPE_BULK_SUBMISSION, queue_ai_job, sche
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
 from app.services.file_parser import parse_file_content
+from app.services.public_ids import build_public_id, persist_public_id, persist_public_id_update
 from app.services.submission_access_policy import teacher_accessible_assignment_ids, teacher_can_access_submission
 from app.services.submission_ai import evaluate_submission_and_save
 
@@ -139,8 +140,12 @@ async def upload_submission(
         'extracted_text': extracted_text,
         'created_at': datetime.now(timezone.utc),
     }
+    persist_public_id(document, kind='submission')
 
     result = await db.submissions.insert_one(document)
+    public_id = build_public_id('submission', {**document, '_id': result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.submissions.update_one({'_id': result.inserted_id}, {'$set': {'public_id': public_id}})
     created = await db.submissions.find_one({'_id': result.inserted_id})
     return SubmissionOut(**submission_public(created))
 
@@ -267,6 +272,7 @@ async def update_submission(
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
 
+    persist_public_id_update(item, update_data, kind='submission')
     update_data['schema_version'] = SUBMISSION_SCHEMA_VERSION
     await db.submissions.update_one({'_id': parse_object_id(submission_id)}, {'$set': update_data})
     updated = await db.submissions.find_one({'_id': parse_object_id(submission_id)})

@@ -13,6 +13,7 @@ from app.core.security import require_roles
 from app.models.event_registrations import event_registration_public
 from app.schemas.event_registration import EventRegistrationCreate, EventRegistrationOut
 from app.services.audit import log_audit_event
+from app.services.public_ids import build_public_id, persist_public_id
 
 router = APIRouter()
 
@@ -190,7 +191,11 @@ async def create_event_registration(
         'created_at': datetime.now(timezone.utc),
         'schema_version': EVENT_REGISTRATION_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind='event_registration')
     result = await db.event_registrations.insert_one(document)
+    public_id = build_public_id('event_registration', {**document, '_id': result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.event_registrations.update_one({'_id': result.inserted_id}, {'$set': {'public_id': public_id}})
     created = await db.event_registrations.find_one({'_id': result.inserted_id})
 
     await log_audit_event(
@@ -241,6 +246,7 @@ async def submit_event_registration(
         'created_at': datetime.now(timezone.utc),
         'schema_version': EVENT_REGISTRATION_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind='event_registration')
 
     if payment_receipt:
         suffix = Path(payment_receipt.filename or '').suffix.lower()
@@ -265,6 +271,9 @@ async def submit_event_registration(
         document['payment_receipt_size_bytes'] = size
 
     result = await db.event_registrations.insert_one(document)
+    public_id = build_public_id('event_registration', {**document, '_id': result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.event_registrations.update_one({'_id': result.inserted_id}, {'$set': {'public_id': public_id}})
     created = await db.event_registrations.find_one({'_id': result.inserted_id})
 
     await log_audit_event(

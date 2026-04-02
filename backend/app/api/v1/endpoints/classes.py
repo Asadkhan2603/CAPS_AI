@@ -13,6 +13,12 @@ from app.schemas.class_item import ClassCreate, ClassOut, ClassUpdate
 from app.services.academic_hierarchy import validate_batch_specialization_scope
 from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
+from app.services.public_ids import persist_public_id, persist_public_id_update
+from app.services.section_read_models import (
+    get_section_read_model,
+    hydrate_sections_from_read_models,
+    sync_section_read_model,
+)
 
 router = APIRouter()
 
@@ -114,6 +120,7 @@ async def list_classes(
 
     cursor = db.classes.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
+    items = await hydrate_sections_from_read_models(source_sections=items, database=db)
     return [ClassOut(**class_public(item)) for item in items]
 
 
@@ -128,6 +135,9 @@ async def get_class(
     if current_user.get('role') == 'teacher':
         if item.get('class_coordinator_user_id') != str(current_user.get('_id')):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to view this class')
+    item = await get_section_read_model(section_id=class_id, database=db)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
     return ClassOut(**class_public(item))
 
 
@@ -159,10 +169,12 @@ async def create_class(
         'created_at': datetime.now(timezone.utc),
         'schema_version': CLASS_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind='section')
     result = await db.classes.insert_one(document)
     created = await db.classes.find_one({'_id': result.inserted_id})
     if not created:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Class creation failed')
+    created = await sync_section_read_model(section=created, database=db)
     return ClassOut(**class_public(created))
 
 
@@ -200,6 +212,7 @@ async def update_class(
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
+    persist_public_id_update(current, update_data, kind='section')
     update_data['schema_version'] = CLASS_SCHEMA_VERSION
 
     result = await db.classes.update_one({'_id': class_obj_id}, build_state_update(update_data))
@@ -208,6 +221,7 @@ async def update_class(
     updated = await db.classes.find_one({'_id': class_obj_id})
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
+    updated = await sync_section_read_model(section=updated, database=db)
     return ClassOut(**class_public(updated))
 
 
@@ -244,6 +258,9 @@ async def delete_class(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
+    archived = await db.classes.find_one({'_id': parse_object_id(class_id)})
+    if archived:
+        await sync_section_read_model(section=archived, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,
         action="classes.delete",

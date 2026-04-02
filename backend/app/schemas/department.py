@@ -47,6 +47,8 @@ class DepartmentOut(BaseModel):
     department_id: str
     department_code: str
     department_name: str
+    public_id: str | None = None
+    display_label: str | None = None
     name: str
     code: str
     faculty_id: str | None = None

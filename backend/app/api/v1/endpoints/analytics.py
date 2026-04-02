@@ -10,6 +10,8 @@ from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.redis_store import redis_store
 from app.core.security import require_roles
+from app.models.notices import notice_public
+from app.api.v1.endpoints.notices import _filter_visible_notices, _notice_is_expired
 
 router = APIRouter()
 
@@ -92,6 +94,271 @@ async def _distinct_values(
     return values
 
 
+async def _student_profiles_and_class_ids(current_user: dict) -> tuple[list[dict[str, Any]], set[str]]:
+    user_id = str(current_user.get('_id'))
+    user_email = (current_user.get('email') or '').strip().lower()
+
+    student_profiles = await db.students.find(
+        {'$or': [{'email': user_email}, {'user_id': user_id}], 'is_active': True}
+    ).to_list(length=ANALYTICS_SMALL_SCAN_CAP)
+    student_ids = [str(item.get('_id')) for item in student_profiles if item.get('_id')]
+
+    class_ids = {
+        str(item.get('class_id'))
+        for item in student_profiles
+        if item.get('class_id')
+    }
+    if student_ids:
+        enrolled_class_ids = await _distinct_values(
+            db.enrollments,
+            'class_id',
+            {'student_id': {'$in': student_ids}},
+            fallback_cap=ANALYTICS_MEDIUM_SCAN_CAP,
+        )
+        class_ids.update(str(value) for value in enrolled_class_ids if value)
+
+    return student_profiles, class_ids
+
+
+async def _build_summary_payload(current_user: dict) -> dict[str, Any]:
+    role = current_user.get('role')
+    user_id = str(current_user.get('_id'))
+
+    if role == 'student':
+        total_submissions = await db.submissions.count_documents({'student_user_id': user_id})
+        total_evaluations = await db.evaluations.count_documents({'student_user_id': user_id})
+        pending = await db.submissions.count_documents({'student_user_id': user_id, 'status': 'submitted'})
+        return {
+            'total_submissions': total_submissions,
+            'total_evaluations': total_evaluations,
+            'pending_reviews': pending,
+        }
+
+    if role == 'teacher':
+        my_assignments = await db.assignments.count_documents({'created_by': user_id})
+        my_assignment_ids = [str(item) for item in await _distinct_values(db.assignments, '_id', {'created_by': user_id})]
+        my_submissions = 0
+        my_similarity_flags = 0
+        if my_assignment_ids:
+            my_submissions = await db.submissions.count_documents({'assignment_id': {'$in': my_assignment_ids}})
+            my_similarity_flags = await db.similarity_logs.count_documents(
+                {'is_flagged': True, 'source_assignment_id': {'$in': my_assignment_ids}}
+            )
+        my_evaluations = await db.evaluations.count_documents({'teacher_user_id': user_id})
+        my_notices = await db.notices.count_documents({'is_active': True})
+        return {
+            'my_assignments': my_assignments,
+            'my_submissions': my_submissions,
+            'my_evaluations': my_evaluations,
+            'my_similarity_flags': my_similarity_flags,
+            'my_notices': my_notices,
+        }
+
+    return {
+        'users': await db.users.count_documents({}),
+        'programs': await db.programs.count_documents({}),
+        'batches': await db.batches.count_documents({}),
+        'semesters': await db.semesters.count_documents({}),
+        'classes': await db.classes.count_documents({}),
+        'subjects': await db.subjects.count_documents({}),
+        'students': await db.students.count_documents({}),
+        'assignments': await db.assignments.count_documents({}),
+        'submissions': await db.submissions.count_documents({}),
+        'evaluations': await db.evaluations.count_documents({}),
+        'similarity_flags': await db.similarity_logs.count_documents({'is_flagged': True}),
+        'notices': await db.notices.count_documents({'is_active': True}),
+        'clubs': await db.clubs.count_documents({'is_active': True}),
+        'club_events': await db.club_events.count_documents({}),
+    }
+
+
+async def _build_urgent_notices_payload(current_user: dict, *, limit: int = 3) -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    items = await db.notices.find(
+        {
+            'is_active': True,
+            'priority': 'urgent',
+            '$or': [{'scheduled_at': None}, {'scheduled_at': {'$lte': now}}],
+        }
+    ).to_list(length=max(limit * 10, 20))
+    items = sorted(
+        items,
+        key=lambda item: item.get('created_at') or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    items = [item for item in items if not _notice_is_expired(item, now)]
+    items = await _filter_visible_notices(items, current_user)
+    return [
+        notice_public(item, current_user_id=str(current_user.get('_id')))
+        for item in items[:limit]
+    ]
+
+
+async def _build_student_dashboard_payload(current_user: dict) -> dict[str, Any]:
+    student_profiles, class_ids = await _student_profiles_and_class_ids(current_user)
+    primary_student = student_profiles[0] if student_profiles else None
+    if not class_ids or not primary_student:
+        return {
+            'deadlines': [],
+            'timetable': [],
+            'internship_status': None,
+        }
+
+    now = datetime.now(timezone.utc)
+    assignment_rows = await db.assignments.find(
+        {
+            'is_deleted': {'$in': [False, None]},
+            'class_id': {'$in': list(class_ids)},
+        },
+        {'_id': 1, 'title': 1, 'due_date': 1},
+    ).to_list(length=ANALYTICS_MEDIUM_SCAN_CAP)
+
+    deadlines = []
+    for item in assignment_rows:
+        due_date = _to_utc_datetime(item.get('due_date'))
+        if not due_date:
+            continue
+        hours_left = int((due_date - now).total_seconds() // 3600)
+        urgency = 'normal'
+        if hours_left < 0:
+            urgency = 'overdue'
+        elif hours_left <= 24:
+            urgency = 'high'
+        elif hours_left <= 72:
+            urgency = 'medium'
+        deadlines.append(
+            {
+                'id': str(item.get('_id')),
+                'title': item.get('title') or 'Assignment',
+                'dueDate': due_date,
+                'urgency': urgency,
+                'hoursLeft': hours_left,
+            }
+        )
+    deadlines.sort(key=lambda item: item.get('dueDate') or now)
+    deadlines = deadlines[:8]
+
+    offering_query: dict[str, Any] = {
+        'section_id': primary_student.get('class_id'),
+        'is_active': True,
+    }
+    if primary_student.get('group_id'):
+        offering_query['$or'] = [{'group_id': None}, {'group_id': primary_student.get('group_id')}]
+    offering_rows = await db.course_offerings.find(
+        offering_query,
+        {
+            '_id': 1,
+            'subject_id': 1,
+            'teacher_user_id': 1,
+            'offering_type': 1,
+            'group_id': 1,
+            'group_name': 1,
+        },
+    ).to_list(length=ANALYTICS_SMALL_SCAN_CAP)
+
+    offering_ids = [str(item.get('_id')) for item in offering_rows if item.get('_id')]
+    subject_ids = {str(item.get('subject_id')) for item in offering_rows if item.get('subject_id')}
+    teacher_ids = {str(item.get('teacher_user_id')) for item in offering_rows if item.get('teacher_user_id')}
+
+    subject_map: dict[str, dict[str, Any]] = {}
+    if subject_ids:
+        subject_rows = await db.subjects.find(
+            {'_id': {'$in': _safe_object_ids(list(subject_ids))}, 'is_active': True},
+            {'name': 1, 'code': 1},
+        ).to_list(length=ANALYTICS_SMALL_SCAN_CAP)
+        subject_map = {str(item.get('_id')): item for item in subject_rows if item.get('_id')}
+
+    teacher_map: dict[str, dict[str, Any]] = {}
+    if teacher_ids:
+        teacher_rows = await db.users.find(
+            {'_id': {'$in': _safe_object_ids(list(teacher_ids))}},
+            {'full_name': 1},
+        ).to_list(length=ANALYTICS_SMALL_SCAN_CAP)
+        teacher_map = {str(item.get('_id')): item for item in teacher_rows if item.get('_id')}
+
+    group_map: dict[str, dict[str, Any]] = {}
+    group_ids = {str(item.get('group_id')) for item in offering_rows if item.get('group_id')}
+    if group_ids and hasattr(db, 'groups'):
+        group_rows = await db.groups.find(
+            {'_id': {'$in': _safe_object_ids(list(group_ids))}, 'is_active': True},
+            {'name': 1},
+        ).to_list(length=ANALYTICS_SMALL_SCAN_CAP)
+        group_map = {str(item.get('_id')): item for item in group_rows if item.get('_id')}
+
+    offering_map = {}
+    for item in offering_rows:
+        offering_id = str(item.get('_id'))
+        subject = subject_map.get(str(item.get('subject_id')), {})
+        teacher = teacher_map.get(str(item.get('teacher_user_id')), {})
+        group = group_map.get(str(item.get('group_id')), {})
+        offering_map[offering_id] = {
+            'subject': subject.get('name') or subject.get('code') or item.get('subject_id') or 'Subject',
+            'teacher': teacher.get('full_name') or item.get('teacher_user_id') or 'Teacher',
+            'type': item.get('offering_type') or '-',
+            'group': item.get('group_name') or group.get('name') or '',
+        }
+
+    timetable_rows = []
+    if offering_ids:
+        timetable_rows = await db.class_slots.find(
+            {'course_offering_id': {'$in': offering_ids}, 'is_active': True},
+            {'course_offering_id': 1, 'day': 1, 'start_time': 1, 'end_time': 1, 'room_code': 1},
+        ).to_list(length=ANALYTICS_MEDIUM_SCAN_CAP)
+
+    grouped_timetable: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for slot in timetable_rows:
+        day = slot.get('day') or 'Unknown'
+        offering = offering_map.get(str(slot.get('course_offering_id')), {})
+        grouped_timetable[day].append(
+            {
+                'time': f"{slot.get('start_time')}-{slot.get('end_time')}",
+                'subject': offering.get('subject') or 'Subject',
+                'teacher': offering.get('teacher') or 'Teacher',
+                'room': slot.get('room_code') or '-',
+                'type': offering.get('type') or '-',
+                'group': offering.get('group') or '',
+            }
+        )
+
+    timetable = []
+    for day, sessions in grouped_timetable.items():
+        timetable.append(
+            {
+                'day': day,
+                'sessions': sorted(sessions, key=lambda item: str(item.get('time') or '')),
+            }
+        )
+    timetable.sort(key=lambda item: str(item.get('day') or ''))
+
+    internship_status = None
+    if hasattr(db, 'internship_sessions'):
+        internship_status = await db.internship_sessions.find_one(
+            {'student_user_id': str(current_user.get('_id'))},
+            sort=[('clock_in_at', -1)],
+        )
+        if internship_status:
+            internship_status = {
+                'id': str(internship_status.get('_id')),
+                'student_user_id': internship_status.get('student_user_id'),
+                'student_id': internship_status.get('student_id'),
+                'status': internship_status.get('status'),
+                'clock_in_at': internship_status.get('clock_in_at'),
+                'clock_out_at': internship_status.get('clock_out_at'),
+                'total_minutes': internship_status.get('total_minutes'),
+                'auto_closed': bool(internship_status.get('auto_closed', False)),
+                'note': internship_status.get('note'),
+                'created_at': internship_status.get('created_at'),
+                'updated_at': internship_status.get('updated_at'),
+                'schema_version': internship_status.get('schema_version'),
+            }
+
+    return {
+        'deadlines': deadlines,
+        'timetable': timetable,
+        'internship_status': internship_status,
+    }
+
+
 async def _count_by_field(
     collection,
     *,
@@ -156,65 +423,43 @@ async def analytics_summary(
     if cached:
         return cached
 
-    if role == 'student':
-        total_submissions = await db.submissions.count_documents({'student_user_id': user_id})
-        total_evaluations = await db.evaluations.count_documents({'student_user_id': user_id})
-        pending = await db.submissions.count_documents({'student_user_id': user_id, 'status': 'submitted'})
-        payload = {
-            'role': role,
-            'summary': {
-                'total_submissions': total_submissions,
-                'total_evaluations': total_evaluations,
-                'pending_reviews': pending,
-            },
-        }
-        await _set_cached_json(cache_key, payload)
-        return payload
+    payload = {
+        'role': role,
+        'summary': await _build_summary_payload(current_user),
+    }
+    await _set_cached_json(cache_key, payload)
+    return payload
 
-    if role == 'teacher':
-        my_assignments = await db.assignments.count_documents({'created_by': user_id})
-        my_assignment_ids = [str(item) for item in await _distinct_values(db.assignments, '_id', {'created_by': user_id})]
-        my_submissions = 0
-        my_similarity_flags = 0
-        if my_assignment_ids:
-            my_submissions = await db.submissions.count_documents({'assignment_id': {'$in': my_assignment_ids}})
-            my_similarity_flags = await db.similarity_logs.count_documents(
-                {'is_flagged': True, 'source_assignment_id': {'$in': my_assignment_ids}}
-            )
-        my_evaluations = await db.evaluations.count_documents({'teacher_user_id': user_id})
-        my_notices = await db.notices.count_documents({'is_active': True})
-        payload = {
-            'role': role,
-            'summary': {
-                'my_assignments': my_assignments,
-                'my_submissions': my_submissions,
-                'my_evaluations': my_evaluations,
-                'my_similarity_flags': my_similarity_flags,
-                'my_notices': my_notices,
-            },
-        }
-        await _set_cached_json(cache_key, payload)
-        return payload
+
+@router.get('/dashboard')
+async def analytics_dashboard(
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
+) -> dict:
+    role = current_user.get('role')
+    user_id = str(current_user.get('_id'))
+    cache_key = f'analytics:dashboard:{role}:{user_id}'
+    cached = await _get_cached_json(cache_key)
+    if cached:
+        return cached
 
     payload = {
         'role': role,
-        'summary': {
-            'users': await db.users.count_documents({}),
-            'programs': await db.programs.count_documents({}),
-            'batches': await db.batches.count_documents({}),
-            'semesters': await db.semesters.count_documents({}),
-            'classes': await db.classes.count_documents({}),
-            'subjects': await db.subjects.count_documents({}),
-            'students': await db.students.count_documents({}),
-            'assignments': await db.assignments.count_documents({}),
-            'submissions': await db.submissions.count_documents({}),
-            'evaluations': await db.evaluations.count_documents({}),
-            'similarity_flags': await db.similarity_logs.count_documents({'is_flagged': True}),
-            'notices': await db.notices.count_documents({'is_active': True}),
-            'clubs': await db.clubs.count_documents({'is_active': True}),
-            'club_events': await db.club_events.count_documents({}),
+        'summary': await _build_summary_payload(current_user),
+        'urgent_notices': await _build_urgent_notices_payload(current_user, limit=3),
+        'teacher_sections': [],
+        'student_dashboard': {
+            'deadlines': [],
+            'timetable': [],
+            'internship_status': None,
         },
+        'generated_at': datetime.now(timezone.utc),
     }
+
+    if role == 'teacher':
+        payload['teacher_sections'] = (await _teacher_section_tiles(current_user=current_user)).get('items', [])
+    if role == 'student':
+        payload['student_dashboard'] = await _build_student_dashboard_payload(current_user)
+
     await _set_cached_json(cache_key, payload)
     return payload
 

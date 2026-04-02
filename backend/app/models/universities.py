@@ -1,10 +1,11 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import UNIVERSITY_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def university_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "id": str(document["_id"]),
         "university_id": document.get("university_id", ""),
         "university_name": document.get("university_name", ""),
@@ -17,3 +18,4 @@ def university_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=UNIVERSITY_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="university", document=document, display_name=document.get("university_name"))

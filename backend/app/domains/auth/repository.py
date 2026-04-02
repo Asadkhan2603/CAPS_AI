@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any, Callable
 
 from app.core.database import db as core_db
@@ -17,7 +18,14 @@ class AuthRepository:
         return self._db_provider() if self._db_provider else core_db
 
     async def find_user_by_email(self, email: str) -> dict[str, Any] | None:
-        return await self._db.users.find_one({"email": email})
+        user = await self._db.users.find_one({"email": email})
+        if user:
+            return user
+        escaped = re.escape(email)
+        return await self._db.users.find_one({"email": {"$regex": f"^{escaped}$", "$options": "i"}})
+
+    async def find_any_admin(self) -> dict[str, Any] | None:
+        return await self._db.users.find_one({"role": "admin"})
 
     async def find_user_by_id(self, user_obj_id) -> dict[str, Any] | None:
         return await self._db.users.find_one({"_id": user_obj_id})

@@ -160,7 +160,11 @@ export default function AdminGovernancePage() {
   async function onReviewDecision(row, approve) {
     try {
       await decideGovernanceReview(row.id, { approve, note: approve ? 'Approved in admin panel' : 'Rejected in admin panel' });
-      pushToast({ title: approve ? 'Review approved' : 'Review rejected', description: `Review ${row.id} updated.`, variant: 'success' });
+      pushToast({
+        title: approve ? 'Review approved' : 'Review rejected',
+        description: `Review ${row.public_id || row.id} updated.`,
+        variant: 'success'
+      });
       await Promise.all([loadReviews(), reloadDashboard()]);
     } catch (err) {
       pushToast({ title: 'Decision failed', description: formatApiError(err, 'Failed to update review'), variant: 'error' });
@@ -168,11 +172,12 @@ export default function AdminGovernancePage() {
   }
 
   const reviewColumns = [
+    { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || row.id || '-' },
     { key: 'review_type', label: 'Type' },
     { key: 'action', label: 'Action' },
-    { key: 'entity_type', label: 'Entity' },
+    { key: 'entity_label', label: 'Entity', render: (row) => row.entity_label || row.entity_type || '-' },
     { key: 'status', label: 'Status' },
-    { key: 'requested_by', label: 'Requested By' },
+    { key: 'requested_by_label', label: 'Requested By', render: (row) => row.requested_by_label || row.requested_by || '-' },
     {
       key: 'created_at',
       label: 'Created',
@@ -181,7 +186,7 @@ export default function AdminGovernancePage() {
   ];
 
   const sessionColumns = [
-    { key: 'user_name', label: 'User', render: (row) => row.user_name || row.user_email || row.user_id || '-' },
+    { key: 'user_label', label: 'User', render: (row) => row.user_label || row.user_name || row.user_email || row.user_id || '-' },
     {
       key: 'status',
       label: 'Status',
@@ -318,12 +323,12 @@ export default function AdminGovernancePage() {
             />
           </label>
           <label className="space-y-1 md:col-span-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Entity ID</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Entity ID / Ref</span>
             <input
               className="input"
               value={createReviewForm.entity_id}
               onChange={(event) => setCreateReviewForm((prev) => ({ ...prev, entity_id: event.target.value }))}
-              placeholder="Optional"
+              placeholder="Optional internal or public ID"
             />
           </label>
           <label className="space-y-1 md:col-span-1">

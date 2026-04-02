@@ -10,6 +10,7 @@ from app.core.security import require_roles
 from app.models.club_events import club_event_public
 from app.schemas.club_event import ClubEventCreate, ClubEventOut, ClubEventUpdate
 from app.services.audit import log_audit_event
+from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -104,6 +105,7 @@ async def create_club_event(
         "created_at": datetime.now(timezone.utc),
         "schema_version": CLUB_EVENT_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="club_event")
     result = await db.club_events.insert_one(document)
     created = await db.club_events.find_one({"_id": result.inserted_id})
     await log_audit_event(
@@ -165,6 +167,7 @@ async def update_club_event(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Payment amount is required when payment is enabled",
             )
+    persist_public_id_update(event, update_data, kind="club_event")
 
     await db.club_events.update_one(
         {"_id": event_obj_id},

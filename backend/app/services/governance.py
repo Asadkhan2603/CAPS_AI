@@ -10,6 +10,7 @@ from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.schema_versions import ADMIN_ACTION_REVIEW_SCHEMA_VERSION, SETTINGS_SCHEMA_VERSION
 from app.services.audit import log_destructive_action_event
+from app.services.public_ids import build_public_id, persist_public_id
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,11 @@ async def create_admin_review(
         "updated_at": _now(),
         "schema_version": ADMIN_ACTION_REVIEW_SCHEMA_VERSION,
     }
+    persist_public_id(doc, kind="admin_action_review")
     result = await db.admin_action_reviews.insert_one(doc)
+    public_id = build_public_id("admin_action_review", {**doc, "_id": result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.admin_action_reviews.update_one({"_id": result.inserted_id}, {"$set": {"public_id": public_id}})
     created = await db.admin_action_reviews.find_one({"_id": result.inserted_id})
     return created or doc
 

@@ -9,7 +9,7 @@ from app.core.mongo import parse_object_id
 from app.core.schema_versions import NOTICE_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.notices import notice_public
-from app.schemas.notice import NoticeCreate, NoticeOut
+from app.schemas.notice import NoticeCreate, NoticeOut, NoticeReadBatchRequest
 from app.services.audit import log_audit_event
 from app.services.cloudinary_uploads import (
     ALLOWED_NOTICE_MIME_TYPES,
@@ -149,6 +149,86 @@ async def _student_scope_visibility_ids(current_user: dict) -> tuple[set[str], s
     return class_ids, batch_ids, subject_ids
 
 
+def _notice_is_expired(item: dict, now: datetime) -> bool:
+    expires_at = _to_aware_utc(item.get('expires_at'))
+    return bool(expires_at and expires_at <= now)
+
+
+def _student_can_view_notice(
+    item: dict,
+    *,
+    class_ids: set[str],
+    batch_ids: set[str],
+    subject_ids: set[str],
+) -> bool:
+    item_scope = item.get('scope')
+    scope_ref_id = item.get('scope_ref_id')
+    if item_scope == 'college':
+        return True
+    if item_scope == 'class' and scope_ref_id and scope_ref_id in class_ids:
+        return True
+    if item_scope == 'batch' and scope_ref_id and scope_ref_id in batch_ids:
+        return True
+    if item_scope == 'subject' and scope_ref_id and scope_ref_id in subject_ids:
+        return True
+    return False
+
+
+async def _filter_visible_notices(items: list[dict], current_user: dict) -> list[dict]:
+    if current_user.get('role') != 'student':
+        return items
+
+    class_ids, batch_ids, subject_ids = await _student_scope_visibility_ids(current_user)
+    return [
+        item
+        for item in items
+        if _student_can_view_notice(
+            item,
+            class_ids=class_ids,
+            batch_ids=batch_ids,
+            subject_ids=subject_ids,
+        )
+    ]
+
+
+async def _get_visible_notice_or_404(current_user: dict, notice_id: str) -> dict:
+    notice_obj_id = parse_object_id(notice_id)
+    notice = await db.notices.find_one({'_id': notice_obj_id, 'is_active': True})
+    if not notice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Notice not found')
+
+    now = datetime.now(timezone.utc)
+    scheduled_at = _to_aware_utc(notice.get('scheduled_at'))
+    if scheduled_at and scheduled_at > now:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Notice not found')
+    if _notice_is_expired(notice, now):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Notice not found')
+
+    visible = await _filter_visible_notices([notice], current_user)
+    if not visible:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Notice not found')
+    return visible[0]
+
+
+async def _mark_notice_read_for_user(notice: dict, current_user: dict) -> dict:
+    current_user_id = str(current_user['_id'])
+    seen_by = [str(item) for item in (notice.get('seen_by') or []) if item]
+    if current_user_id not in seen_by:
+        seen_by.append(current_user_id)
+        await db.notices.update_one(
+            {'_id': notice['_id']},
+            {
+                '$set': {
+                    'seen_by': seen_by,
+                    'read_count': len(seen_by),
+                    'schema_version': NOTICE_SCHEMA_VERSION,
+                }
+            },
+        )
+        notice = await db.notices.find_one({'_id': notice['_id']})
+    return notice
+
+
 def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -234,29 +314,48 @@ async def list_notices(
     items = await db.notices.find(query).skip(skip).limit(limit).to_list(length=limit)
     items = sorted(items, key=lambda item: item.get('created_at') or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     if not include_expired:
-        items = [item for item in items if not _to_aware_utc(item.get('expires_at')) or _to_aware_utc(item.get('expires_at')) > now]
+        items = [item for item in items if not _notice_is_expired(item, now)]
 
-    if current_user.get('role') == 'student':
-        class_ids, batch_ids, subject_ids = await _student_scope_visibility_ids(current_user)
-        scoped_items = []
-        for item in items:
-            item_scope = item.get('scope')
-            scope_ref_id = item.get('scope_ref_id')
-            if item_scope == 'college':
-                scoped_items.append(item)
-                continue
-            if item_scope == 'class' and scope_ref_id and scope_ref_id in class_ids:
-                scoped_items.append(item)
-                continue
-            if item_scope == 'batch' and scope_ref_id and scope_ref_id in batch_ids:
-                scoped_items.append(item)
-                continue
-            if item_scope == 'subject' and scope_ref_id and scope_ref_id in subject_ids:
-                scoped_items.append(item)
-                continue
-        items = scoped_items
+    items = await _filter_visible_notices(items, current_user)
 
-    return [NoticeOut(**notice_public(item)) for item in items]
+    return [NoticeOut(**notice_public(item, current_user_id=str(current_user['_id']))) for item in items]
+
+
+@router.get('/unread-count')
+async def get_unread_notice_count_payload(
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
+) -> dict:
+    now = datetime.now(timezone.utc)
+    items = await db.notices.find(
+        {
+            'is_active': True,
+            '$or': [{'scheduled_at': None}, {'scheduled_at': {'$lte': now}}],
+        },
+        {
+            '_id': 1,
+            'scope': 1,
+            'scope_ref_id': 1,
+            'seen_by': 1,
+            'expires_at': 1,
+            'scheduled_at': 1,
+        },
+    ).to_list(length=5000)
+    items = [item for item in items if not _notice_is_expired(item, now)]
+    items = await _filter_visible_notices(items, current_user)
+    current_user_id = str(current_user['_id'])
+    count = sum(
+        1
+        for item in items
+        if current_user_id not in {str(value) for value in (item.get('seen_by') or []) if value}
+    )
+    return {'count': count}
+
+
+@router.get('/unread-count')
+async def get_unread_notice_count(
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
+) -> dict:
+    return await get_unread_notice_count_payload(current_user)
 
 
 @router.post('/', response_model=NoticeOut, status_code=status.HTTP_201_CREATED)
@@ -309,7 +408,7 @@ async def create_notice(
         )
         if not scheduled_at or _to_aware_utc(scheduled_at) <= datetime.now(timezone.utc):
             background_tasks.add_task(fanout_notice_notifications, str(result.inserted_id))
-        return NoticeOut(**notice_public(created))
+        return NoticeOut(**notice_public(created, current_user_id=str(current_user['_id'])))
     except HTTPException:
         for image in images:
             resource_type = 'image' if (image.get('mime_type') or '').startswith('image/') else 'raw'
@@ -385,3 +484,35 @@ async def process_scheduled_notices(
         detail=f'Queued {len(notices)} scheduled notices for dispatch',
     )
     return {'success': True, 'queued': len(notices)}
+
+
+@router.post('/{notice_id}/read', response_model=NoticeOut)
+async def mark_notice_read(
+    notice_id: str,
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
+) -> NoticeOut:
+    notice = await _get_visible_notice_or_404(current_user, notice_id)
+    updated = await _mark_notice_read_for_user(notice, current_user)
+    return NoticeOut(**notice_public(updated, current_user_id=str(current_user['_id'])))
+
+
+@router.post('/read')
+async def mark_notices_read(
+    payload: NoticeReadBatchRequest,
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
+) -> dict:
+    updated_notices: list[dict] = []
+    for notice_id in payload.notice_ids:
+        try:
+            notice = await _get_visible_notice_or_404(current_user, notice_id)
+        except HTTPException:
+            continue
+        updated_notices.append(await _mark_notice_read_for_user(notice, current_user))
+
+    return {
+        'marked_count': len(updated_notices),
+        'items': [
+            notice_public(item, current_user_id=str(current_user['_id']))
+            for item in updated_notices
+        ],
+    }

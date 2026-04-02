@@ -126,9 +126,11 @@ class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         headers = {k: v for k, v in dict(response.headers).items() if k.lower() != "content-length"}
+        skip_paths = tuple(settings.response_envelope_skip_paths or [])
         if (
             not settings.response_envelope_enabled
             or request.url.path in {"/health", "/"}
+            or any(request.url.path == path or request.url.path.startswith(f"{path}/") for path in skip_paths)
             or not request.url.path.startswith(settings.api_prefix)
             or response.status_code >= 400
             or "application/json" not in (response.headers.get("content-type") or "")

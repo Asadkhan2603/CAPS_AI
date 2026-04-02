@@ -12,7 +12,7 @@ export default function FacultiesPage() {
       params: { is_active: true },
       mapOption: (item) => ({
         value: item.id,
-        label: `${item.university_name} (${item.university_id})`,
+        label: item.display_label || `${item.university_name} (${item.public_id || item.university_id})`,
         university_name: item.university_name,
         university_id: item.university_id
       })
@@ -54,7 +54,7 @@ export default function FacultiesPage() {
 
   const createFields = useMemo(
     () => [
-      { name: 'faculty_id', label: 'Faculty ID', nullable: true },
+      { name: 'faculty_id', label: 'Legacy Business ID (Optional)', nullable: true },
       { name: 'faculty_name', label: 'Faculty Name', required: true },
       { name: 'faculty_code', label: 'Faculty Code', required: true },
       {
@@ -73,7 +73,7 @@ export default function FacultiesPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'faculty_id', label: 'Faculty ID', render: (row) => row.faculty_id || '-' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || row.faculty_id || '-' },
       { key: 'faculty_name', label: 'Faculty', render: (row) => row.faculty_name || row.name || '-' },
       { key: 'faculty_code', label: 'Code', render: (row) => row.faculty_code || row.code || '-' },
       { key: 'university_name', label: 'University', render: (row) => row.university_name || '-' },

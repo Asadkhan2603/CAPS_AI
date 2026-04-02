@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
@@ -9,6 +10,7 @@ from app.api.v1.endpoints import ai as ai_endpoint
 from app.api.v1.endpoints import assignments as assignments_endpoint
 from app.api.v1.endpoints import analytics as analytics_endpoint
 from app.api.v1.endpoints import admin_system as admin_system_endpoint
+from app.api.v1.endpoints import admin_analytics as admin_analytics_endpoint
 from app.api.v1.endpoints import audit_logs as audit_logs_endpoint
 from app.api.v1.endpoints import club_events as club_events_endpoint
 from app.api.v1.endpoints import clubs as clubs_endpoint
@@ -17,6 +19,7 @@ from app.api.v1.endpoints import enrollments as enrollments_endpoint
 from app.api.v1.endpoints import event_registrations as event_registrations_endpoint
 from app.api.v1.endpoints import faculties as faculties_endpoint
 from app.api.v1.endpoints import auth as auth_endpoint
+from app.api.v1.endpoints import branding as branding_endpoint
 from app.api.v1.endpoints import classes as classes_endpoint
 from app.api.v1.endpoints import evaluations as evaluations_endpoint
 from app.api.v1.endpoints import notices as notices_endpoint
@@ -31,8 +34,10 @@ from app.api.v1.endpoints import submissions as submissions_endpoint
 from app.api.v1.endpoints import timetables as timetables_endpoint
 from app.api.v1.endpoints import subjects as subjects_endpoint
 from app.api.v1.endpoints import users as users_endpoint
+from app.core.config import settings
 from app.core import security as security_core
 from app.services import ai_runtime as ai_runtime_service
+from app.services import analytics_snapshot as analytics_snapshot_service
 from app.services import audit as audit_service
 from app.services import notifications as notifications_service
 from app.services import operational_alert_routing as operational_alert_routing_service
@@ -149,7 +154,12 @@ class FakeUsersCollection:
                 item.update(update.get("$set", {}))
                 break
         if matched == 0 and upsert:
-            document = {**query, **update.get("$set", {}), "_id": ObjectId()}
+            document = dict(update.get("$set", {}))
+            for key, value in query.items():
+                if isinstance(value, dict):
+                    continue
+                document.setdefault(key, value)
+            document.setdefault("_id", ObjectId())
             self.items.append(document)
             return type("UpdateResult", (), {"matched_count": 0, "upserted_id": document["_id"]})()
         return type("UpdateResult", (), {"matched_count": matched, "upserted_id": None})()
@@ -237,12 +247,17 @@ class FakeDB:
         self.programs = FakeUsersCollection()
         self.specializations = FakeUsersCollection()
         self.batches = FakeUsersCollection()
+        self.batch_read_models = FakeUsersCollection()
         self.semesters = FakeUsersCollection()
+        self.semester_read_models = FakeUsersCollection()
         self.courses = FakeUsersCollection()
         self.years = FakeUsersCollection()
         self.classes = FakeUsersCollection()
+        self.section_read_models = FakeUsersCollection()
         self.students = FakeUsersCollection()
         self.subjects = FakeUsersCollection()
+        self.course_offerings = FakeUsersCollection()
+        self.class_slots = FakeUsersCollection()
         self.assignments = FakeUsersCollection()
         self.submissions = FakeUsersCollection()
         self.ai_evaluation_chats = FakeUsersCollection()
@@ -253,6 +268,7 @@ class FakeDB:
         self.notifications = FakeUsersCollection()
         self.notices = FakeUsersCollection()
         self.clubs = FakeUsersCollection()
+        self.club_members = FakeUsersCollection()
         self.club_events = FakeUsersCollection()
         self.event_registrations = FakeUsersCollection()
         self.audit_logs = FakeUsersCollection()
@@ -261,8 +277,10 @@ class FakeDB:
         self.timetables = FakeUsersCollection()
         self.timetable_subject_teacher_maps = FakeUsersCollection()
         self.settings = FakeUsersCollection()
+        self.internship_sessions = FakeUsersCollection()
         self.scheduler_locks = FakeUsersCollection()
         self.system_health_snapshots = FakeUsersCollection()
+        self.analytics_snapshots = FakeUsersCollection()
         self.operational_alert_routes = FakeUsersCollection()
 
     async def command(self, name: str) -> dict[str, Any]:
@@ -293,6 +311,8 @@ def _setup_fake_db() -> FakeDB:
     similarity_endpoint.db = fake_db
     analytics_endpoint.db = fake_db
     admin_system_endpoint.db = fake_db
+    admin_analytics_endpoint.db = fake_db
+    branding_endpoint.db = fake_db
     notifications_endpoint.db = fake_db
     notices_endpoint.db = fake_db
     clubs_endpoint.db = fake_db
@@ -306,6 +326,7 @@ def _setup_fake_db() -> FakeDB:
     operational_alert_routing_service.db = fake_db
     audit_service.db = fake_db
     ai_runtime_service.db = fake_db
+    analytics_snapshot_service.db = fake_db
     similarity_pipeline_service.db = fake_db
     submission_ai_service.db = fake_db
     security_core.db = fake_db
@@ -1735,6 +1756,458 @@ def test_students_receive_scoped_notices_for_their_class_batch_and_subject() -> 
     assert "Class Internal" in titles
     assert "Batch Internal" in titles
     assert "Subject Internal" in titles
+
+
+def test_student_can_mark_visible_notice_read_and_unread_count_updates() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_notice_read@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student",
+            "email": "student_notice_read@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_notice_read@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    structure = _seed_canonical_structure(fake_db, suffix="NRDC", start_year=2023, semester_number=3)
+    class_item = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Notice Read Section"),
+        headers=admin_headers,
+    )
+    assert class_item.status_code == 201
+
+    student_profile = client.post(
+        "/api/v1/students/",
+        json={
+            "full_name": "Student",
+            "roll_number": "R-NRDC-1",
+            "email": "student_notice_read@example.com",
+            "class_id": class_item.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert student_profile.status_code == 201
+
+    notice = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Visible Notice",
+            "message": "Read me",
+            "priority": "normal",
+            "scope": "class",
+            "scope_ref_id": class_item.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert notice.status_code == 201
+
+    hidden_subject = client.post(
+        "/api/v1/subjects/",
+        json={"name": "Hidden Subject", "code": "NRDC-HID", "description": "hidden"},
+        headers=admin_headers,
+    )
+    assert hidden_subject.status_code == 201
+
+    hidden_notice = client.post(
+        "/api/v1/notices/",
+        json={
+            "title": "Hidden Notice",
+            "message": "Do not count me",
+            "priority": "normal",
+            "scope": "subject",
+            "scope_ref_id": hidden_subject.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert hidden_notice.status_code == 201
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_notice_read@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+
+    unread_before = client.get("/api/v1/notices/unread-count", headers=student_headers)
+    assert unread_before.status_code == 200
+    assert unread_before.json() == {"count": 1}
+
+    listed_before = client.get("/api/v1/notices/", headers=student_headers)
+    assert listed_before.status_code == 200
+    visible_notice = next(item for item in listed_before.json() if item["title"] == "Visible Notice")
+    assert visible_notice["is_read"] is False
+
+    marked = client.post(f"/api/v1/notices/{visible_notice['id']}/read", headers=student_headers)
+    assert marked.status_code == 200
+    assert marked.json()["is_read"] is True
+    assert marked.json()["read_count"] == 1
+
+    unread_after = client.get("/api/v1/notices/unread-count", headers=student_headers)
+    assert unread_after.status_code == 200
+    assert unread_after.json() == {"count": 0}
+
+
+def test_student_dashboard_endpoint_consolidates_summary_notices_deadlines_and_timetable() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Admin",
+            "email": "admin_dashboard_student@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Student",
+            "email": "student_dashboard_student@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin_dashboard_student@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student_dashboard_student@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    student_user_id = student_login.json()["user"]["id"]
+
+    structure = _seed_canonical_structure(fake_db, suffix="DSHB", start_year=2023, semester_number=5)
+    class_item = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Dashboard Section"),
+        headers=admin_headers,
+    )
+    assert class_item.status_code == 201
+
+    student_profile = client.post(
+        "/api/v1/students/",
+        json={
+            "full_name": "Dashboard Student",
+            "roll_number": "R-DSHB-1",
+            "email": "student_dashboard_student@example.com",
+            "class_id": class_item.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert student_profile.status_code == 201
+
+    subject = client.post(
+        "/api/v1/subjects/",
+        json={"name": "Algorithms", "code": "ALGO-DSHB", "description": "Algorithms"},
+        headers=admin_headers,
+    )
+    assert subject.status_code == 201
+
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={
+            "title": "Dashboard Assignment",
+            "description": "Assignment for dashboard",
+            "class_id": class_item.json()["id"],
+            "subject_id": subject.json()["id"],
+            "total_marks": 100,
+            "due_date": "2030-01-01T10:00:00+00:00",
+        },
+        headers=admin_headers,
+    )
+    assert assignment.status_code == 201
+
+    fake_db.submissions.items.append(
+        {
+            "_id": ObjectId(),
+            "assignment_id": assignment.json()["id"],
+            "student_user_id": student_user_id,
+            "status": "submitted",
+        }
+    )
+    fake_db.evaluations.items.append(
+        {
+            "_id": ObjectId(),
+            "student_user_id": student_user_id,
+        }
+    )
+    fake_db.notices.items.append(
+        {
+            "_id": ObjectId(),
+            "title": "Urgent Dashboard Notice",
+            "message": "Read this now",
+            "priority": "urgent",
+            "scope": "class",
+            "scope_ref_id": class_item.json()["id"],
+            "expires_at": None,
+            "images": [],
+            "is_pinned": False,
+            "scheduled_at": None,
+            "read_count": 0,
+            "seen_by": [],
+            "created_by": admin.json()["id"],
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+        }
+    )
+
+    offering_id = ObjectId()
+    fake_db.course_offerings.items.append(
+        {
+            "_id": offering_id,
+            "subject_id": subject.json()["id"],
+            "teacher_user_id": admin.json()["id"],
+            "section_id": class_item.json()["id"],
+            "group_id": None,
+            "offering_type": "theory",
+            "is_active": True,
+        }
+    )
+    fake_db.class_slots.items.append(
+        {
+            "_id": ObjectId(),
+            "course_offering_id": str(offering_id),
+            "day": "Monday",
+            "start_time": "09:00",
+            "end_time": "10:00",
+            "room_code": "A-101",
+            "is_active": True,
+        }
+    )
+    fake_db.internship_sessions.items.append(
+        {
+            "_id": ObjectId(),
+            "student_user_id": student_user_id,
+            "student_id": student_profile.json()["id"],
+            "status": "active",
+            "clock_in_at": datetime.now(timezone.utc),
+            "clock_out_at": None,
+            "total_minutes": None,
+            "auto_closed": False,
+            "note": "Active internship",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "schema_version": 1,
+        }
+    )
+
+    dashboard = client.get("/api/v1/analytics/dashboard", headers=student_headers)
+    assert dashboard.status_code == 200, dashboard.text
+    body = dashboard.json()
+    assert body["summary"]["total_submissions"] == 1
+    assert body["summary"]["total_evaluations"] == 1
+    assert body["summary"]["pending_reviews"] == 1
+    assert len(body["urgent_notices"]) == 1
+    assert body["urgent_notices"][0]["title"] == "Urgent Dashboard Notice"
+    assert len(body["student_dashboard"]["deadlines"]) == 1
+    assert body["student_dashboard"]["deadlines"][0]["title"] == "Dashboard Assignment"
+    assert len(body["student_dashboard"]["timetable"]) == 1
+    assert body["student_dashboard"]["timetable"][0]["sessions"][0]["subject"] == "Algorithms"
+    assert body["student_dashboard"]["internship_status"]["status"] == "active"
+
+
+def test_session_bootstrap_consolidates_user_notice_count_and_branding() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    admin = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Bootstrap Admin",
+            "email": "bootstrap_admin@example.com",
+            "password": "password123",
+            "role": "admin",
+        },
+    )
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Bootstrap Student",
+            "email": "bootstrap_student@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert admin.status_code == 201
+    assert student.status_code == 201
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "bootstrap_admin@example.com", "password": "password123"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "bootstrap_student@example.com", "password": "password123"},
+    )
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+
+    structure = _seed_canonical_structure(fake_db, suffix="BOOT", semester_number=2)
+    class_item = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Bootstrap Section"),
+        headers=admin_headers,
+    )
+    assert class_item.status_code == 201
+
+    student_profile = client.post(
+        "/api/v1/students/",
+        json={
+            "full_name": "Bootstrap Student",
+            "roll_number": "BOOT-1",
+            "email": "bootstrap_student@example.com",
+            "class_id": class_item.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert student_profile.status_code == 201
+
+    fake_db.notices.items.append(
+        {
+            "_id": ObjectId(),
+            "title": "Bootstrap Notice",
+            "message": "Visible in bootstrap",
+            "priority": "normal",
+            "scope": "class",
+            "scope_ref_id": class_item.json()["id"],
+            "expires_at": None,
+            "images": [],
+            "is_pinned": False,
+            "scheduled_at": None,
+            "read_count": 0,
+            "seen_by": [],
+            "created_by": admin.json()["id"],
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+        }
+    )
+    fake_db.settings.items.append(
+        {
+            "_id": ObjectId(),
+            "key": "branding_logo",
+            "filename": "logo.png",
+            "updated_at": datetime(2030, 1, 1, tzinfo=timezone.utc),
+        }
+    )
+
+    original_logo_file_path_async = branding_endpoint._logo_file_path_async
+
+    async def fake_logo_file_path_async():
+        return branding_endpoint.BRANDING_DIR / "logo.png"
+
+    branding_endpoint._logo_file_path_async = fake_logo_file_path_async
+    try:
+        bootstrap = client.get("/api/v1/session/bootstrap", headers=student_headers)
+        assert bootstrap.status_code == 200, bootstrap.text
+        body = bootstrap.json()
+        assert body["user"]["email"] == "bootstrap_student@example.com"
+        assert body["unread_notice_count"] == 1
+        assert body["branding"]["has_logo"] is True
+        assert body["branding"]["filename"] == "logo.png"
+        assert body["generated_at"]
+    finally:
+        branding_endpoint._logo_file_path_async = original_logo_file_path_async
+
+
+def test_auth_me_skips_response_envelope_for_hot_path() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    original_enabled = settings.response_envelope_enabled
+    original_skip_paths = list(settings.response_envelope_skip_paths)
+    settings.response_envelope_enabled = True
+    settings.response_envelope_skip_paths = ["/api/v1/auth/me"]
+    try:
+        register = client.post(
+            "/api/v1/auth/register",
+            json={
+                "full_name": "Envelope Admin",
+                "email": "envelope_admin@example.com",
+                "password": "password123",
+                "role": "admin",
+            },
+        )
+        assert register.status_code == 201
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "envelope_admin@example.com", "password": "password123"},
+        )
+        login_body = login.json()
+        access_token = login_body.get("access_token") or login_body.get("data", {}).get("access_token")
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = client.get("/api/v1/auth/me", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["email"] == "envelope_admin@example.com"
+        assert "success" not in body
+    finally:
+        settings.response_envelope_enabled = original_enabled
+        settings.response_envelope_skip_paths = original_skip_paths
+
+
+def test_session_bootstrap_skips_response_envelope_for_hot_path() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    original_enabled = settings.response_envelope_enabled
+    original_skip_paths = list(settings.response_envelope_skip_paths)
+    settings.response_envelope_enabled = True
+    settings.response_envelope_skip_paths = ["/api/v1/session/bootstrap"]
+    try:
+        register = client.post(
+            "/api/v1/auth/register",
+            json={
+                "full_name": "Bootstrap Envelope Admin",
+                "email": "bootstrap_envelope_admin@example.com",
+                "password": "password123",
+                "role": "admin",
+            },
+        )
+        assert register.status_code == 201
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "bootstrap_envelope_admin@example.com", "password": "password123"},
+        )
+        login_body = login.json()
+        access_token = login_body.get("access_token") or login_body.get("data", {}).get("access_token")
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = client.get("/api/v1/session/bootstrap", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["user"]["email"] == "bootstrap_envelope_admin@example.com"
+        assert "success" not in body
+    finally:
+        settings.response_envelope_enabled = original_enabled
+        settings.response_envelope_skip_paths = original_skip_paths
 
 
 def test_teacher_cannot_read_other_teacher_class_by_id() -> None:

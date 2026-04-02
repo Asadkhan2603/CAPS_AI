@@ -1,10 +1,11 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import GROUP_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def group_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "id": str(document["_id"]),
         "section_id": document.get("section_id"),
         "name": document.get("name", ""),
@@ -17,3 +18,4 @@ def group_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=GROUP_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="group", document=document, display_name=document.get("name"))

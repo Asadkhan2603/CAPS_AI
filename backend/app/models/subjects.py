@@ -1,10 +1,11 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import SUBJECT_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def subject_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "id": str(document["_id"]),
         "name": document.get("name", ""),
         "code": document.get("code", ""),
@@ -16,3 +17,4 @@ def subject_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=SUBJECT_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="subject", document=document, display_name=document.get("name"))

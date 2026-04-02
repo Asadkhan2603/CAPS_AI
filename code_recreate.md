@@ -1,7 +1,7 @@
 ﻿# code_recreate.md
 
 This file contains critical CAPS_AI recreate code snapshots from the current repository state.
-Generated on: 2026-03-05 10:42:09 +05:30.
+Generated on: 2026-04-02 15:10:00 +05:30.
 
 ## Included Files
 - PROJECT_RECREATE_GUIDE.md
@@ -22,12 +22,24 @@ Generated on: 2026-03-05 10:42:09 +05:30.
 - frontend/.env.example
 - frontend/.env.production
 - frontend/nginx.conf
+- backend/app/api/v1/endpoints/auth.py
+- backend/app/domains/auth/service.py
+- backend/app/domains/auth/repository.py
+- backend/app/schemas/auth.py
 - frontend/src/services/apiClient.js
 - frontend/src/pages/AcademicStructurePage.jsx
 - frontend/src/pages/LoginPage.jsx
+- frontend/src/pages/RegisterPage.jsx
 - scripts/seed_minimum_stack.ps1
 - scripts/smoke_check_stack.ps1
 - scripts/README.md
+
+## 2026-04-02 Auth Recovery Snapshot
+- Public bootstrap status endpoint: `GET /api/v1/auth/bootstrap-status`
+- Development-only local admin recovery endpoint: `POST /api/v1/auth/dev/bootstrap-admin`
+- Local recovery is restricted to development and loopback requests
+- Frontend `/register` now switches between bootstrap mode and local admin recovery mode based on backend bootstrap status
+- Login guidance now points fresh local setups toward `/register` when credentials fail against an unbootstrapped local database
 
 ## PROJECT_RECREATE_GUIDE.md
 ~~~markdown

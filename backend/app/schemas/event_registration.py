@@ -22,6 +22,8 @@ class EventRegistrationCreate(BaseModel):
 
 class EventRegistrationOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     event_id: str
     student_user_id: str
     enrollment_number: str | None = None
@@ -39,6 +41,7 @@ class EventRegistrationOut(BaseModel):
     payment_receipt_size_bytes: int | None = None
     student_name: str | None = None
     student_email: str | None = None
+    student_label: str | None = None
     status: RegistrationStatus = "registered"
     attendance_status: AttendanceStatus | None = None
     certificate_issued: bool = False

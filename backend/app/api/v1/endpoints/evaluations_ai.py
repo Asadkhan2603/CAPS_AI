@@ -10,6 +10,7 @@ from app.schemas.evaluation import EvaluationAIPreviewOut, EvaluationAIPreviewRe
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
 from app.services.evaluation_access_policy import ensure_teacher_can_evaluate_submission, ensure_teacher_owns_evaluation
+from app.services.public_ids import build_public_id, persist_public_id
 from app.services.evaluation_workflow import (
     ai_payload_update_fields,
     build_ai_insight_async,
@@ -111,8 +112,12 @@ async def create_evaluation(
         "updated_at": now,
     }
     document.update(ai_payload_update_fields(ai_payload))
+    persist_public_id(document, kind="evaluation")
 
     result = await database.evaluations.insert_one(document)
+    public_id = build_public_id("evaluation", {**document, "_id": result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await database.evaluations.update_one({"_id": result.inserted_id}, {"$set": {"public_id": public_id}})
     created = await database.evaluations.find_one({"_id": result.inserted_id})
 
     await persist_ai_trace(

@@ -9,6 +9,7 @@ from app.core.schema_versions import SUBJECT_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.models.subjects import subject_public
 from app.schemas.subject import SubjectCreate, SubjectOut, SubjectUpdate
+from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -64,6 +65,7 @@ async def create_subject(
         "created_at": datetime.now(timezone.utc),
         "schema_version": SUBJECT_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="subject")
     result = await db.subjects.insert_one(document)
     created = await db.subjects.find_one({"_id": result.inserted_id})
     return SubjectOut(**subject_public(created))
@@ -86,6 +88,10 @@ async def update_subject(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subject code already exists")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    current = await db.subjects.find_one({"_id": subject_obj_id})
+    if not current:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
+    persist_public_id_update(current, update_data, kind="subject")
 
     result = await db.subjects.update_one(
         {"_id": subject_obj_id},

@@ -367,6 +367,7 @@ export default function NotificationsPage() {
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{item.title}</h3>
+                    {item.public_id ? <Badge variant="default">{item.public_id}</Badge> : null}
                     <Badge variant={priorityVariant(item.priority)}>{item.priority || 'normal'}</Badge>
                     <Badge variant={item.is_read ? 'default' : 'info'}>{item.is_read ? 'Read' : 'Unread'}</Badge>
                     <Badge>{item.scope || 'general'}</Badge>
@@ -374,7 +375,7 @@ export default function NotificationsPage() {
                   <p className="text-sm text-slate-700 dark:text-slate-200">{item.message}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Created {formatTimestamp(item.created_at)}
-                    {item.target_user_id ? ` | Target: ${userLabelById[item.target_user_id] || item.target_user_id}` : ' | Target: Global'}
+                    {item.target_user_id ? ` | Target: ${item.target_user_label || userLabelById[item.target_user_id] || item.target_user_id}` : ' | Target: Global'}
                   </p>
                 </div>
                 {!item.is_read ? (

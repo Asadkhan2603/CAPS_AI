@@ -19,6 +19,7 @@ from app.schemas.attendance_record import (
     AttendanceRecordCreate,
     AttendanceRecordOut,
 )
+from app.services.public_ids import build_public_id
 
 router = APIRouter()
 
@@ -80,6 +81,11 @@ async def _mark_single(*, payload: AttendanceRecordCreate, actor_user_id: str) -
         upsert=True,
     )
     updated = await db.attendance_records.find_one({"class_slot_id": payload.class_slot_id, "student_id": str(student["_id"])})
+    if updated:
+        public_id = build_public_id("attendance_record", updated, prefer_existing=False)
+        if public_id and updated.get("public_id") != public_id:
+            await db.attendance_records.update_one({"_id": updated["_id"]}, {"$set": {"public_id": public_id}})
+            updated["public_id"] = public_id
     return updated
 
 

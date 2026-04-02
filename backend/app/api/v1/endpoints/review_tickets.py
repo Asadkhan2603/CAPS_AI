@@ -14,6 +14,7 @@ from app.schemas.review_ticket import (
     ReviewTicketOut,
 )
 from app.services.audit import log_audit_event
+from app.services.public_ids import build_public_id, persist_public_id
 
 router = APIRouter()
 
@@ -67,7 +68,11 @@ async def create_review_ticket(
         "created_at": datetime.now(timezone.utc),
         "schema_version": REVIEW_TICKET_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="review_ticket")
     result = await db.review_tickets.insert_one(document)
+    public_id = build_public_id("review_ticket", {**document, "_id": result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.review_tickets.update_one({"_id": result.inserted_id}, {"$set": {"public_id": public_id}})
     created = await db.review_tickets.find_one({"_id": result.inserted_id})
     await log_audit_event(
         actor_user_id=str(current_user["_id"]),

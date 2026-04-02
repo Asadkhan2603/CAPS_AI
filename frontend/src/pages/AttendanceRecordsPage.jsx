@@ -33,24 +33,34 @@ export default function AttendanceRecordsPage() {
     loadLookups();
   }, [isStudent]);
 
+  function slotLabel(item) {
+    if (!item) return '';
+    return item.display_label || `${item.day} ${item.start_time}-${item.end_time} | ${item.public_id || item.room_code}`;
+  }
+
+  function studentLabel(item) {
+    if (!item) return '';
+    return item.display_label || `${item.full_name} (${item.public_id || item.roll_number})`;
+  }
+
   const slotOptions = useMemo(
     () =>
       slots.map((item) => ({
         value: item.id,
-        label: `${item.day} ${item.start_time}-${item.end_time} | ${item.room_code}`
+        label: slotLabel(item)
       })),
     [slots]
   );
   const studentOptions = useMemo(
-    () => students.map((item) => ({ value: item.id, label: `${item.full_name} (${item.roll_number})` })),
+    () => students.map((item) => ({ value: item.id, label: studentLabel(item) })),
     [students]
   );
   const slotMap = useMemo(
-    () => Object.fromEntries(slots.map((item) => [item.id, `${item.day} ${item.start_time}-${item.end_time}`])),
+    () => Object.fromEntries(slots.map((item) => [item.id, slotLabel(item)])),
     [slots]
   );
   const studentMap = useMemo(
-    () => Object.fromEntries(students.map((item) => [item.id, `${item.full_name} (${item.roll_number})`])),
+    () => Object.fromEntries(students.map((item) => [item.id, studentLabel(item)])),
     [students]
   );
 
@@ -74,8 +84,9 @@ export default function AttendanceRecordsPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'class_slot_id', label: 'Class Slot', render: (row) => slotMap[row.class_slot_id] || row.class_slot_id || '-' },
-      { key: 'student_id', label: 'Student', render: (row) => studentMap[row.student_id] || row.student_id || '-' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || '-' },
+      { key: 'class_slot_id', label: 'Class Slot', render: (row) => slotMap[row.class_slot_id] || '-' },
+      { key: 'student_id', label: 'Student', render: (row) => studentMap[row.student_id] || '-' },
       { key: 'status', label: 'Status' },
       { key: 'marked_at', label: 'Marked At', render: (row) => (row.marked_at ? new Date(row.marked_at).toLocaleString() : '-') }
     ],

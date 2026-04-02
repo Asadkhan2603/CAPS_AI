@@ -1,12 +1,13 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import DEPARTMENT_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def department_public(document: Dict[str, Any]) -> Dict[str, Any]:
     department_name = document.get("department_name") or document.get("name", "")
     department_code = document.get("department_code") or document.get("code", "")
-    return {
+    payload = {
         "id": str(document["_id"]),
         "department_id": document.get("department_id") or department_code or str(document.get("_id")),
         "department_code": department_code,
@@ -29,3 +30,4 @@ def department_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=DEPARTMENT_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="department", document=document, display_name=department_name)

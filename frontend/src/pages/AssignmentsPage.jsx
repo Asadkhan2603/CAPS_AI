@@ -28,15 +28,25 @@ export default function AssignmentsPage() {
     loadLookups();
   }, []);
 
+  function subjectLabel(subject) {
+    if (!subject) return '';
+    return subject.display_label || `${subject.name} (${subject.public_id || subject.code})`;
+  }
+
+  function sectionLabel(section) {
+    if (!section) return '';
+    return section.display_label || `${section.name} (${section.public_id || 'Section'})`;
+  }
+
   const subjectOptions = useMemo(
-    () => subjects.map((subject) => ({ value: subject.id, label: `${subject.name} (${subject.code})` })),
+    () => subjects.map((subject) => ({ value: subject.id, label: subjectLabel(subject) })),
     [subjects]
   );
   const sectionOptions = useMemo(
     () =>
       sections.map((item) => ({
         value: item.id,
-        label: item.name
+        label: sectionLabel(item)
       })),
     [sections]
   );
@@ -96,8 +106,13 @@ export default function AssignmentsPage() {
   const columns = useMemo(
     () => [
       { key: 'title', label: 'Title' },
-      { key: 'subject_id', label: 'Subject', render: (row) => subjectNameById[row.subject_id] || row.subject_id || '-' },
-      { key: 'class_id', label: 'Section', render: (row) => sectionNameById[row.class_id] || row.class_id || '-' },
+      {
+        key: 'public_id',
+        label: 'Short ID',
+        render: (row) => row.public_id || '-'
+      },
+      { key: 'subject_id', label: 'Subject', render: (row) => subjectNameById[row.subject_id] || '-' },
+      { key: 'class_id', label: 'Section', render: (row) => sectionNameById[row.class_id] || '-' },
       { key: 'due_date', label: 'Deadline', render: (row) => (row.due_date ? new Date(row.due_date).toLocaleString() : '-') },
       { key: 'total_marks', label: 'Marks' },
       { key: 'status', label: 'Status' },

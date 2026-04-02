@@ -10,6 +10,7 @@ from app.core.security import require_roles
 from app.models.course_offerings import course_offering_public
 from app.schemas.course_offering import CourseOfferingCreate, CourseOfferingOut, CourseOfferingUpdate
 from app.services.academic_hierarchy import validate_section_branch
+from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -204,6 +205,7 @@ async def create_course_offering(
         "created_at": datetime.now(timezone.utc),
         "schema_version": COURSE_OFFERING_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="course_offering")
     result = await db.course_offerings.insert_one(document)
     created = await db.course_offerings.find_one({"_id": result.inserted_id})
     return CourseOfferingOut(**course_offering_public(created))
@@ -224,6 +226,7 @@ async def update_course_offering(
     update_data = payload.model_dump(exclude_none=True)
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="course_offering")
     await db.course_offerings.update_one(
         {"_id": offering_obj_id},
         {"$set": {**update_data, "schema_version": COURSE_OFFERING_SCHEMA_VERSION}},

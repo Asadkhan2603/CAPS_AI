@@ -18,6 +18,8 @@ class UniversityOut(BaseModel):
     id: str
     university_id: str
     university_name: str
+    public_id: str | None = None
+    display_label: str | None = None
     is_active: bool = True
     deleted_at: datetime | None = None
     deleted_by: str | None = None

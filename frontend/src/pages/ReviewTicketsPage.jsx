@@ -32,10 +32,11 @@ export default function ReviewTicketsPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'evaluation_id', label: 'Evaluation ID' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || row.id || '-' },
+      { key: 'evaluation_label', label: 'Evaluation', render: (row) => row.evaluation_label || row.evaluation_id || '-' },
       { key: 'status', label: 'Status' },
       { key: 'reason', label: 'Reason' },
-      { key: 'requested_by_user_id', label: 'Requested By' },
+      { key: 'requested_by_label', label: 'Requested By', render: (row) => row.requested_by_label || row.requested_by_user_id || '-' },
       {
         key: 'created_at',
         label: 'Created At',
@@ -123,7 +124,7 @@ export default function ReviewTicketsPage() {
               <option value="">Select Evaluation</option>
               {evaluations.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {`${item.id} | Total: ${item.grand_total ?? '-'} | ${item.grade ?? ''}`}
+                  {`${item.public_id || item.id} | ${item.display_label || item.grade || 'Evaluation'} | Total: ${item.grand_total ?? '-'}`}
                 </option>
               ))}
             </FormInput>

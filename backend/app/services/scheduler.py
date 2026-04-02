@@ -33,7 +33,10 @@ def _next_daily_run_utc(*, hour: int, minute: int) -> datetime:
 class AppScheduler:
     def __init__(self) -> None:
         self._enabled = settings.scheduler_enabled
-        self._instance_id = (os.getenv("HOSTNAME") or "").strip() or f"scheduler-{os.getpid()}"
+        configured_instance_id = (os.getenv("SCHEDULER_INSTANCE_ID") or "").strip()
+        host_instance_root = (os.getenv("HOSTNAME") or "").strip() or "scheduler"
+        # Include the process id by default so multi-worker pods do not share one scheduler identity.
+        self._instance_id = configured_instance_id or f"{host_instance_root}-{os.getpid()}"
         self._lock_id = (settings.scheduler_lock_id or "caps_ai_scheduler_primary").strip()
         self._lock_ttl_seconds = max(30, settings.scheduler_lock_ttl_seconds)
         self._lock_renew_seconds = max(

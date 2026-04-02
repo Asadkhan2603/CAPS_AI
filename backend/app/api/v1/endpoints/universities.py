@@ -11,6 +11,7 @@ from app.core.soft_delete import apply_is_active_filter, build_soft_delete_updat
 from app.models.universities import university_public
 from app.schemas.university import UniversityCreate, UniversityOut, UniversityUpdate
 from app.services.master_hierarchy import ensure_master_hierarchy_change_is_safe
+from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -61,6 +62,7 @@ async def create_university(
         "created_at": datetime.now(timezone.utc),
         "schema_version": UNIVERSITY_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="university")
     result = await db.universities.insert_one(document)
     created = await db.universities.find_one({"_id": result.inserted_id})
     return UniversityOut(**university_public(created))
@@ -73,6 +75,9 @@ async def update_university(
     _current_user=Depends(require_permission("universities.manage")),
 ) -> UniversityOut:
     university_obj_id = parse_object_id(university_doc_id)
+    current = await db.universities.find_one({"_id": university_obj_id})
+    if not current:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="University not found")
     update_data = payload.model_dump(exclude_none=True)
     if "university_id" in update_data:
         update_data["university_id"] = update_data["university_id"].strip().upper()
@@ -83,6 +88,7 @@ async def update_university(
         update_data["university_name"] = update_data["university_name"].strip()
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="university")
     update_data["schema_version"] = UNIVERSITY_SCHEMA_VERSION
     result = await db.universities.update_one({"_id": university_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:

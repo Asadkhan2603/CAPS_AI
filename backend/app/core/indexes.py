@@ -161,6 +161,11 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.specializations, [('program_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.batches, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.semesters, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(db.batch_read_models, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(db.batch_read_models, [('program_id', ASCENDING), ('specialization_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.semester_read_models, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(db.semester_read_models, [('batch_id', ASCENDING), ('semester_number', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.semester_read_models, [('program_id', ASCENDING), ('specialization_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(
         db.semesters,
         [('batch_id', ASCENDING), ('semester_number', ASCENDING)],
@@ -168,6 +173,9 @@ async def ensure_indexes() -> None:
         partialFilterExpression={'is_active': True},
     )
     await _safe_create_index(db.classes, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(db.section_read_models, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(db.section_read_models, [('department_id', ASCENDING), ('batch_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.section_read_models, [('semester_id', ASCENDING), ('class_coordinator_user_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.timetables, [('class_id', ASCENDING), ('semester', ASCENDING), ('status', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.timetables, [('entries.teacher_user_id', ASCENDING), ('status', ASCENDING)])
     await _safe_create_index(db.timetables, [('entries.room_code', ASCENDING), ('status', ASCENDING)])

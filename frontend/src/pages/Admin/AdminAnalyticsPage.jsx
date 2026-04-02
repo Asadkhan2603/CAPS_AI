@@ -7,30 +7,51 @@ import { formatApiError } from '../../utils/apiError';
 export default function AdminAnalyticsPage() {
   const [overview, setOverview] = useState({});
   const [metrics, setMetrics] = useState({});
+  const [snapshotMeta, setSnapshotMeta] = useState({ servedFrom: '-', ageHours: null });
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    async function load() {
-      setError('');
-      try {
-        const [overviewRes, platformRes] = await Promise.all([
-          apiClient.get('/admin/analytics/overview'),
-          apiClient.get('/admin/analytics/platform')
-        ]);
-        setOverview(overviewRes.data?.overview || {});
-        setMetrics(platformRes.data?.metrics || {});
-      } catch (err) {
-        setError(formatApiError(err, 'Failed to load analytics'));
-      }
-    }
-    load();
+    void loadAnalytics();
   }, []);
+
+  async function loadAnalytics(forceRefresh = false) {
+    setError('');
+    setIsRefreshing(true);
+    try {
+      const response = await apiClient.get('/admin/analytics/bootstrap', {
+        params: forceRefresh ? { refresh: true } : undefined,
+      });
+      setOverview(response.data?.overview || {});
+      setMetrics(response.data?.metrics || {});
+      setSnapshotMeta({
+        servedFrom: response.data?.snapshot_served_from || '-',
+        ageHours: response.data?.snapshot_age_hours ?? null,
+      });
+    } catch (err) {
+      setError(formatApiError(err, 'Failed to load analytics'));
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   return (
     <div className="space-y-4 page-fade">
       <Card>
-        <h1 className="text-2xl font-semibold">Admin Analytics</h1>
-        <p className="text-sm text-slate-500">Platform-level analytics and operational indicators.</p>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Admin Analytics</h1>
+            <p className="text-sm text-slate-500">Platform-level analytics and operational indicators.</p>
+          </div>
+          <button type="button" className="btn-secondary" onClick={() => void loadAnalytics(true)}>
+            {isRefreshing ? 'Refreshing...' : 'Refresh Snapshot'}
+          </button>
+        </div>
+        <div className="mt-3 grid gap-2 text-xs text-slate-500 md:grid-cols-3">
+          <div>Snapshot source: {snapshotMeta.servedFrom}</div>
+          <div>Snapshot age (hours): {snapshotMeta.ageHours ?? '-'}</div>
+          <div>Snapshot date: {metrics.date || '-'}</div>
+        </div>
       </Card>
       <AdminDomainNav />
       {error ? <Card><p className="text-sm text-rose-600">{error}</p></Card> : null}
@@ -50,7 +71,7 @@ export default function AdminAnalyticsPage() {
         <Metric label="Event Attendance %" value={metrics.event_attendance_pct} />
         <Metric label="Review Ticket SLA (hrs)" value={metrics.review_ticket_sla_hours} />
         <Metric label="Pending Review Tickets" value={metrics.pending_review_tickets} />
-        <Metric label="Snapshot Date" value={metrics.date || '-'} />
+        <Metric label="System Errors (24h)" value={overview.system_errors_24h} />
       </div>
     </div>
   );

@@ -1,12 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  BookOpen,
-  Building2,
-  CalendarDays,
   CalendarRange,
   ChevronRight,
-  GraduationCap,
-  Layers3,
   Library,
   Loader2,
   Pencil,
@@ -19,61 +14,22 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Modal from '../components/ui/Modal';
+import {
+  getChildLevelLabel,
+  getChildLevels,
+  getLevelMeta,
+  matchesQuery,
+  nodeKey,
+  singularizeLabel,
+  useAcademicStructureTree
+} from './academicStructure/useAcademicStructureTree';
 import { ACADEMIC_HIERARCHY_MODEL } from '../constants/academicHierarchy';
 import { apiClient } from '../services/apiClient';
 import { FEATURE_ACCESS } from '../config/featureAccess';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
-import { listAllPages, listAllWithActiveStates } from '../services/paginatedLookups';
 import { formatApiError } from '../utils/apiError';
 import { canAccessFeature } from '../utils/permissions';
-
-const LEVELS = [
-  { key: 'universities', label: 'Universities', icon: Building2 },
-  { key: 'faculties', label: 'Faculties', icon: Building2 },
-  { key: 'departments', label: 'Departments', icon: Building2 },
-  { key: 'programs', label: 'Programs', icon: BookOpen },
-  { key: 'specializations', label: 'Specializations', icon: Layers3 },
-  { key: 'batches', label: 'Batches', icon: GraduationCap },
-  { key: 'semesters', label: 'Semesters', icon: CalendarDays },
-  { key: 'sections', label: 'Sections', icon: School },
-  { key: 'groups', label: 'Groups', icon: Users }
-];
-
-const CHILD_LEVELS_BY_LEVEL = {
-  universities: ['faculties'],
-  faculties: ['departments'],
-  departments: ['programs'],
-  programs: ['specializations', 'batches'],
-  specializations: ['batches'],
-  batches: ['semesters'],
-  semesters: ['sections'],
-  sections: ['groups'],
-  groups: []
-};
-
-const FILTER_BY_CHILD_LEVEL = {
-  faculties: 'university_id',
-  departments: 'faculty_id',
-  programs: 'department_id',
-  specializations: 'program_id',
-  batches: 'specialization_id',
-  semesters: 'batch_id',
-  sections: 'semester_id',
-  groups: 'section_id'
-};
-
-const LIST_ENDPOINT_BY_LEVEL = {
-  universities: '/universities/',
-  faculties: '/faculties/',
-  departments: '/departments/',
-  programs: '/programs/',
-  specializations: '/specializations/',
-  batches: '/batches/',
-  semesters: '/semesters/',
-  sections: '/sections/',
-  groups: '/groups/'
-};
 
 const EDIT_ENDPOINT_BY_LEVEL = {
   universities: '/universities',
@@ -87,275 +43,39 @@ const EDIT_ENDPOINT_BY_LEVEL = {
   groups: '/groups'
 };
 
-const LEVELS_WITH_ACTIVE_FILTER = new Set([
-  'universities',
-  'faculties',
-  'departments',
-  'programs',
-  'specializations',
-  'batches',
-  'semesters',
-  'groups'
-]);
-
 const INDENT_STEP = 22;
-
-function createEmptyChildCache() {
-  return {
-    faculties: {},
-    departments: {},
-    programs: {},
-    specializations: {},
-    batches: {},
-    semesters: {},
-    sections: {},
-    groups: {}
-  };
-}
-
-function singularizeLabel(label) {
-  return label.endsWith('s') ? label.slice(0, -1) : label;
-}
-
-function normalizeNode(level, item) {
-  if (level === 'universities') {
-    return {
-      id: item.id,
-      level,
-      name: item.university_name,
-      code: item.university_id || '-',
-      status: item.is_active === false ? 'INACTIVE' : 'ACTIVE',
-      raw: item
-    };
-  }
-  if (level === 'semesters') {
-    return {
-      id: item.id,
-      level,
-      name: item.label,
-      code: `S${item.semester_number}`,
-      status: item.is_active === false ? 'INACTIVE' : 'ACTIVE',
-      raw: item
-    };
-  }
-  if (level === 'sections') {
-    return {
-      id: item.id,
-      level,
-      name: item.name,
-      code: '-',
-      status: item.is_active === false ? 'INACTIVE' : 'ACTIVE',
-      raw: item
-    };
-  }
-  if (level === 'groups') {
-    return {
-      id: item.id,
-      level,
-      name: item.name,
-      code: item.code || '-',
-      status: item.is_active === false ? 'INACTIVE' : 'ACTIVE',
-      raw: item
-    };
-  }
-  return {
-    id: item.id,
-    level,
-    name: item.name,
-    code: item.code || '-',
-    status: item.is_active === false ? 'INACTIVE' : 'ACTIVE',
-    raw: item
-  };
-}
-
-function matchesQuery(node, q) {
-  const text = q.trim().toLowerCase();
-  if (!text) return true;
-  return [node.name, node.code, node.status].some((value) =>
-    String(value || '')
-      .toLowerCase()
-      .includes(text)
-  );
-}
 
 export default function AcademicStructurePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { pushToast } = useToast();
 
-  const [rootNodes, setRootNodes] = useState([]);
-  const [childCache, setChildCache] = useState(() => createEmptyChildCache());
-  const [expandedKeys, setExpandedKeys] = useState({});
-  const [loadingKeys, setLoadingKeys] = useState({});
-  const [loadingRoot, setLoadingRoot] = useState(false);
-  const [error, setError] = useState('');
-  const [query, setQuery] = useState('');
-  const [rootSkip, setRootSkip] = useState(0);
-  const [rootLimit, setRootLimit] = useState(50);
-
   const [editOpen, setEditOpen] = useState(false);
   const [editNode, setEditNode] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editValues, setEditValues] = useState({ name: '', code: '', status: 'ACTIVE' });
+  const {
+    error,
+    expandedKeys,
+    getCachedChildren,
+    hasChildrenLoaded,
+    hasMoreChildren,
+    loadMoreChildren,
+    loadingKeys,
+    loadingRoot,
+    query,
+    refreshTree,
+    rootLimit,
+    rootNodes,
+    rootSkip,
+    setQuery,
+    setRootLimit,
+    setRootSkip,
+    toggleNode
+  } = useAcademicStructureTree({ pushToast });
 
   const canSuperAdminManage = user?.role === 'admin' && (user?.admin_type || 'admin') === 'super_admin';
   const canCreateUniversity = canSuperAdminManage && canAccessFeature(user, FEATURE_ACCESS.universities || {});
-
-  async function listAllForLevel(level, params = {}) {
-    const path = LIST_ENDPOINT_BY_LEVEL[level];
-    if (!path) return [];
-
-    if (!LEVELS_WITH_ACTIVE_FILTER.has(level)) {
-      return listAllPages(path, params);
-    }
-
-    return listAllWithActiveStates(path, params);
-  }
-
-  async function loadRootUniversities() {
-    setLoadingRoot(true);
-    setError('');
-    try {
-      const response = await apiClient.get('/universities/', {
-        params: { skip: rootSkip, limit: rootLimit, is_active: undefined, q: query || undefined }
-      });
-      const items = Array.isArray(response.data) ? response.data : [];
-      setRootNodes(items.map((item) => normalizeNode('universities', item)));
-    } catch (err) {
-      const message = formatApiError(err, 'Failed to load universities');
-      setError(message);
-      pushToast({ title: 'Load failed', description: message, variant: 'error' });
-      setRootNodes([]);
-    } finally {
-      setLoadingRoot(false);
-    }
-  }
-
-  useEffect(() => {
-    loadRootUniversities();
-  }, [query, rootLimit, rootSkip]);
-
-  function clearTreeState() {
-    setChildCache(createEmptyChildCache());
-    setExpandedKeys({});
-    setLoadingKeys({});
-  }
-
-  async function refreshTree() {
-    clearTreeState();
-    await loadRootUniversities();
-  }
-
-  function nodeKey(level, id) {
-    return `${level}:${id}`;
-  }
-
-  function getChildLevels(level) {
-    return CHILD_LEVELS_BY_LEVEL[level] || [];
-  }
-
-  function getLevelMeta(level) {
-    return LEVELS.find((item) => item.key === level) || LEVELS[0];
-  }
-
-  function getCachedChildren(level, parentId) {
-    if (!level || !parentId) return [];
-    return childCache[level]?.[parentId] || [];
-  }
-
-  function hasChildrenLoaded(level, parentId) {
-    if (!level || !parentId) return false;
-    return Object.prototype.hasOwnProperty.call(childCache[level] || {}, parentId);
-  }
-
-  function getChildParams(parentLevel, childLevel, parentId) {
-    if (parentLevel === 'programs' && childLevel === 'batches') {
-      return { program_id: parentId };
-    }
-    const filterKey = FILTER_BY_CHILD_LEVEL[childLevel];
-    return filterKey ? { [filterKey]: parentId } : {};
-  }
-
-  function normalizeChildItems(parentLevel, childLevel, items) {
-    const rows =
-      parentLevel === 'programs' && childLevel === 'batches'
-        ? items.filter((item) => !item.specialization_id)
-        : items;
-    return rows.map((item) => normalizeNode(childLevel, item));
-  }
-
-  function getChildLevelLabel(level) {
-    const childLevels = getChildLevels(level);
-    if (!childLevels.length) return '';
-    return childLevels.map((childLevel) => getLevelMeta(childLevel).label.toLowerCase()).join(' or ');
-  }
-
-  async function ensureChildrenLoaded(parentLevel, parentNode) {
-    const childLevels = getChildLevels(parentLevel);
-    if (!childLevels.length) return;
-    const parentId = parentNode.id;
-    const pendingLevels = childLevels.filter((childLevel) => {
-      const loadKey = nodeKey(childLevel, parentId);
-      return !hasChildrenLoaded(childLevel, parentId) && !loadingKeys[loadKey];
-    });
-    if (!pendingLevels.length) return;
-
-    setLoadingKeys((prev) => ({
-      ...prev,
-      ...Object.fromEntries(pendingLevels.map((childLevel) => [nodeKey(childLevel, parentId), true]))
-    }));
-    try {
-      const results = await Promise.allSettled(
-        pendingLevels.map(async (childLevel) => {
-          const childItems = await listAllForLevel(childLevel, getChildParams(parentLevel, childLevel, parentId));
-          return {
-            childLevel,
-            normalized: normalizeChildItems(parentLevel, childLevel, childItems)
-          };
-        })
-      );
-
-      setChildCache((prev) => {
-        const next = { ...prev };
-        results.forEach((result) => {
-          if (result.status !== 'fulfilled') return;
-          const { childLevel, normalized } = result.value;
-          next[childLevel] = {
-            ...next[childLevel],
-            [parentId]: normalized
-          };
-        });
-        return next;
-      });
-
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') return;
-        const childLevel = pendingLevels[index];
-        const levelMeta = getLevelMeta(childLevel);
-        const message = formatApiError(result.reason, `Failed to load ${levelMeta.label.toLowerCase()}`);
-        pushToast({ title: 'Load failed', description: message, variant: 'error' });
-      });
-    } finally {
-      setLoadingKeys((prev) => {
-        const next = { ...prev };
-        pendingLevels.forEach((childLevel) => {
-          next[nodeKey(childLevel, parentId)] = false;
-        });
-        return next;
-      });
-    }
-  }
-
-  async function toggleNode(level, node) {
-    const key = nodeKey(level, node.id);
-    const expanded = Boolean(expandedKeys[key]);
-    if (expanded) {
-      setExpandedKeys((prev) => ({ ...prev, [key]: false }));
-      return;
-    }
-    setExpandedKeys((prev) => ({ ...prev, [key]: true }));
-    await ensureChildrenLoaded(level, node);
-  }
 
   function toEditDefaults(node) {
     const level = node.level;
@@ -494,6 +214,7 @@ export default function AcademicStructurePage() {
     const children = childLevels.flatMap((nextLevel) => getCachedChildren(nextLevel, node.id));
     const filteredChildren = children.filter((item) => matchesQuery(item, query));
     const childrenLoaded = isExpandable ? childLevels.every((nextLevel) => hasChildrenLoaded(nextLevel, node.id)) : false;
+    const canLoadMoreChildren = childLevels.some((nextLevel) => hasMoreChildren(nextLevel, node.id));
     const levelMeta = getLevelMeta(level);
     const childLevelLabel = getChildLevelLabel(level) || getLevelMeta(childLevel || level).label.toLowerCase();
 
@@ -596,6 +317,14 @@ export default function AcademicStructurePage() {
                 ) : null}
 
                 {!loadingChildren && filteredChildren.map((childNode) => renderNode(childNode.level, childNode, depth + 1))}
+
+                {!loadingChildren && canLoadMoreChildren ? (
+                  <div className="px-6 pb-4 pt-2">
+                    <button type="button" className="btn-secondary text-xs" onClick={() => loadMoreChildren(level, node)}>
+                      Load More {childLevelLabel}
+                    </button>
+                  </div>
+                ) : null}
               </motion.div>
             ) : null}
           </AnimatePresence>

@@ -1,0 +1,45 @@
+{
+  "checks": {
+    "backend_dockerfile": {
+      "image": "3.11.11-slim",
+      "ok": true
+    },
+    "ci": {
+      "node_ok": true,
+      "node_versions": [
+        "20",
+        "20",
+        "20"
+      ],
+      "python_ok": true,
+      "python_versions": [
+        "3.11",
+        "3.11",
+        "3.11",
+        "3.11",
+        "3.11",
+        "3.11",
+        "3.11"
+      ]
+    },
+    "frontend_dockerfile": {
+      "image": "20-alpine",
+      "ok": true
+    },
+    "frontend_package": {
+      "node_engine": "20.x",
+      "ok": true
+    },
+    "nvmrc": {
+      "ok": true,
+      "version": "20"
+    },
+    "readme": {
+      "node_ok": true,
+      "python_ok": true
+    }
+  },
+  "expected_node_major": "20",
+  "expected_python_major_minor": "3.11",
+  "ok": true
+}

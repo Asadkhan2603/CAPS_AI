@@ -15,13 +15,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiClient } from '../../services/apiClient';
 import { useToast } from '../../hooks/useToast';
-import { unreadNoticeCount } from '../../utils/noticeReadTracker';
 import { useAuthorizedImage } from '../../hooks/useAuthorizedImage';
 import { formatApiError } from '../../utils/apiError';
 import { cn } from '../../utils/cn';
 
 type HeaderProps = {
   user: any;
+  initialNoticeCount?: number;
+  initialLogoVersion?: string;
   isDark: boolean;
   onToggleTheme: () => void;
   onOpenMobile: () => void;
@@ -31,6 +32,8 @@ type HeaderProps = {
 
 export default function Header({
   user,
+  initialNoticeCount,
+  initialLogoVersion = '',
   isDark,
   onToggleTheme,
   onOpenMobile,
@@ -38,8 +41,11 @@ export default function Header({
   headerHeight
 }: HeaderProps) {
   const [openMenu, setOpenMenu] = useState(false);
-  const [noticeCount, setNoticeCount] = useState(0);
-  const [logoVersion, setLogoVersion] = useState('');
+  const [noticeCount, setNoticeCount] = useState(
+    typeof initialNoticeCount === 'number' ? initialNoticeCount : 0
+  );
+  const [logoVersion, setLogoVersion] = useState(initialLogoVersion);
+  const [showLogoImage, setShowLogoImage] = useState(true);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -53,47 +59,75 @@ export default function Header({
     const base = apiClient.defaults.baseURL || '';
     return base.replace(/\/api\/v1\/?$/, '');
   }, []);
-  const logoUrl = logoVersion
-    ? `${backendBaseUrl}/api/v1/branding/logo?v=${encodeURIComponent(logoVersion)}`
-    : '';
+  const logoUrl = `${backendBaseUrl}/api/v1/branding/logo${
+    logoVersion ? `?v=${encodeURIComponent(logoVersion)}` : ''
+  }`;
+
+  useEffect(() => {
+    setNoticeCount(typeof initialNoticeCount === 'number' ? initialNoticeCount : 0);
+  }, [initialNoticeCount]);
+
+  useEffect(() => {
+    setLogoVersion(initialLogoVersion || '');
+  }, [initialLogoVersion]);
 
   useEffect(() => {
     let alive = true;
     async function loadNoticeCount() {
       try {
-        const resp = await apiClient.get('/notices/', { params: { include_expired: false, limit: 100 } });
+        const resp = await apiClient.get('/notices/unread-count');
         if (!alive) return;
-        setNoticeCount(unreadNoticeCount(user?.id, resp.data || []));
+        setNoticeCount(Number(resp.data?.count || 0));
       } catch {
         if (!alive) return;
         setNoticeCount(0);
       }
     }
-    loadNoticeCount();
-    const timer = setInterval(loadNoticeCount, 30000);
+    const triggerNoticeCountRefresh = () => {
+      void loadNoticeCount();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadNoticeCount();
+      }
+    };
+    const shouldSkipImmediateFetch = typeof initialNoticeCount === 'number';
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const idleId = shouldSkipImmediateFetch
+        ? null
+        : window.requestIdleCallback(() => {
+            void loadNoticeCount();
+          }, { timeout: 1500 });
+      window.addEventListener('focus', triggerNoticeCountRefresh);
+      window.addEventListener('caps-ai:notices-changed', triggerNoticeCountRefresh as EventListener);
+      document.addEventListener('visibilitychange', onVisibilityChange);
+      const timer = setInterval(triggerNoticeCountRefresh, 60000);
+      return () => {
+        alive = false;
+        if (idleId !== null) {
+          window.cancelIdleCallback(idleId);
+        }
+        clearInterval(timer);
+        window.removeEventListener('focus', triggerNoticeCountRefresh);
+        window.removeEventListener('caps-ai:notices-changed', triggerNoticeCountRefresh as EventListener);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      };
+    }
+    if (!shouldSkipImmediateFetch) {
+      void loadNoticeCount();
+    }
+    const timer = setInterval(triggerNoticeCountRefresh, 60000);
+    window.addEventListener('focus', triggerNoticeCountRefresh);
+    window.addEventListener('caps-ai:notices-changed', triggerNoticeCountRefresh as EventListener);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       alive = false;
       clearInterval(timer);
+      window.removeEventListener('focus', triggerNoticeCountRefresh);
+      window.removeEventListener('caps-ai:notices-changed', triggerNoticeCountRefresh as EventListener);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [user?.id]);
-
-  useEffect(() => {
-    let alive = true;
-    async function loadLogoMeta() {
-      try {
-        const response = await apiClient.get('/branding/logo/meta');
-        if (!alive) return;
-        setLogoVersion(response.data?.has_logo ? String(response.data.updated_at || Date.now()) : '');
-      } catch {
-        if (!alive) return;
-        setLogoVersion('');
-      }
-    }
-    loadLogoMeta();
-    return () => {
-      alive = false;
-    };
-  }, []);
+  }, [user?.id, initialNoticeCount]);
 
   useEffect(() => {
     function onWindowClick(event: MouseEvent) {
@@ -135,6 +169,7 @@ export default function Header({
       const multipart = new FormData();
       multipart.append('file', file);
       const response = await apiClient.post('/branding/logo', multipart);
+      setShowLogoImage(true);
       setLogoVersion(String(response.data?.updated_at || Date.now()));
       pushToast({
         title: 'Logo updated',
@@ -191,8 +226,14 @@ export default function Header({
                 </span>
               </>
             ) : null}
-            {logoUrl ? (
-              <img src={logoUrl} alt="Brand logo" className="h-9 w-9 rounded-lg object-contain" />
+            {showLogoImage ? (
+              <img
+                src={logoUrl}
+                alt="Brand logo"
+                className="h-9 w-9 rounded-lg object-contain"
+                onLoad={() => setShowLogoImage(true)}
+                onError={() => setShowLogoImage(false)}
+              />
             ) : (
               <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-fuchsia-500 via-violet-500 to-brand-500 text-sm font-bold text-white">
                 A

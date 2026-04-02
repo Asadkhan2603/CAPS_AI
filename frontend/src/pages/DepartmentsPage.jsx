@@ -12,7 +12,7 @@ export default function DepartmentsPage() {
       params: { is_active: true },
       mapOption: (item) => ({
         value: item.id,
-        label: `${item.faculty_name || item.name} (${item.faculty_code || item.code})`,
+        label: item.display_label || `${item.faculty_name || item.name} (${item.public_id || item.faculty_code || item.code})`,
         faculty_name: item.faculty_name || item.name,
         faculty_code: item.faculty_code || item.code
       })
@@ -54,7 +54,7 @@ export default function DepartmentsPage() {
 
   const createFields = useMemo(
     () => [
-      { name: 'department_id', label: 'Department ID', nullable: true },
+      { name: 'department_id', label: 'Legacy Business ID (Optional)', nullable: true },
       { name: 'department_name', label: 'Department Name', required: true },
       { name: 'department_code', label: 'Department Code', required: true },
       {
@@ -73,7 +73,7 @@ export default function DepartmentsPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'department_id', label: 'Department ID', render: (row) => row.department_id || '-' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || row.department_id || '-' },
       { key: 'department_name', label: 'Department', render: (row) => row.department_name || row.name || '-' },
       { key: 'department_code', label: 'Code', render: (row) => row.department_code || row.code || '-' },
       { key: 'faculty_id', label: 'Faculty', render: (row) => facultyNameById[row.faculty_id] || '-' },

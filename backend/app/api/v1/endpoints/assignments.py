@@ -15,6 +15,7 @@ from app.schemas.assignment import (
     AssignmentUpdate,
 )
 from app.services.audit import log_audit_event
+from app.services.public_ids import build_public_id, persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -118,7 +119,11 @@ async def create_assignment(
         "created_at": datetime.now(timezone.utc),
         "schema_version": ASSIGNMENT_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="assignment")
     result = await db.assignments.insert_one(document)
+    public_id = build_public_id("assignment", {**document, "_id": result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.assignments.update_one({"_id": result.inserted_id}, {"$set": {"public_id": public_id}})
     created = await db.assignments.find_one({"_id": result.inserted_id})
     return AssignmentOut(**assignment_public(created))
 
@@ -141,6 +146,7 @@ async def update_assignment(
         update_data["title"] = update_data["title"].strip()
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(item, update_data, kind="assignment")
 
     result = await db.assignments.update_one(
         {"_id": assignment_obj_id},

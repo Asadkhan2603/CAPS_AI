@@ -1,10 +1,11 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import COURSE_OFFERING_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def course_offering_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "id": str(document["_id"]),
         "subject_id": document.get("subject_id"),
         "teacher_user_id": document.get("teacher_user_id"),
@@ -21,3 +22,4 @@ def course_offering_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=COURSE_OFFERING_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="course_offering", document=document, display_name=document.get("subject_name"))

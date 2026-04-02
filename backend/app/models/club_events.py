@@ -1,10 +1,11 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import CLUB_EVENT_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def club_event_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "id": str(document["_id"]),
         "club_id": document.get("club_id"),
         "title": document.get("title", ""),
@@ -30,3 +31,4 @@ def club_event_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=CLUB_EVENT_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="club_event", document=document, display_name=document.get("title"))

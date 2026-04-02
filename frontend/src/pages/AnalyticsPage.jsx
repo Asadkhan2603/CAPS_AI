@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import Card from '../components/ui/Card';
 import StatCard from '../components/ui/StatCard';
+import SafeResponsiveContainer from '../components/charts/SafeResponsiveContainer';
 import { apiClient } from '../services/apiClient';
 
 export default function AnalyticsPage() {
@@ -59,7 +60,7 @@ export default function AnalyticsPage() {
           <Card className="min-w-0">
             <h2 className="mb-4 text-lg font-semibold">Summary Distribution</h2>
             <div className="h-80 min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
+              <SafeResponsiveContainer>
                 <BarChart data={entries}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
                   <XAxis dataKey="label" hide />
@@ -67,7 +68,7 @@ export default function AnalyticsPage() {
                   <Tooltip />
                   <Bar dataKey="value" fill="#4f46e5" radius={[6, 6, 0, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             </div>
           </Card>
         </>

@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable
 
 from app.core.database import db
 from app.core.schema_versions import NOTIFICATION_SCHEMA_VERSION
+from app.services.public_ids import build_public_id, persist_public_id
 
 
 async def create_notification(
@@ -27,7 +28,11 @@ async def create_notification(
         "created_at": datetime.now(timezone.utc),
         "schema_version": NOTIFICATION_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="notification")
     result = await db.notifications.insert_one(document)
+    public_id = build_public_id("notification", {**document, "_id": result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.notifications.update_one({"_id": result.inserted_id}, {"$set": {"public_id": public_id}})
     created = await db.notifications.find_one({"_id": result.inserted_id})
     return created or document
 
@@ -52,6 +57,7 @@ async def create_notifications_bulk(
         if not target_user_id:
             continue
         pending.append(
+            persist_public_id(
             {
                 "title": normalized_title,
                 "message": normalized_message,
@@ -62,14 +68,24 @@ async def create_notifications_bulk(
                 "is_read": False,
                 "created_at": datetime.now(timezone.utc),
                 "schema_version": NOTIFICATION_SCHEMA_VERSION,
-            }
+            },
+            kind="notification",
+            )
         )
         if len(pending) >= safe_batch_size:
             result = await db.notifications.insert_many(pending, ordered=False)
+            for inserted_id, source in zip(result.inserted_ids, pending):
+                public_id = build_public_id("notification", {**source, "_id": inserted_id}, prefer_existing=False)
+                if public_id:
+                    await db.notifications.update_one({"_id": inserted_id}, {"$set": {"public_id": public_id}})
             inserted += len(result.inserted_ids)
             pending = []
 
     if pending:
         result = await db.notifications.insert_many(pending, ordered=False)
+        for inserted_id, source in zip(result.inserted_ids, pending):
+            public_id = build_public_id("notification", {**source, "_id": inserted_id}, prefer_existing=False)
+            if public_id:
+                await db.notifications.update_one({"_id": inserted_id}, {"$set": {"public_id": public_id}})
         inserted += len(result.inserted_ids)
     return inserted

@@ -1,124 +1,56 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import FormInput from '../components/ui/FormInput';
 import Modal from '../components/ui/Modal';
 import Table from '../components/ui/Table';
-import { apiClient } from '../services/apiClient';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { formatApiError } from '../utils/apiError';
-
-const tabs = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'members', label: 'Members' },
-  { key: 'events', label: 'Events' },
-  { key: 'announcements', label: 'Announcements' },
-  { key: 'analytics', label: 'Analytics' }
-];
-const ALL_CLUBS_VALUE = '__all__';
-
-const clubStatusOptions = ['draft', 'pending_activation', 'active', 'registration_closed', 'closed', 'suspended', 'archived', 'dormant'];
-const activeClubStatuses = new Set(['active', 'registration_closed']);
-
-const initialCreateForm = {
-  name: '',
-  description: '',
-  category: '',
-  academic_year: '',
-  membership_type: 'approval_required',
-  max_members: '',
-  coordinator_user_id: '',
-  status: 'draft'
-};
-
-const initialEventForm = {
-  title: '',
-  description: '',
-  event_type: 'workshop',
-  visibility: 'public',
-  registration_start: '',
-  registration_end: '',
-  event_date: '',
-  capacity: 100,
-  registration_enabled: true,
-  payment_required: false,
-  payment_qr_image_url: '',
-  payment_amount: ''
-};
-
-function createInitialRegistrationForm(user = null) {
-  return {
-    enrollment_number: '',
-    full_name: user?.full_name || '',
-    email: user?.email || '',
-    year: '',
-    course_branch: '',
-    class_name: '',
-    phone_number: '',
-    whatsapp_number: '',
-    payment_qr_code: ''
-  };
-}
+import { activeClubStatuses, ALL_CLUBS_VALUE, clubStatusOptions, initialCreateForm, initialEventForm, tabs } from './clubs/constants';
+import { useClubDirectory } from './clubs/useClubDirectory';
+import { useClubRegistrationFlow } from './clubs/useClubRegistrationFlow';
 
 export default function ClubsPage() {
   const { user } = useAuth();
   const { pushToast } = useToast();
 
-  const isAdmin = user?.role === 'admin';
-  const isTeacher = user?.role === 'teacher';
-  const isStudent = user?.role === 'student';
-  const teacherExtensions = user?.extended_roles || [];
-
   const [activeTab, setActiveTab] = useState('overview');
-  const [clubs, setClubs] = useState([]);
-  const [selectedClubId, setSelectedClubId] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
   const [search, setSearch] = useState('');
-  const [loadingClubs, setLoadingClubs] = useState(false);
-
-  const [teachers, setTeachers] = useState([]);
-  const [students, setStudents] = useState([]);
-
-  const [members, setMembers] = useState([]);
-  const [applications, setApplications] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [eventRegistrations, setEventRegistrations] = useState([]);
-  const [analytics, setAnalytics] = useState(null);
-
   const [createForm, setCreateForm] = useState(initialCreateForm);
   const [createLoading, setCreateLoading] = useState(false);
-
   const [eventForm, setEventForm] = useState(initialEventForm);
   const [eventLoading, setEventLoading] = useState(false);
-  const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
-  const [registrationEvent, setRegistrationEvent] = useState(null);
-  const [registrationForm, setRegistrationForm] = useState(createInitialRegistrationForm(user));
-  const [paymentReceiptFile, setPaymentReceiptFile] = useState(null);
-  const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const [expandedDescriptions, setExpandedDescriptions] = useState({});
-  const [clubsLoadError, setClubsLoadError] = useState('');
-  const [clubDataLoadError, setClubDataLoadError] = useState('');
-  const loadErrorRef = useRef('');
-
-  const selectedClub = useMemo(
-    () => (selectedClubId === ALL_CLUBS_VALUE ? null : clubs.find((club) => club.id === selectedClubId) || null),
-    [clubs, selectedClubId]
-  );
-
-  function canManageClub(club) {
-    if (!club || !user) return false;
-    if (isAdmin) return true;
-    if (isTeacher) {
-      return club.coordinator_user_id === user.id || teacherExtensions.includes('club_coordinator');
-    }
-    return false;
-  }
-
-  function isClubPresident(club) {
-    if (!club || !user) return false;
-    return club.president_user_id === user.id;
-  }
+  const {
+    analytics,
+    applications,
+    canManageClub,
+    clubDataLoadError,
+    clubs,
+    clubsLoadError,
+    createClub,
+    createEvent,
+    eventRegistrations,
+    events,
+    isAdmin,
+    isClubPresident,
+    isStudent,
+    joinClub,
+    loadingClubs,
+    members,
+    refreshClubs,
+    registerForEvent,
+    reviewApplication,
+    selectedClub,
+    selectedClubId,
+    setSelectedClubId,
+    students,
+    teachers,
+    toggleRegistration,
+    updateClubStatus
+  } = useClubDirectory({ pushToast, user });
 
   const filteredClubs = useMemo(() => {
     const text = search.trim().toLowerCase();
@@ -132,145 +64,22 @@ export default function ClubsPage() {
       return statusPass && textPass;
     });
   }, [clubs, search, statusFilter]);
-
-  function notifyLoadErrorOnce(message) {
-    if (!message) return;
-    if (loadErrorRef.current === message) return;
-    loadErrorRef.current = message;
-    pushToast({
-      title: 'Failed to load clubs',
-      description: message,
-      variant: 'error'
-    });
-  }
-
-  useEffect(() => {
-    async function loadClubs() {
-      setLoadingClubs(true);
-      setClubsLoadError('');
-      try {
-        const response = await apiClient.get('/clubs/', { params: { skip: 0, limit: 100 } });
-        const items = response.data || [];
-        setClubs(items);
-        loadErrorRef.current = '';
-        if (!selectedClubId && items.length > 0) {
-          setSelectedClubId(items[0].id);
-        }
-      } catch (err) {
-        const message = formatApiError(err, 'Could not load clubs');
-        setClubsLoadError(message);
-        notifyLoadErrorOnce(message);
-      } finally {
-        setLoadingClubs(false);
-      }
-    }
-
-    loadClubs();
-  }, []);
-
-  useEffect(() => {
-    async function loadUsers() {
-      if (!isAdmin) return;
-      try {
-        const response = await apiClient.get('/users/', { params: { skip: 0, limit: 500 } });
-        const all = response.data || [];
-        setTeachers(all.filter((item) => item.role === 'teacher'));
-        setStudents(all.filter((item) => item.role === 'student'));
-      } catch {
-        setTeachers([]);
-        setStudents([]);
-      }
-    }
-
-    loadUsers();
-  }, [isAdmin]);
-
-  useEffect(() => {
-    setRegistrationForm((prev) => ({
-      ...prev,
-      full_name: prev.full_name || user?.full_name || '',
-      email: prev.email || user?.email || ''
-    }));
-  }, [user]);
-
-  useEffect(() => {
-    async function loadSelectedClubData() {
-      if (!selectedClubId) {
-        setMembers([]);
-        setApplications([]);
-        setEvents([]);
-        setEventRegistrations([]);
-        setAnalytics(null);
-        return;
-      }
-
-      setClubDataLoadError('');
-      try {
-        const eventsParams = selectedClubId === ALL_CLUBS_VALUE
-          ? { skip: 0, limit: 100 }
-          : { club_id: selectedClubId, skip: 0, limit: 100 };
-        const eventsRes = await apiClient.get('/club-events/', { params: eventsParams });
-        const eventItems = eventsRes.data || [];
-
-        if (selectedClubId === ALL_CLUBS_VALUE) {
-          setMembers([]);
-          setApplications([]);
-        } else {
-          const [membersRes, applicationsRes] = await Promise.all([
-            apiClient.get(`/clubs/${selectedClubId}/members`),
-            apiClient.get(`/clubs/${selectedClubId}/applications`)
-          ]);
-          setMembers(membersRes.data || []);
-          setApplications(applicationsRes.data || []);
-        }
-
-        setEvents(eventItems);
-        if (isStudent) {
-          const regsRes = await apiClient.get('/event-registrations/', { params: { skip: 0, limit: 100 } });
-          setEventRegistrations(regsRes.data || []);
-        } else {
-          setEventRegistrations([]);
-        }
-      } catch (err) {
-        setMembers([]);
-        setApplications([]);
-        setEvents([]);
-        setEventRegistrations([]);
-        const status = err?.response?.status;
-        const message =
-          status === 404
-            ? 'Advanced club endpoints are unavailable on backend. Restart backend to load members/applications/events.'
-            : formatApiError(err, 'Failed to load selected club data');
-        setClubDataLoadError(message);
-      }
-
-      try {
-        const analyticsRes = await apiClient.get(`/clubs/${selectedClubId}/analytics`);
-        setAnalytics(analyticsRes.data || null);
-      } catch {
-        setAnalytics(null);
-      }
-    }
-
-    loadSelectedClubData();
-  }, [selectedClubId, isStudent]);
-
-  async function refreshClubs() {
-    try {
-      setClubsLoadError('');
-      const response = await apiClient.get('/clubs/', { params: { skip: 0, limit: 100 } });
-      const items = response.data || [];
-      setClubs(items);
-      loadErrorRef.current = '';
-      if (selectedClubId && !items.some((club) => club.id === selectedClubId)) {
-        setSelectedClubId(items[0]?.id || '');
-      }
-    } catch (err) {
-      const message = formatApiError(err, 'Could not refresh clubs');
-      setClubsLoadError(message);
-      pushToast({ title: 'Refresh failed', description: message, variant: 'error' });
-    }
-  }
+  const {
+    closeRegistrationModal,
+    openRegistrationModal,
+    paymentReceiptFile,
+    registrationEvent,
+    registrationForm,
+    registrationModalOpen,
+    registrationSubmitting,
+    setPaymentReceiptFile,
+    setRegistrationForm,
+    submitEventRegistrationForm
+  } = useClubRegistrationFlow({
+    onSubmitRegistration: registerForEvent,
+    pushToast,
+    user
+  });
 
   async function submitCreateClub(event) {
     event.preventDefault();
@@ -281,76 +90,13 @@ export default function ClubsPage() {
         max_members: createForm.max_members ? Number(createForm.max_members) : null,
         coordinator_user_id: createForm.coordinator_user_id || null
       };
-      await apiClient.post('/clubs/', payload);
+      await createClub(payload);
       setCreateForm(initialCreateForm);
       pushToast({ title: 'Club created', description: 'New club created successfully.', variant: 'success' });
-      await refreshClubs();
     } catch (err) {
       pushToast({ title: 'Create failed', description: formatApiError(err, 'Failed to create club'), variant: 'error' });
     } finally {
       setCreateLoading(false);
-    }
-  }
-
-  async function joinClub(clubId) {
-    try {
-      const response = await apiClient.post(`/clubs/${clubId}/join`);
-      pushToast({
-        title: response.data?.status === 'approved' ? 'Joined club' : 'Application submitted',
-        description: response.data?.message || 'Request processed',
-        variant: 'success'
-      });
-      const [membersRes, applicationsRes] = await Promise.all([
-        apiClient.get(`/clubs/${clubId}/members`),
-        apiClient.get(`/clubs/${clubId}/applications`)
-      ]);
-      setMembers(membersRes.data || []);
-      setApplications(applicationsRes.data || []);
-      await refreshClubs();
-    } catch (err) {
-      pushToast({ title: 'Join failed', description: formatApiError(err, 'Could not process club join'), variant: 'error' });
-    }
-  }
-
-  async function updateClubStatus(club, nextStatus) {
-    try {
-      await apiClient.patch(`/clubs/${club.id}`, { status: nextStatus });
-      pushToast({ title: 'Club updated', description: `Status changed to ${nextStatus}.`, variant: 'success' });
-      await refreshClubs();
-    } catch (err) {
-      pushToast({ title: 'Update failed', description: formatApiError(err, 'Failed to update status'), variant: 'error' });
-    }
-  }
-
-  async function toggleRegistration(club) {
-    try {
-      await apiClient.patch(`/clubs/${club.id}`, { registration_open: !club.registration_open });
-      pushToast({
-        title: club.registration_open ? 'Registration closed' : 'Registration opened',
-        description: `Club registration is now ${club.registration_open ? 'closed' : 'open'}.`,
-        variant: 'success'
-      });
-      await refreshClubs();
-    } catch (err) {
-      pushToast({ title: 'Update failed', description: formatApiError(err, 'Failed to toggle registration'), variant: 'error' });
-    }
-  }
-
-  async function reviewApplication(applicationId, status) {
-    if (!selectedClubId) return;
-    try {
-      await apiClient.patch(`/clubs/${selectedClubId}/applications/${applicationId}`, { status });
-      pushToast({ title: 'Application updated', description: `Application ${status}.`, variant: 'success' });
-      const [membersRes, applicationsRes, clubsRes] = await Promise.all([
-        apiClient.get(`/clubs/${selectedClubId}/members`),
-        apiClient.get(`/clubs/${selectedClubId}/applications`),
-        apiClient.get('/clubs/', { params: { skip: 0, limit: 100 } })
-      ]);
-      setMembers(membersRes.data || []);
-      setApplications(applicationsRes.data || []);
-      setClubs(clubsRes.data || []);
-    } catch (err) {
-      pushToast({ title: 'Review failed', description: formatApiError(err, 'Could not review application'), variant: 'error' });
     }
   }
 
@@ -362,7 +108,7 @@ export default function ClubsPage() {
     }
     setEventLoading(true);
     try {
-      await apiClient.post('/club-events/', {
+      const payload = {
         club_id: selectedClubId,
         title: eventForm.title,
         description: eventForm.description || null,
@@ -382,78 +128,13 @@ export default function ClubsPage() {
           eventForm.registration_enabled && eventForm.payment_required && eventForm.payment_amount !== ''
             ? Number(eventForm.payment_amount)
             : null
-      });
+      };
+      await createEvent(payload);
       setEventForm(initialEventForm);
-      pushToast({ title: 'Event created', description: 'Club event created successfully.', variant: 'success' });
-      const response = await apiClient.get('/club-events/', { params: { club_id: selectedClubId, skip: 0, limit: 100 } });
-      setEvents(response.data || []);
     } catch (err) {
       pushToast({ title: 'Create failed', description: formatApiError(err, 'Failed to create event'), variant: 'error' });
     } finally {
       setEventLoading(false);
-    }
-  }
-
-  function openRegistrationModal(eventRow) {
-    setRegistrationEvent(eventRow);
-    setRegistrationForm(createInitialRegistrationForm(user));
-    setPaymentReceiptFile(null);
-    setRegistrationModalOpen(true);
-  }
-
-  async function submitEventRegistrationForm(event) {
-    event.preventDefault();
-    if (!registrationEvent) return;
-
-    if (registrationEvent.payment_required && !registrationForm.payment_qr_code) {
-      pushToast({ title: 'Payment required', description: 'Enter transaction reference.', variant: 'error' });
-      return;
-    }
-    if (registrationEvent.payment_required && !paymentReceiptFile) {
-      pushToast({ title: 'Payment screenshot required', description: 'Upload payment screenshot.', variant: 'error' });
-      return;
-    }
-
-    setRegistrationSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append('event_id', registrationEvent.id);
-      formData.append('enrollment_number', registrationForm.enrollment_number);
-      formData.append('full_name', registrationForm.full_name);
-      formData.append('email', registrationForm.email);
-      formData.append('year', registrationForm.year);
-      formData.append('course_branch', registrationForm.course_branch);
-      formData.append('class_name', registrationForm.class_name);
-      formData.append('phone_number', registrationForm.phone_number);
-      formData.append('whatsapp_number', registrationForm.whatsapp_number);
-      formData.append('payment_qr_code', registrationForm.payment_qr_code || '');
-      if (paymentReceiptFile) {
-        formData.append('payment_receipt', paymentReceiptFile);
-      }
-
-      await apiClient.post('/event-registrations/submit', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      pushToast({ title: 'Registered', description: 'Event registration submitted.', variant: 'success' });
-      const [eventsRes, regsRes] = await Promise.all([
-        apiClient.get('/club-events/', {
-          params: selectedClubId === ALL_CLUBS_VALUE
-            ? { skip: 0, limit: 100 }
-            : { club_id: selectedClubId, skip: 0, limit: 100 }
-        }),
-        apiClient.get('/event-registrations/', { params: { skip: 0, limit: 100 } })
-      ]);
-      setEvents(eventsRes.data || []);
-      setEventRegistrations(regsRes.data || []);
-      setRegistrationModalOpen(false);
-      setRegistrationEvent(null);
-      setPaymentReceiptFile(null);
-      setRegistrationForm(createInitialRegistrationForm(user));
-    } catch (err) {
-      pushToast({ title: 'Registration failed', description: formatApiError(err, 'Could not register for event'), variant: 'error' });
-    } finally {
-      setRegistrationSubmitting(false);
     }
   }
 
@@ -939,11 +620,7 @@ export default function ClubsPage() {
       <Modal
         open={registrationModalOpen}
         title={registrationEvent ? `Register: ${registrationEvent.title}` : 'Event Registration'}
-        onClose={() => {
-          setRegistrationModalOpen(false);
-          setRegistrationEvent(null);
-          setPaymentReceiptFile(null);
-        }}
+        onClose={closeRegistrationModal}
       >
         <form className="grid gap-3 md:grid-cols-2" onSubmit={submitEventRegistrationForm}>
           <FormInput required label="Enrollment Number" value={registrationForm.enrollment_number} onChange={(e) => setRegistrationForm((prev) => ({ ...prev, enrollment_number: e.target.value }))} />
@@ -982,11 +659,7 @@ export default function ClubsPage() {
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => {
-                setRegistrationModalOpen(false);
-                setRegistrationEvent(null);
-                setPaymentReceiptFile(null);
-              }}
+              onClick={closeRegistrationModal}
             >
               Cancel
             </button>

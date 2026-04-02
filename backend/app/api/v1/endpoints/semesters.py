@@ -14,6 +14,13 @@ from app.services.academic_batching import build_semester_academic_year
 from app.services.academic_hierarchy import validate_semester_number_for_program
 from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
+from app.services.semester_read_models import (
+    get_semester_read_model,
+    hydrate_semesters_from_read_models,
+    sync_semester_read_model,
+)
+from app.services.section_read_models import sync_section_read_models_for_query
+from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -53,6 +60,7 @@ async def list_semesters(
         query["label"] = {"$regex": q, "$options": "i"}
     apply_is_active_filter(query, is_active)
     items = await db.semesters.find(query).skip(skip).limit(limit).to_list(length=limit)
+    items = await hydrate_semesters_from_read_models(source_semesters=items, database=db)
     return [SemesterOut(**semester_public(item)) for item in items]
 
 
@@ -62,6 +70,9 @@ async def get_semester(
     _current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> SemesterOut:
     item = await db.semesters.find_one({"_id": parse_object_id(semester_id)})
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+    item = await get_semester_read_model(semester_id=semester_id, database=db)
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
     return SemesterOut(**semester_public(item))
@@ -104,8 +115,10 @@ async def create_semester(
         "created_at": datetime.now(timezone.utc),
         "schema_version": SEMESTER_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="semester")
     result = await db.semesters.insert_one(document)
     created = await db.semesters.find_one({"_id": result.inserted_id})
+    created = await sync_semester_read_model(semester=created, database=db)
     return SemesterOut(**semester_public(created))
 
 
@@ -152,11 +165,14 @@ async def update_semester(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Semester already exists for this batch")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="semester")
     update_data["schema_version"] = SEMESTER_SCHEMA_VERSION
     result = await db.semesters.update_one({"_id": semester_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
     updated = await db.semesters.find_one({"_id": semester_obj_id})
+    updated = await sync_semester_read_model(semester=updated, database=db)
+    await sync_section_read_models_for_query(query={"semester_id": semester_id}, database=db)
     return SemesterOut(**semester_public(updated))
 
 
@@ -193,6 +209,10 @@ async def delete_semester(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+    archived = await db.semesters.find_one({"_id": parse_object_id(semester_id)})
+    if archived:
+        await sync_semester_read_model(semester=archived, database=db)
+    await sync_section_read_models_for_query(query={"semester_id": semester_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,
         action="semesters.delete",

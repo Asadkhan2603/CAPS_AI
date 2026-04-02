@@ -24,8 +24,12 @@ from app.services.master_hierarchy import (
     ensure_master_hierarchy_change_is_safe,
     normalize_code,
 )
+from app.services.public_ids import persist_public_id, persist_public_id_update
 from app.services.audit import log_destructive_action_event
+from app.services.batch_read_models import sync_batch_read_models_for_query
 from app.services.governance import enforce_review_approval
+from app.services.semester_read_models import sync_semester_read_models_for_query
+from app.services.section_read_models import sync_section_read_models_for_query
 
 router = APIRouter()
 
@@ -174,8 +178,9 @@ async def _sync_specialization_batches(specialization_id: str) -> int:
         )
         await db.batches.update_one(
             {"_id": row["_id"]},
-            {
-                "$set": {
+            {"$set": persist_public_id_update(
+                row,
+                {
                     "faculty_id": program_context.get("faculty_id"),
                     "department_id": program_context.get("department_id"),
                     "program_id": program_context.get("program_id"),
@@ -188,8 +193,9 @@ async def _sync_specialization_batches(specialization_id: str) -> int:
                     "university_code": program_context.get("university_code"),
                     "schema_version": BATCH_SCHEMA_VERSION,
                     "updated_at": now,
-                }
-            },
+                },
+                kind="batch",
+            )},
         )
 
     await _seed_specialization_batches(specialization, program)
@@ -235,6 +241,7 @@ async def _sync_specialization_batches(specialization_id: str) -> int:
                 "schema_version": SEMESTER_SCHEMA_VERSION,
                 "updated_at": now,
             }
+            persist_public_id_update(current, update_fields, kind="semester")
             current_label = str(current.get("label") or "").strip()
             if not current_label or current_label.startswith("Semester "):
                 update_fields["label"] = semester_payload.get("label")
@@ -403,6 +410,7 @@ async def create_specialization(
         "created_at": datetime.now(timezone.utc),
         "schema_version": SPECIALIZATION_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="specialization")
     result = await db.specializations.insert_one(document)
     created = await db.specializations.find_one({"_id": result.inserted_id})
     return SpecializationOut(**specialization_public(created))
@@ -478,11 +486,15 @@ async def update_specialization(
         update_data["faculty_code"] = (department or {}).get("faculty_code")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="specialization")
     update_data["schema_version"] = SPECIALIZATION_SCHEMA_VERSION
     result = await db.specializations.update_one({"_id": specialization_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specialization not found")
     updated = await db.specializations.find_one({"_id": specialization_obj_id})
+    await sync_batch_read_models_for_query(query={"specialization_id": specialization_id}, database=db)
+    await sync_semester_read_models_for_query(query={"specialization_id": specialization_id}, database=db)
+    await sync_section_read_models_for_query(query={"specialization_id": specialization_id}, database=db)
     return SpecializationOut(**specialization_public(updated))
 
 
@@ -528,6 +540,9 @@ async def delete_specialization(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specialization not found")
+    await sync_batch_read_models_for_query(query={"specialization_id": specialization_id}, database=db)
+    await sync_semester_read_models_for_query(query={"specialization_id": specialization_id}, database=db)
+    await sync_section_read_models_for_query(query={"specialization_id": specialization_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,
         action="specializations.delete",

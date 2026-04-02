@@ -1,59 +1,76 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
-from app.core.database import db
+from app.core.config import settings
 from app.core.security import require_permission
-from app.services.analytics_snapshot import compute_platform_snapshot, get_daily_snapshot, get_snapshot_history
+from app.services.analytics_snapshot import (
+    build_admin_analytics_overview,
+    compute_platform_snapshot,
+    get_latest_snapshot,
+    get_snapshot_history,
+)
 
 router = APIRouter()
 
 
-async def _overview_payload() -> dict:
-    now = datetime.now(timezone.utc)
-    day_ago = now.replace(microsecond=0) - timedelta(hours=24)
-    week_ahead = now + timedelta(days=7)
+async def _analytics_bootstrap_payload(*, refresh: bool = False) -> dict:
+    snapshot = None
+    snapshot_age_hours = None
+    if not refresh:
+        snapshot, snapshot_age_hours = await get_latest_snapshot(
+            max_age_hours=max(1, int(settings.analytics_snapshot_freshness_hours))
+        )
+    if not snapshot:
+        snapshot = await compute_platform_snapshot()
+        snapshot_age_hours = 0
+        snapshot_served_from = "live"
+    else:
+        snapshot_served_from = "snapshot"
+
     return {
-        'total_users': await db.users.count_documents({}),
-        'active_students': await db.students.count_documents({'is_active': True}),
-        'active_clubs': await db.clubs.count_documents({'status': {'$in': ['active', 'registration_closed']}}),
-        'pending_review_tickets': await db.review_tickets.count_documents({'status': {'$in': ['pending', 'open']}}),
-        'assignments_total': await db.assignments.count_documents({}),
-        'submissions_total': await db.submissions.count_documents({}),
-        'events_this_week': await db.club_events.count_documents({'event_date': {'$gte': now, '$lte': week_ahead}}),
-        'system_errors_24h': await db.audit_logs.count_documents(
-            {
-                'created_at': {'$gte': day_ago},
-                '$or': [
-                    {'action': {'$in': ['error', 'exception']}},
-                    {'severity': 'high'},
-                ],
-            }
-        ),
+        'timestamp': datetime.now(timezone.utc),
+        'overview': build_admin_analytics_overview(snapshot),
+        'metrics': snapshot,
+        'snapshot_served_from': snapshot_served_from,
+        'snapshot_age_hours': snapshot_age_hours,
     }
 
 
 @router.get('/overview')
 async def admin_analytics_overview(
+    refresh: bool = Query(False),
     _current_user=Depends(require_permission('analytics.read')),
 ) -> dict:
+    payload = await _analytics_bootstrap_payload(refresh=refresh)
     return {
-        'timestamp': datetime.now(timezone.utc),
-        'overview': await _overview_payload(),
+        'timestamp': payload['timestamp'],
+        'overview': payload['overview'],
+        'snapshot_served_from': payload['snapshot_served_from'],
+        'snapshot_age_hours': payload['snapshot_age_hours'],
     }
 
 
 @router.get('/platform')
 async def admin_analytics_platform(
+    refresh: bool = Query(False),
     _current_user=Depends(require_permission('analytics.read')),
 ) -> dict:
-    snapshot = await get_daily_snapshot()
-    if not snapshot:
-        snapshot = await compute_platform_snapshot()
+    payload = await _analytics_bootstrap_payload(refresh=refresh)
     return {
-        'timestamp': datetime.now(timezone.utc),
-        'metrics': snapshot,
+        'timestamp': payload['timestamp'],
+        'metrics': payload['metrics'],
+        'snapshot_served_from': payload['snapshot_served_from'],
+        'snapshot_age_hours': payload['snapshot_age_hours'],
     }
+
+
+@router.get('/bootstrap')
+async def admin_analytics_bootstrap(
+    refresh: bool = Query(False),
+    _current_user=Depends(require_permission('analytics.read')),
+) -> dict:
+    return await _analytics_bootstrap_payload(refresh=refresh)
 
 
 @router.post('/snapshots/run-daily')

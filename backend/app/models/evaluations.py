@@ -1,10 +1,11 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import EVALUATION_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "id": str(document["_id"]),
         "submission_id": document.get("submission_id"),
         "student_user_id": document.get("student_user_id"),
@@ -40,3 +41,4 @@ def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": document.get("created_at"),
         "updated_at": document.get("updated_at"),
     }
+    return apply_public_identity(payload, kind="evaluation", document=document, display_name=document.get("grade"))

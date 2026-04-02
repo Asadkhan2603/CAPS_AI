@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, GraduationCap, Lock, Mail, Sparkles } from 'lucide-react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import Card from '../components/ui/Card';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { pushApiErrorToast } from '../utils/errorToast';
+import { formatApiError } from '../utils/apiError';
 
 function resolveGoogleAuthUrl() {
   const directUrl = import.meta.env.VITE_GOOGLE_AUTH_URL?.trim();
@@ -45,6 +46,7 @@ export default function LoginPage() {
   const y2 = useTransform(springY, (value) => value * -1.5);
   const x3 = useTransform(springX, (value) => value * 0.8);
   const y3 = useTransform(springY, (value) => value * 1.2);
+  const shouldShowBootstrapHint = /invalid email or password/i.test(error);
 
   useEffect(() => {
     function handleMouseMove(event) {
@@ -72,8 +74,7 @@ export default function LoginPage() {
       pushToast({ title: 'Welcome back', description: 'Login successful.', variant: 'success' });
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      const detail = err?.response?.data?.detail || 'Login failed';
-      setError(String(detail));
+      setError(formatApiError(err, 'Login failed'));
       pushApiErrorToast(pushToast, err, 'Login failed');
     } finally {
       setLoading(false);
@@ -274,13 +275,22 @@ export default function LoginPage() {
                 </form>
 
                 {error ? (
-                  <motion.p
+                  <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-center text-xs font-medium text-rose-400"
+                    className="space-y-2 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-center text-xs font-medium text-rose-400"
                   >
-                    {error}
-                  </motion.p>
+                    <p>{error}</p>
+                    {shouldShowBootstrapHint ? (
+                      <p className="text-rose-200/90">
+                        Fresh local setup? Create the first super admin at{' '}
+                        <Link className="font-semibold text-sky-300 underline underline-offset-4" to="/register">
+                          /register
+                        </Link>
+                        .
+                      </p>
+                    ) : null}
+                  </motion.div>
                 ) : null}
 
                 <p className="text-center text-[11px] font-medium leading-relaxed text-slate-500">

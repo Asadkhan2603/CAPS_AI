@@ -18,6 +18,8 @@ class SubjectUpdate(BaseModel):
 
 class SubjectOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     name: str
     code: str
     description: str | None = None

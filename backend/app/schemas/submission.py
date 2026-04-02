@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 class SubmissionOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     assignment_id: str
     student_user_id: str
     original_filename: str

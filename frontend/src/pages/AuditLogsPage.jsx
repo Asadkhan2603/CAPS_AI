@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import EntityManager from '../components/ui/EntityManager';
 
 const filters = [
-  { name: 'actor_user_id', label: 'Actor User ID' },
+  { name: 'actor_user_id', label: 'Actor' },
   { name: 'entity_type', label: 'Entity Type' },
   { name: 'resource_type', label: 'Resource Type' },
   { name: 'action', label: 'Action' },
@@ -14,12 +14,12 @@ const filters = [
 export default function AuditLogsPage() {
   const columns = useMemo(
     () => [
-      { key: 'actor_user_id', label: 'Actor' },
+      { key: 'actor_label', label: 'Actor', render: (row) => row.actor_label || row.actor_user_id || '-' },
       { key: 'action', label: 'Action' },
       { key: 'severity', label: 'Severity' },
-      { key: 'entity_type', label: 'Entity' },
+      { key: 'entity_label', label: 'Entity', render: (row) => row.entity_label || row.entity_type || '-' },
       { key: 'resource_type', label: 'Resource' },
-      { key: 'entity_id', label: 'Entity ID' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || row.entity_id || '-' },
       { key: 'detail', label: 'Detail' },
       { key: 'created_at', label: 'Created At', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') }
     ],

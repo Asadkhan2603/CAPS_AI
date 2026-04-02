@@ -28,16 +28,22 @@ class AdminActionReviewDecision(BaseModel):
 
 class AdminActionReviewOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     review_type: str
     action: str
     entity_type: str
     entity_id: str | None = None
+    entity_label: str | None = None
     reason: str | None = None
     status: str
     requested_by: str
+    requested_by_label: str | None = None
     reviewed_by: str | None = None
+    reviewed_by_label: str | None = None
     reviewed_at: datetime | None = None
     executed_by: str | None = None
+    executed_by_label: str | None = None
     executed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -46,9 +52,12 @@ class AdminActionReviewOut(BaseModel):
 
 class UserSessionOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     user_id: str | None = None
     user_name: str | None = None
     user_email: str | None = None
+    user_label: str | None = None
     fingerprint: str | None = None
     ip_address: str | None = None
     last_seen_ip: str | None = None

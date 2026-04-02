@@ -19,6 +19,8 @@ class GroupUpdate(BaseModel):
 
 class GroupOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     section_id: str
     name: str
     code: str

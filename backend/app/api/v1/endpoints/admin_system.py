@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
+from app.core.config import settings
 from app.core.database import db
 from app.core.observability import build_operational_alerts, observability_state
 from app.core.security import require_permission
@@ -10,6 +11,7 @@ from app.services.operational_alert_routing import route_operational_alert_notif
 from app.services.scheduler import app_scheduler
 from app.services.system_health_snapshots import (
     get_system_health_snapshot_history,
+    get_latest_system_health_snapshot_payload,
     get_system_health_snapshot_store_status,
     persist_system_health_snapshot,
 )
@@ -38,8 +40,23 @@ def _as_utc_datetime(value):
 
 @router.get('/health')
 async def admin_system_health(
+    refresh: bool = Query(False),
     _current_user=Depends(require_permission('system.read')),
 ) -> dict:
+    if not refresh:
+        cached_payload, snapshot_age_seconds = await get_latest_system_health_snapshot_payload(
+            max_age_seconds=max(1, int(settings.system_health_snapshot_freshness_seconds)),
+            database=db,
+        )
+        if cached_payload:
+            cached_payload["snapshot_served_from"] = "snapshot"
+            cached_payload["snapshot_age_seconds"] = snapshot_age_seconds
+            cached_payload["alert_routing"] = {
+                **(cached_payload.get("alert_routing") or {}),
+                "notifications_created": 0,
+            }
+            return cached_payload
+
     now = datetime.now(timezone.utc)
     db_status = 'ok'
     try:
@@ -139,7 +156,12 @@ async def admin_system_health(
         'slow_query_logs': slow_query_logs,
         'collection_counts': collection_counts,
     }
-    await persist_system_health_snapshot(payload=payload, database=db)
+    payload['alert_routing'] = await route_operational_alert_notifications(
+        alerts=payload["alerts"],
+        database=db,
+        now=now,
+    )
+    snapshot_state = await persist_system_health_snapshot(payload=payload, database=db)
     payload['snapshot_history'] = await get_system_health_snapshot_history(database=db)
     payload['snapshot_store'] = await get_system_health_snapshot_store_status(database=db)
     if not payload['snapshot_store']['is_within_retention_bound']:
@@ -155,9 +177,7 @@ async def admin_system_health(
             }
         )
         payload['alert_count'] = len(payload['alerts'])
-    payload['alert_routing'] = await route_operational_alert_notifications(
-        alerts=payload["alerts"],
-        database=db,
-        now=now,
-    )
+    payload['snapshot_served_from'] = 'live'
+    payload['snapshot_age_seconds'] = 0
+    payload['snapshot_recorded_at'] = snapshot_state.get('recorded_at')
     return payload

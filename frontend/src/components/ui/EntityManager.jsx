@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, RefreshCw, Search as SearchIcon } from 'lucide-react';
 import Card from './Card';
-import FormInput from './FormInput';
-import Modal from './Modal';
-import SearchableSelect from './SearchableSelect';
 import Table from './Table';
+import DeleteReviewPrompt from './entityManager/DeleteReviewPrompt';
+import EntityFormOverlay from './entityManager/EntityFormOverlay';
+import EntitySearchOverlay from './entityManager/EntitySearchOverlay';
+import { useDeleteGovernance } from './entityManager/useDeleteGovernance';
 import { FEATURE_ACCESS } from '../../config/featureAccess';
 import { apiClient } from '../../services/apiClient';
+import { invalidateLookupCacheForPath } from '../../services/paginatedLookups';
 import { useToast } from '../../hooks/useToast';
 import { formatApiError } from '../../utils/apiError';
 
@@ -34,100 +36,11 @@ function getFeatureKeyFromPath(...paths) {
   return key;
 }
 
-function buildInitialReviewMetadata(fields = []) {
-  return fields.reduce((acc, field) => {
-    acc[field.name] = field.defaultValue ?? '';
-    return acc;
-  }, {});
-}
-
 function buildInitialValues(fields = []) {
   return fields.reduce((acc, item) => {
     acc[item.name] = item.defaultValue ?? (item.type === 'number' ? (item.nullable ? '' : 0) : '');
     return acc;
   }, {});
-}
-
-function extractReviewRequirement(err, fallbackMessage) {
-  const data = err?.response?.data ?? {};
-  const detail = data?.detail;
-  const errorDetail = data?.error?.detail;
-  const explicitFlag =
-    data?.delete_requires_review ??
-    data?.error?.delete_requires_review ??
-    detail?.delete_requires_review ??
-    errorDetail?.delete_requires_review;
-
-  let required = false;
-  let overrides = {};
-
-  if (typeof explicitFlag === 'boolean') {
-    required = explicitFlag;
-  } else if (explicitFlag && typeof explicitFlag === 'object') {
-    required = explicitFlag.required ?? true;
-    overrides = explicitFlag;
-  }
-
-  const textualHints = [
-    fallbackMessage,
-    data?.message,
-    data?.error?.message,
-    typeof detail === 'string' ? detail : null,
-    typeof errorDetail === 'string' ? errorDetail : null
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  if (!required) {
-    required =
-      textualHints.includes('review_id') ||
-      textualHints.includes('approval required') ||
-      textualHints.includes('governance approval');
-  }
-
-  if (!required) {
-    return { required: false, overrides: {} };
-  }
-
-  const detailObject = typeof detail === 'object' && detail !== null ? detail : {};
-  const errorDetailObject = typeof errorDetail === 'object' && errorDetail !== null ? errorDetail : {};
-
-  return {
-    required: true,
-    overrides: {
-      label:
-        overrides.label ??
-        data?.review_id_label ??
-        detailObject.review_id_label ??
-        errorDetailObject.review_id_label,
-      placeholder:
-        overrides.placeholder ??
-        data?.review_id_placeholder ??
-        detailObject.review_id_placeholder ??
-        errorDetailObject.review_id_placeholder,
-      helpText:
-        overrides.helpText ??
-        data?.review_help_text ??
-        detailObject.review_help_text ??
-        errorDetailObject.review_help_text,
-      promptTitle:
-        overrides.promptTitle ??
-        data?.review_prompt_title ??
-        detailObject.review_prompt_title ??
-        errorDetailObject.review_prompt_title,
-      promptDescription:
-        overrides.promptDescription ??
-        data?.review_prompt_description ??
-        detailObject.review_prompt_description ??
-        errorDetailObject.review_prompt_description,
-      metadataFields:
-        overrides.metadataFields ??
-        data?.review_metadata_fields ??
-        detailObject.review_metadata_fields ??
-        errorDetailObject.review_metadata_fields
-    }
-  };
 }
 
 export default function EntityManager({
@@ -196,12 +109,6 @@ export default function EntityManager({
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(pageSizeOptions[1] ?? 10);
   const [error, setError] = useState('');
-  const [deleteError, setDeleteError] = useState('');
-  const [deleteReviewId, setDeleteReviewId] = useState('');
-  const [deleteReviewMetadata, setDeleteReviewMetadata] = useState(() => buildInitialReviewMetadata(deleteReviewConfig.metadataFields));
-  const [deleteReviewPromptOpen, setDeleteReviewPromptOpen] = useState(false);
-  const [deleteReviewTarget, setDeleteReviewTarget] = useState(null);
-  const [deleteReviewPromptConfig, setDeleteReviewPromptConfig] = useState(deleteReviewConfig);
   const [editingRowId, setEditingRowId] = useState(null);
   const [searchOverlayOpen, setSearchOverlayOpen] = useState(false);
   const [formOverlayOpen, setFormOverlayOpen] = useState(false);
@@ -212,6 +119,25 @@ export default function EntityManager({
     if (title.endsWith('s')) return title.slice(0, -1);
     return title;
   }, [title]);
+  const {
+    closeDeleteReviewPrompt,
+    deleteError,
+    deleteReviewId,
+    deleteReviewMetadata,
+    deleteReviewPromptConfig,
+    deleteReviewPromptOpen,
+    deleteReviewTarget,
+    onDelete,
+    setDeleteReviewId,
+    setDeleteReviewMetadata
+  } = useDeleteGovernance({
+    deletePath,
+    deleteReviewConfig,
+    loadData,
+    pushToast,
+    singularTitle,
+    title
+  });
 
   const initialFilterState = useMemo(
     () =>
@@ -243,19 +169,6 @@ export default function EntityManager({
       setCreateValues(initialCreateState);
     }
   }, [editingRowId, initialCreateState]);
-
-  useEffect(() => {
-    setDeleteReviewPromptConfig(deleteReviewConfig);
-    setDeleteReviewMetadata((prev) => {
-      const next = buildInitialReviewMetadata(deleteReviewConfig.metadataFields);
-      for (const key of Object.keys(next)) {
-        if (prev[key] !== undefined) {
-          next[key] = prev[key];
-        }
-      }
-      return next;
-    });
-  }, [deleteReviewConfig]);
 
   async function loadData(options = {}) {
     const nextSkip = options.skip ?? skip;
@@ -472,8 +385,10 @@ export default function EntityManager({
 
       if (editingRowId) {
         await apiClient.put(`${updatePath}${editingRowId}`, payload);
+        invalidateLookupCacheForPath(updatePath);
       } else {
         await apiClient.post(createPath, payload);
+        invalidateLookupCacheForPath(createPath);
       }
 
       pushToast({
@@ -488,79 +403,6 @@ export default function EntityManager({
       const message = formatApiError(err, `Failed to ${action} ${title.toLowerCase()}`);
       setError(message);
       pushToast({ title: editingRowId ? 'Update failed' : 'Create failed', description: message, variant: 'error' });
-    }
-  }
-
-  function closeDeleteReviewPrompt() {
-    setDeleteError('');
-    setDeleteReviewPromptOpen(false);
-    setDeleteReviewTarget(null);
-    setDeleteReviewPromptConfig(deleteReviewConfig);
-  }
-
-  function buildDeleteConfig(reviewId = deleteReviewId, metadata = deleteReviewMetadata) {
-    const trimmedReviewId = String(reviewId || '').trim();
-    const normalizedMetadata = Object.entries(metadata || {}).reduce((acc, [key, value]) => {
-      if (value !== '' && value !== null && value !== undefined) {
-        acc[key] = value;
-      }
-      return acc;
-    }, {});
-
-    const params = {};
-    if (trimmedReviewId) {
-      params.review_id = trimmedReviewId;
-    }
-    if (Object.keys(normalizedMetadata).length > 0) {
-      params.review_metadata = JSON.stringify(normalizedMetadata);
-    }
-
-    return Object.keys(params).length ? { params } : undefined;
-  }
-
-  async function onDelete(row, options = {}) {
-    const { reviewId = deleteReviewId, metadata = deleteReviewMetadata } = options;
-    const trimmedReviewId = String(reviewId || '').trim();
-    const deleteConfig = buildDeleteConfig(reviewId, metadata);
-    try {
-      setDeleteError('');
-      await apiClient.delete(`${deletePath}/${row.id}`, deleteConfig);
-      setDeleteError('');
-      pushToast({ title: 'Deleted', description: `${title.slice(0, -1)} removed.`, variant: 'success' });
-      closeDeleteReviewPrompt();
-      await loadData();
-    } catch (err) {
-      const message = formatApiError(err, `Failed to delete ${title.toLowerCase()}`);
-      const governanceState = extractReviewRequirement(err, message);
-
-      if (governanceState.required) {
-        console.warn(`[EntityManager:${title}] delete blocked by governance approval`, {
-          rowId: row.id,
-          reviewId: trimmedReviewId || null,
-          reviewMetadata: metadata,
-          message
-        });
-        setDeleteReviewTarget(row);
-        setDeleteReviewPromptConfig((prev) => ({
-          ...prev,
-          ...governanceState.overrides,
-          metadataFields: Array.isArray(governanceState.overrides.metadataFields)
-            ? governanceState.overrides.metadataFields
-            : prev.metadataFields
-        }));
-        setDeleteReviewPromptOpen(true);
-        pushToast({ title: 'Governance approval required', description: message, variant: 'warning' });
-      } else {
-        console.error(`[EntityManager:${title}] delete failed`, {
-          rowId: row.id,
-          reviewId: trimmedReviewId || null,
-          reviewMetadata: metadata,
-          message
-        });
-        pushToast({ title: 'Delete failed', description: message, variant: 'error' });
-      }
-
-      setDeleteError(message);
     }
   }
 
@@ -648,243 +490,48 @@ export default function EntityManager({
         </Card>
       </motion.div>
 
-      <Modal open={searchOverlayOpen} title={`Search ${title}`} onClose={closeSearchOverlay} size="large">
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filters.map((field) =>
-              field.type === 'switch' ? (
-                <label key={field.name} className="block space-y-1">
-                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
-                  <button
-                    type="button"
-                    className="inline-flex h-11 min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                    onClick={() => {
-                      const current = searchDraftValues[field.name];
-                      const next = current === null ? true : current === true ? false : null;
-                      onSearchDraftChange(field.name, next);
-                    }}
-                  >
-                    {searchDraftValues[field.name] === null ? 'Any' : searchDraftValues[field.name] ? 'On' : 'Off'}
-                  </button>
-                </label>
-              ) : field.type === 'select' && field.searchable ? (
-                <SearchableSelect
-                  key={field.name}
-                  label={field.label}
-                  value={searchDraftValues[field.name]}
-                  loadOptions={
-                    typeof field.loadOptions === 'function'
-                      ? (query) =>
-                          field.loadOptions({
-                            query,
-                            mode: 'filter',
-                            createValues,
-                            filterValues: searchDraftValues,
-                            rows
-                          })
-                      : undefined
-                  }
-                  options={resolveFieldOptions(field, 'filter', createValues, searchDraftValues)}
-                  selectedLabel={resolveSelectedLabel(field, 'filter', createValues, searchDraftValues)}
-                  placeholder={field.placeholder || `Search ${field.label}`}
-                  allowEmpty
-                  emptyLabel={field.placeholder || `All ${field.label}`}
-                  onValueChange={(nextValue) => onSearchDraftChange(field.name, nextValue)}
-                />
-              ) : field.type === 'select' ? (
-                <FormInput
-                  key={field.name}
-                  as="select"
-                  label={field.label}
-                  value={searchDraftValues[field.name]}
-                  onChange={(e) => onSearchDraftChange(field.name, e.target.value)}
-                >
-                  <option value="">{field.placeholder || `All ${field.label}`}</option>
-                  {resolveFieldOptions(field, 'filter', createValues, searchDraftValues).map((option) => (
-                    <option key={`${field.name}-${option.value}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </FormInput>
-              ) : (
-                <FormInput
-                  key={field.name}
-                  label={field.label}
-                  type={field.type === 'datetime' ? 'datetime-local' : field.type || 'text'}
-                  value={searchDraftValues[field.name]}
-                  placeholder={field.placeholder}
-                  onChange={(e) => onSearchDraftChange(field.name, e.target.value)}
-                />
-              )
-            )}
-          </div>
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={closeSearchOverlay}>
-              Close
-            </button>
-            <button type="button" className="btn-secondary" onClick={resetFilters}>
-              Reset
-            </button>
-            <button type="button" className="btn-primary" onClick={applyFilters}>
-              Apply
-            </button>
-          </div>
-        </div>
-      </Modal>
+      <EntitySearchOverlay
+        applyFilters={applyFilters}
+        closeSearchOverlay={closeSearchOverlay}
+        createValues={createValues}
+        fields={filters}
+        filterValues={searchDraftValues}
+        onSearchDraftChange={onSearchDraftChange}
+        open={searchOverlayOpen}
+        resetFilters={resetFilters}
+        resolveFieldOptions={resolveFieldOptions}
+        resolveSelectedLabel={resolveSelectedLabel}
+        rows={rows}
+        title={title}
+      />
 
-      <Modal
+      <EntityFormOverlay
+        activeFormFields={activeFormFields}
+        closeFormOverlay={closeFormOverlay}
+        createValues={createValues}
+        editingRowId={editingRowId}
+        filterValues={searchDraftValues}
+        onCreateChange={onCreateChange}
+        onSubmit={onSubmit}
         open={formOverlayOpen}
-        title={editingRowId ? `Edit ${singularTitle}` : `Create ${singularTitle}`}
-        onClose={closeFormOverlay}
-        size="large"
-      >
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {activeFormFields.map((field) =>
-              field.type === 'switch' ? (
-                <label key={field.name} className="block space-y-1">
-                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</span>
-                  <div className="flex h-11 items-center">
-                    <label className="inline-flex cursor-pointer items-center gap-2">
-                      <input
-                        type="checkbox"
-                        className="peer sr-only"
-                        checked={Boolean(createValues[field.name])}
-                        onChange={(e) => onCreateChange(field.name, e.target.checked)}
-                      />
-                      <span className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:bg-brand-500 peer-checked:after:translate-x-5 dark:bg-slate-700" />
-                      <span className="text-xs text-slate-600 dark:text-slate-300">
-                        {createValues[field.name] ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </label>
-                  </div>
-                </label>
-              ) : field.type === 'select' && field.searchable ? (
-                <SearchableSelect
-                  key={field.name}
-                  label={field.label}
-                  value={createValues[field.name]}
-                  loadOptions={
-                    typeof field.loadOptions === 'function'
-                      ? (query) =>
-                          field.loadOptions({
-                            query,
-                            mode: 'create',
-                            createValues,
-                            filterValues: searchDraftValues,
-                            rows
-                          })
-                      : undefined
-                  }
-                  options={resolveFieldOptions(field, 'create', createValues, searchDraftValues)}
-                  selectedLabel={resolveSelectedLabel(field, 'create', createValues, searchDraftValues)}
-                  placeholder={field.placeholder || `Search ${field.label}`}
-                  required={field.required}
-                  disabled={Boolean(field.disabledWhen?.({ createValues, filterValues: searchDraftValues, rows }))}
-                  allowEmpty={!field.required}
-                  emptyLabel={field.placeholder || `Select ${field.label}`}
-                  onValueChange={(nextValue) => onCreateChange(field.name, nextValue)}
-                />
-              ) : field.type === 'select' ? (
-                <FormInput
-                  key={field.name}
-                  as="select"
-                  label={field.label}
-                  required={field.required}
-                  value={createValues[field.name]}
-                  onChange={(e) => onCreateChange(field.name, e.target.value)}
-                >
-                  <option value="">{field.placeholder || `Select ${field.label}`}</option>
-                  {resolveFieldOptions(field, 'create', createValues, searchDraftValues).map((option) => (
-                    <option key={`${field.name}-${option.value}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </FormInput>
-              ) : (
-                <FormInput
-                  key={field.name}
-                  label={field.label}
-                  type={field.type === 'datetime' ? 'datetime-local' : field.type || 'text'}
-                  min={field.min}
-                  max={field.max}
-                  required={field.required}
-                  value={createValues[field.name]}
-                  placeholder={field.placeholder}
-                  onChange={(e) => onCreateChange(field.name, e.target.value)}
-                />
-              )
-            )}
-          </div>
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={closeFormOverlay}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary">
-              {editingRowId ? 'Update' : 'Create'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+        resolveFieldOptions={resolveFieldOptions}
+        resolveSelectedLabel={resolveSelectedLabel}
+        rows={rows}
+        singularTitle={singularTitle}
+      />
 
-      <Modal open={deleteReviewPromptOpen} title={deleteReviewPromptConfig.promptTitle} onClose={closeDeleteReviewPrompt}>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-sm text-slate-600 dark:text-slate-300">{deleteReviewPromptConfig.promptDescription}</p>
-            {deleteReviewTarget ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                Pending delete target: <span className="font-medium">{deleteReviewTarget.name || deleteReviewTarget.code || deleteReviewTarget.id}</span>
-              </div>
-            ) : null}
-            {deleteError ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                {deleteError}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FormInput
-              label={deleteReviewPromptConfig.label}
-              value={deleteReviewId}
-              placeholder={deleteReviewPromptConfig.placeholder}
-              onChange={(e) => setDeleteReviewId(e.target.value)}
-            />
-            {deleteReviewPromptConfig.metadataFields.map((field) => (
-              <FormInput
-                key={field.name}
-                label={field.label}
-                type={field.type || 'text'}
-                value={deleteReviewMetadata[field.name] ?? ''}
-                placeholder={field.placeholder}
-                required={field.required}
-                onChange={(e) =>
-                  setDeleteReviewMetadata((prev) => ({
-                    ...prev,
-                    [field.name]: e.target.value
-                  }))
-                }
-              />
-            ))}
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={closeDeleteReviewPrompt}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => {
-                if (!deleteReviewTarget) return;
-                onDelete(deleteReviewTarget, { reviewId: deleteReviewId, metadata: deleteReviewMetadata });
-              }}
-            >
-              Retry Delete
-            </button>
-          </div>
-        </div>
-      </Modal>
+      <DeleteReviewPrompt
+        deleteError={deleteError}
+        deleteReviewId={deleteReviewId}
+        deleteReviewMetadata={deleteReviewMetadata}
+        deleteReviewPromptConfig={deleteReviewPromptConfig}
+        deleteReviewPromptOpen={deleteReviewPromptOpen}
+        deleteReviewTarget={deleteReviewTarget}
+        onClose={closeDeleteReviewPrompt}
+        onRetry={onDelete}
+        setDeleteReviewId={setDeleteReviewId}
+        setDeleteReviewMetadata={setDeleteReviewMetadata}
+      />
     </div>
   );
 }

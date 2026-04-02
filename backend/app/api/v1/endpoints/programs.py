@@ -33,8 +33,12 @@ from app.services.master_hierarchy import (
     ensure_master_hierarchy_change_is_safe,
     normalize_code,
 )
+from app.services.public_ids import persist_public_id, persist_public_id_update
 from app.services.audit import log_destructive_action_event
+from app.services.batch_read_models import sync_batch_read_models_for_query
 from app.services.governance import enforce_review_approval
+from app.services.semester_read_models import sync_semester_read_models_for_query
+from app.services.section_read_models import sync_section_read_models_for_query
 
 router = APIRouter()
 
@@ -159,6 +163,7 @@ async def _sync_program_semesters(program_id: str, total_semesters: int) -> None
                     "schema_version": SEMESTER_SCHEMA_VERSION,
                     "updated_at": now,
                 }
+                persist_public_id_update(current, update_fields, kind="semester")
                 current_label = str(current.get("label") or "").strip()
                 if not current_label or current_label.startswith("Semester "):
                     update_fields["label"] = semester_payload.get("label")
@@ -263,22 +268,22 @@ async def _sync_auto_generated_batches(program_id: str, duration_years: int) -> 
             end_year=end_year,
             university_code=program_context.get("university_code"),
         )
+        update_fields = {
+            "name": name,
+            "code": code,
+            "end_year": end_year,
+            "academic_span_label": f"{int(start_year)}-{end_year}",
+            "faculty_id": program_context.get("faculty_id"),
+            "department_id": program_context.get("department_id"),
+            "university_name": program_context.get("university_name"),
+            "university_code": program_context.get("university_code"),
+            "schema_version": BATCH_SCHEMA_VERSION,
+            "updated_at": now,
+        }
+        persist_public_id_update(row, update_fields, kind="batch")
         await db.batches.update_one(
             {"_id": row["_id"]},
-            {
-                "$set": {
-                    "name": name,
-                    "code": code,
-                    "end_year": end_year,
-                    "academic_span_label": f"{int(start_year)}-{end_year}",
-                    "faculty_id": program_context.get("faculty_id"),
-                    "department_id": program_context.get("department_id"),
-                    "university_name": program_context.get("university_name"),
-                    "university_code": program_context.get("university_code"),
-                    "schema_version": BATCH_SCHEMA_VERSION,
-                    "updated_at": now,
-                }
-            },
+            {"$set": update_fields},
         )
 
     await _seed_program_batches(program_id, duration_years)
@@ -395,6 +400,7 @@ async def create_program(
         "created_at": datetime.now(timezone.utc),
         "schema_version": PROGRAM_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="program")
     result = await db.programs.insert_one(document)
     await _seed_program_batches(str(result.inserted_id), duration_years)
     created = await db.programs.find_one({"_id": result.inserted_id})
@@ -508,6 +514,7 @@ async def update_program(
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="program")
     update_data["schema_version"] = PROGRAM_SCHEMA_VERSION
     result = await db.programs.update_one({"_id": program_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
@@ -522,6 +529,9 @@ async def update_program(
             specialization_id = str(specialization.get("_id") or "")
             if specialization_id:
                 await _sync_specialization_batches(specialization_id)
+    await sync_batch_read_models_for_query(query={"program_id": program_id}, database=db)
+    await sync_semester_read_models_for_query(query={"program_id": program_id}, database=db)
+    await sync_section_read_models_for_query(query={"program_id": program_id}, database=db)
     return ProgramOut(**program_public(updated))
 
 
@@ -567,6 +577,9 @@ async def delete_program(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
+    await sync_batch_read_models_for_query(query={"program_id": program_id}, database=db)
+    await sync_semester_read_models_for_query(query={"program_id": program_id}, database=db)
+    await sync_section_read_models_for_query(query={"program_id": program_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,
         action="programs.delete",

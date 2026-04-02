@@ -24,6 +24,7 @@ from app.schemas.club import (
     ClubUpdate,
 )
 from app.services.audit import log_audit_event
+from app.services.public_ids import build_public_id, persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -252,6 +253,7 @@ async def create_club(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Coordinator is required before activation")
         document["registration_open"] = False
 
+    persist_public_id(document, kind="club")
     result = await db.clubs.insert_one(document)
     created = await db.clubs.find_one({"_id": result.inserted_id})
     enriched = await _enrich_club_document(created)
@@ -320,6 +322,7 @@ async def update_club(
     update_data["updated_at"] = datetime.now(timezone.utc)
     update_data["status"] = next_status
     update_data["is_active"] = next_status in ACTIVE_STATES
+    persist_public_id_update(club, update_data, kind="club")
 
     await db.clubs.update_one(
         {"_id": parse_object_id(club_id)},
@@ -374,6 +377,7 @@ async def join_club(
     if club.get("membership_type") == "open":
         now = datetime.now(timezone.utc)
         result = await db.club_members.insert_one(
+            persist_public_id(
             {
                 "club_id": club_id,
                 "student_user_id": student_user_id,
@@ -384,8 +388,13 @@ async def join_club(
                 "joined_at": now,
                 "left_at": None,
                 "schema_version": CLUB_MEMBER_SCHEMA_VERSION,
-            }
+            },
+            kind="club_member",
+            )
         )
+        public_id = build_public_id("club_member", {"club_id": club_id, "_id": result.inserted_id}, prefer_existing=False)
+        if public_id:
+            await db.club_members.update_one({"_id": result.inserted_id}, {"$set": {"public_id": public_id}})
         return {
             "status": "approved",
             "membership_id": str(result.inserted_id),
@@ -399,6 +408,7 @@ async def join_club(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Application already pending")
 
     result = await db.club_applications.insert_one(
+        persist_public_id(
         {
             "club_id": club_id,
             "student_user_id": student_user_id,
@@ -409,8 +419,13 @@ async def join_club(
             "reviewed_by": None,
             "reviewed_at": None,
             "schema_version": CLUB_APPLICATION_SCHEMA_VERSION,
-        }
+        },
+        kind="club_application",
+        )
     )
+    public_id = build_public_id("club_application", {"club_id": club_id, "_id": result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.club_applications.update_one({"_id": result.inserted_id}, {"$set": {"public_id": public_id}})
     return {
         "status": "pending",
         "application_id": str(result.inserted_id),
@@ -478,6 +493,7 @@ async def update_member(
 
     if update_data.get("status") in {"inactive", "removed"}:
         update_data["left_at"] = datetime.now(timezone.utc)
+    persist_public_id_update(member, update_data, kind="club_member")
 
     await db.club_members.update_one(
         {"_id": member_obj_id},
@@ -551,7 +567,8 @@ async def review_application(
             }
         )
         if not exists:
-            await db.club_members.insert_one(
+            membership_result = await db.club_members.insert_one(
+                persist_public_id(
                 {
                     "club_id": club_id,
                     "student_user_id": application.get("student_user_id"),
@@ -562,8 +579,20 @@ async def review_application(
                     "joined_at": now,
                     "left_at": None,
                     "schema_version": CLUB_MEMBER_SCHEMA_VERSION,
-                }
+                },
+                kind="club_member",
+                )
             )
+            public_id = build_public_id(
+                "club_member",
+                {"club_id": club_id, "_id": membership_result.inserted_id},
+                prefer_existing=False,
+            )
+            if public_id:
+                await db.club_members.update_one(
+                    {"_id": membership_result.inserted_id},
+                    {"$set": {"public_id": public_id}},
+                )
 
     updated = await db.club_applications.find_one({"_id": application_obj_id})
     return ClubApplicationOut(**club_application_public(updated))

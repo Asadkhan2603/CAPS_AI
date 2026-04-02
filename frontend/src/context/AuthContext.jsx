@@ -9,11 +9,13 @@ import {
   USER_KEY,
   writeAuthStorage
 } from '../services/apiClient';
+import { fetchSessionBootstrap } from './sessionBootstrap';
 
 const AUTH_STORAGE_VERSION_KEY = 'caps_ai_auth_storage_version';
 const AUTH_STORAGE_VERSION = '3';
 const SESSION_STARTED_AT_KEY = 'caps_ai_session_started_at';
 const LAST_ACTIVITY_AT_KEY = 'caps_ai_last_activity_at';
+const SESSION_BOOTSTRAP_KEY = 'caps_ai_session_bootstrap';
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
 const DEFAULT_MAX_SESSION_HOURS = 8;
@@ -45,17 +47,40 @@ function parseStoredUser() {
   }
 }
 
+function parseStoredBootstrap() {
+  try {
+    const raw = readAuthStorage(SESSION_BOOTSTRAP_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(readAuthStorage(TOKEN_KEY) || '');
   const [user, setUser] = useState(() => parseStoredUser());
+  const [sessionBootstrap, setSessionBootstrap] = useState(() => parseStoredBootstrap());
   const [checking, setChecking] = useState(Boolean(readAuthStorage(TOKEN_KEY)));
 
   const clearClientSession = useCallback(() => {
     clearAuthStorage();
     removeAuthStorage(SESSION_STARTED_AT_KEY);
     removeAuthStorage(LAST_ACTIVITY_AT_KEY);
+    removeAuthStorage(SESSION_BOOTSTRAP_KEY);
     setToken('');
     setUser(null);
+    setSessionBootstrap(null);
+  }, []);
+
+  const applySessionBootstrap = useCallback((payload) => {
+    if (!payload || !payload.user) {
+      return null;
+    }
+    writeAuthStorage(USER_KEY, JSON.stringify(payload.user));
+    writeAuthStorage(SESSION_BOOTSTRAP_KEY, JSON.stringify(payload));
+    setUser(payload.user);
+    setSessionBootstrap(payload);
+    return payload.user;
   }, []);
 
   const isSessionExpired = useCallback(() => {
@@ -101,10 +126,8 @@ export function AuthProvider({ children }) {
       }
 
       try {
-        const response = await apiClient.get('/auth/me');
-        const me = response.data;
-        setUser(me);
-        writeAuthStorage(USER_KEY, JSON.stringify(me));
+        const payload = await fetchSessionBootstrap(apiClient);
+        applySessionBootstrap(payload);
       } catch {
         clearClientSession();
       } finally {
@@ -113,7 +136,7 @@ export function AuthProvider({ children }) {
     }
 
     validateToken();
-  }, [token, clearClientSession, isSessionExpired]);
+  }, [token, applySessionBootstrap, clearClientSession, isSessionExpired]);
 
   useEffect(() => {
     if (!token) {
@@ -164,13 +187,11 @@ export function AuthProvider({ children }) {
       clearClientSession();
       return null;
     }
-    const response = await apiClient.get('/auth/me');
-    const me = response.data;
-    writeAuthStorage(USER_KEY, JSON.stringify(me));
+    const payload = await fetchSessionBootstrap(apiClient);
+    const me = applySessionBootstrap(payload);
     writeAuthStorage(LAST_ACTIVITY_AT_KEY, String(Date.now()));
-    setUser(me);
     return me;
-  }, [token, clearClientSession, isSessionExpired]);
+  }, [token, applySessionBootstrap, clearClientSession, isSessionExpired]);
 
   const login = useCallback(async (email, password) => {
     const response = await apiClient.post('/auth/login', { email, password });
@@ -189,10 +210,23 @@ export function AuthProvider({ children }) {
     writeAuthStorage(SESSION_STARTED_AT_KEY, String(now));
     writeAuthStorage(LAST_ACTIVITY_AT_KEY, String(now));
     setToken(nextToken);
-    setUser(nextUser);
-    setChecking(false);
-    return nextUser;
-  }, []);
+    try {
+      const payload = await fetchSessionBootstrap(apiClient);
+      const bootstrapUser = applySessionBootstrap(payload);
+      setChecking(false);
+      return bootstrapUser || nextUser;
+    } catch {
+      const fallbackBootstrap = {
+        user: nextUser,
+        unread_notice_count: 0,
+        branding: { has_logo: false, updated_at: null, filename: null },
+        generated_at: new Date().toISOString()
+      };
+      applySessionBootstrap(fallbackBootstrap);
+      setChecking(false);
+      return nextUser;
+    }
+  }, [applySessionBootstrap]);
 
   const register = useCallback((payload) => apiClient.post('/auth/register', payload), []);
 
@@ -207,8 +241,19 @@ export function AuthProvider({ children }) {
   }, [clearClientSession]);
 
   const value = useMemo(
-    () => ({ token, user, checking, isAuthenticated: Boolean(token), login, register, logout, refreshUser }),
-    [token, user, checking, login, register, logout, refreshUser]
+    () => ({
+      token,
+      user,
+      sessionBootstrap,
+      checking,
+      isAuthenticated: Boolean(token),
+      login,
+      register,
+      logout,
+      refreshUser,
+      refreshBootstrap: refreshUser
+    }),
+    [token, user, sessionBootstrap, checking, login, register, logout, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

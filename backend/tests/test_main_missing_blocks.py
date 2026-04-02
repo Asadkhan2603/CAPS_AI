@@ -972,6 +972,8 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
         assert response.status_code == 200
         body = response.json()
 
+        assert body["snapshot_served_from"] == "live"
+        assert body["snapshot_age_seconds"] == 0
         assert body["alert_count"] >= 2
         assert any(alert["code"] == "http.high_server_error_rate" for alert in body["alerts"])
         assert any(alert["code"] == "scheduler.leader_lock_missing" for alert in body["alerts"])
@@ -1014,10 +1016,18 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
         second = client.get("/api/v1/admin/system/health", headers=headers)
         assert second.status_code == 200
         second_body = second.json()
+        assert second_body["snapshot_served_from"] == "snapshot"
+        assert second_body["snapshot_age_seconds"] >= 0
         assert second_body["alert_routing"]["notifications_created"] == 0
         assert len(fake_db.notifications.items) == notification_count_after_first_call
         assert len(fake_db.system_health_snapshots.items) == 1
         assert len(fake_db.operational_alert_routes.items) >= 1
+        third = client.get("/api/v1/admin/system/health?refresh=true", headers=headers)
+        assert third.status_code == 200
+        third_body = third.json()
+        assert third_body["snapshot_served_from"] == "live"
+        assert third_body["alert_routing"]["notifications_created"] == 0
+        assert len(fake_db.notifications.items) == notification_count_after_first_call
         assert fake_db.scheduler_locks.items == []
     finally:
         app_scheduler._enabled, app_scheduler._running, app_scheduler._is_leader = original_scheduler_state
@@ -1123,4 +1133,225 @@ def test_system_health_snapshot_pruning_keeps_store_bounded() -> None:
         snapshot_service._last_pruned_bucket = original_last_pruned_bucket
         snapshot_service._last_pruned_at = original_last_pruned_at
         snapshot_service._last_pruned_deleted_count = original_last_pruned_deleted_count
+
+
+def test_admin_analytics_bootstrap_uses_snapshot_after_first_live_compute() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_analytics_snapshot@example.com")
+    now = datetime.now(timezone.utc)
+
+    fake_db.users.items.extend(
+        [
+            {"_id": ObjectId(), "email": "alpha@example.com"},
+            {"_id": ObjectId(), "email": "beta@example.com"},
+        ]
+    )
+    fake_db.students.items.append({"_id": ObjectId(), "email": "student@example.com", "is_active": True})
+    fake_db.clubs.items.append({"_id": ObjectId(), "status": "active"})
+    fake_db.club_members.items.append({"_id": ObjectId(), "status": "active"})
+    fake_db.club_events.items.append({"_id": ObjectId(), "event_date": now + timedelta(days=2)})
+    fake_db.event_registrations.items.append({"_id": ObjectId(), "status": "registered"})
+    fake_db.assignments.items.extend([{"_id": ObjectId()}, {"_id": ObjectId()}])
+    fake_db.submissions.items.append({"_id": ObjectId()})
+    fake_db.review_tickets.items.extend(
+        [
+            {"_id": ObjectId(), "status": "pending"},
+            {
+                "_id": ObjectId(),
+                "status": "resolved",
+                "created_at": now - timedelta(hours=3),
+                "resolved_at": now - timedelta(hours=1),
+            },
+        ]
+    )
+    fake_db.audit_logs.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "action_type": "login",
+                "actor_user_id": "user-1",
+                "created_at": now - timedelta(hours=2),
+            },
+            {
+                "_id": ObjectId(),
+                "action_type": "login",
+                "actor_user_id": "user-2",
+                "created_at": now - timedelta(hours=1),
+            },
+            {
+                "_id": ObjectId(),
+                "action": "error",
+                "severity": "high",
+                "created_at": now - timedelta(minutes=30),
+            },
+        ]
+    )
+
+    response = client.get("/api/v1/admin/analytics/bootstrap", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["snapshot_served_from"] == "live"
+    assert body["snapshot_age_hours"] == 0
+    assert body["overview"]["total_users"] == 3
+    assert body["overview"]["active_students"] == 1
+    assert body["overview"]["active_clubs"] == 1
+    assert body["overview"]["assignments_total"] == 2
+    assert body["overview"]["submissions_total"] == 1
+    assert body["overview"]["pending_review_tickets"] == 1
+    assert body["overview"]["events_this_week"] == 1
+    assert body["overview"]["system_errors_24h"] == 1
+    assert body["metrics"]["daily_active_users"] >= 2
+    assert body["metrics"]["login_count_24h"] >= 2
+    assert body["metrics"]["assignment_completion_pct"] == 50.0
+    assert body["metrics"]["club_participation_pct"] == 100.0
+    assert body["metrics"]["event_attendance_pct"] == 100.0
+    assert body["metrics"]["review_ticket_sla_hours"] == 2.0
+    assert len(fake_db.analytics_snapshots.items) == 1
+
+    second = client.get("/api/v1/admin/analytics/bootstrap", headers=headers)
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["snapshot_served_from"] == "snapshot"
+    assert second_body["snapshot_age_hours"] >= 0
+    assert second_body["overview"]["total_users"] == 3
+    assert second_body["metrics"]["assignment_completion_pct"] == 50.0
+    assert len(fake_db.analytics_snapshots.items) == 1
+
+    refreshed = client.get("/api/v1/admin/analytics/bootstrap?refresh=true", headers=headers)
+    assert refreshed.status_code == 200
+    refreshed_body = refreshed.json()
+    assert refreshed_body["snapshot_served_from"] == "live"
+    assert refreshed_body["snapshot_age_hours"] == 0
+    assert len(fake_db.analytics_snapshots.items) == 1
+
+
+def test_section_read_model_materializes_and_refreshes_after_semester_and_coordinator_updates() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_section_read_model@example.com")
+
+    teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Coordinator Teacher",
+            "email": "coordinator_section_read_model@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert teacher.status_code == 201
+    teacher_id = teacher.json()["id"]
+
+    structure = _seed_canonical_structure(fake_db, suffix="SRM1", semester_number=3)
+    section = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="Section Read Model",
+            class_coordinator_user_id=teacher_id,
+        ),
+        headers=admin_headers,
+    )
+    assert section.status_code == 201, section.text
+    section_body = section.json()
+    section_detail = client.get(f"/api/v1/sections/{section_body['id']}", headers=admin_headers)
+    assert section_detail.status_code == 200, section_detail.text
+    section_body = section_detail.json()
+    assert section_body["program_name"] == "Program SRM1"
+    assert section_body["semester_label"] == "Semester 3"
+    assert section_body["class_coordinator_name"] == "Coordinator Teacher"
+    assert len(fake_db.section_read_models.items) == 1
+
+    read_model = fake_db.section_read_models.items[0]
+    assert str(read_model["_id"]) == section_body["id"]
+    assert read_model["section_id"] == section_body["id"]
+    assert read_model["program_name"] == "Program SRM1"
+    assert read_model["semester_label"] == "Semester 3"
+    assert read_model["class_coordinator_name"] == "Coordinator Teacher"
+
+    semester_update = client.put(
+        f"/api/v1/semesters/{structure['semester_id']}",
+        json={"label": "Semester III - Updated"},
+        headers=admin_headers,
+    )
+    assert semester_update.status_code == 200, semester_update.text
+
+    after_semester = client.get(f"/api/v1/sections/{section_body['id']}", headers=admin_headers)
+    assert after_semester.status_code == 200
+    assert after_semester.json()["semester_label"] == "Semester III - Updated"
+    assert fake_db.section_read_models.items[0]["semester_label"] == "Semester III - Updated"
+
+    deactivated = client.delete(f"/api/v1/users/{teacher_id}", headers=admin_headers)
+    assert deactivated.status_code == 200, deactivated.text
+
+    after_deactivate = client.get(f"/api/v1/sections/{section_body['id']}", headers=admin_headers)
+    assert after_deactivate.status_code == 200
+    assert after_deactivate.json()["class_coordinator_user_id"] is None
+    assert after_deactivate.json()["class_coordinator_name"] is None
+    assert fake_db.section_read_models.items[0]["class_coordinator_user_id"] is None
+    assert fake_db.section_read_models.items[0]["class_coordinator_name"] is None
+
+
+def test_batch_and_semester_read_models_refresh_after_program_and_batch_updates() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_batch_semester_read_model@example.com")
+
+    structure = _seed_canonical_structure(fake_db, suffix="BRM2", duration_years=4, semester_number=1)
+    batch = client.post(
+        "/api/v1/batches/",
+        json={
+            "program_id": structure["program_id"],
+            "name": "Batch BRM2 Custom",
+            "code": "BRM2-CUSTOM",
+            "start_year": 2025,
+            "end_year": 2029,
+        },
+        headers=admin_headers,
+    )
+    assert batch.status_code == 201, batch.text
+    batch_body = batch.json()
+    assert batch_body["program_name"] == "Program BRM2"
+    assert batch_body["program_duration_years"] == 4
+    assert len(fake_db.batch_read_models.items) == 1
+
+    semesters = client.get(f"/api/v1/semesters/?batch_id={batch_body['id']}", headers=admin_headers)
+    assert semesters.status_code == 200, semesters.text
+    semester_items = semesters.json()
+    assert len(semester_items) == 8
+    assert semester_items[0]["batch_name"] == "Batch BRM2 Custom"
+    assert semester_items[0]["program_name"] == "Program BRM2"
+    semester_id = semester_items[0]["id"]
+    assert len(fake_db.semester_read_models.items) == 8
+
+    program_update = client.put(
+        f"/api/v1/programs/{structure['program_id']}",
+        json={"name": "Program BRM2 Updated"},
+        headers=admin_headers,
+    )
+    assert program_update.status_code == 200, program_update.text
+
+    batch_after_program = client.get(f"/api/v1/batches/{batch_body['id']}", headers=admin_headers)
+    assert batch_after_program.status_code == 200
+    assert batch_after_program.json()["program_name"] == "Program BRM2 Updated"
+
+    semester_after_program = client.get(f"/api/v1/semesters/{semester_id}", headers=admin_headers)
+    assert semester_after_program.status_code == 200
+    assert semester_after_program.json()["program_name"] == "Program BRM2 Updated"
+
+    batch_update = client.put(
+        f"/api/v1/batches/{batch_body['id']}",
+        json={"name": "Batch BRM2 Custom Updated"},
+        headers=admin_headers,
+    )
+    assert batch_update.status_code == 200, batch_update.text
+    assert batch_update.json()["program_name"] == "Program BRM2 Updated"
+
+    semester_after_batch = client.get(f"/api/v1/semesters/{semester_id}", headers=admin_headers)
+    assert semester_after_batch.status_code == 200
+    assert semester_after_batch.json()["batch_name"] == "Batch BRM2 Custom Updated"
+    assert fake_db.batch_read_models.items[0]["program_name"] == "Program BRM2 Updated"
+    assert any(item["batch_name"] == "Batch BRM2 Custom Updated" for item in fake_db.semester_read_models.items)
 

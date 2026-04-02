@@ -11,6 +11,7 @@ from app.core.schema_versions import CLASS_SLOT_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.class_slots import class_slot_public
 from app.schemas.class_slot import ClassSlotCreate, ClassSlotOut, ClassSlotUpdate
+from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -199,6 +200,7 @@ async def create_class_slot(
         "created_at": datetime.now(timezone.utc),
         "schema_version": CLASS_SLOT_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="class_slot")
     result = await db.class_slots.insert_one(document)
     created = await db.class_slots.find_one({"_id": result.inserted_id})
     return ClassSlotOut(**class_slot_public(created))
@@ -231,6 +233,7 @@ async def update_class_slot(
     )
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="class_slot")
     await db.class_slots.update_one(
         {"_id": slot_obj_id},
         {"$set": {**update_data, "schema_version": CLASS_SLOT_SCHEMA_VERSION}},

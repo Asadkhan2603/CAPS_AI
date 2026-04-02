@@ -1,16 +1,18 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import USER_SESSION_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity, build_user_label
 
 
 def user_session_public(document: Dict[str, Any], *, user: Dict[str, Any] | None = None) -> Dict[str, Any]:
     user = user or {}
     revoked_at = document.get("revoked_at")
-    return {
+    payload = {
         "id": str(document.get("_id")),
         "user_id": document.get("user_id"),
         "user_name": user.get("full_name"),
         "user_email": user.get("email"),
+        "user_label": build_user_label(document.get("user_id"), full_name=user.get("full_name"), email=user.get("email")),
         "fingerprint": document.get("fingerprint"),
         "ip_address": document.get("ip_address") or document.get("last_seen_ip"),
         "last_seen_ip": document.get("last_seen_ip"),
@@ -25,3 +27,4 @@ def user_session_public(document: Dict[str, Any], *, user: Dict[str, Any] | None
             default=USER_SESSION_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="user_session", document=document, display_name=user.get("full_name"))

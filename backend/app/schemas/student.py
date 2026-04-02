@@ -22,6 +22,8 @@ class StudentUpdate(BaseModel):
 
 class StudentOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     full_name: str
     roll_number: str
     email: str | None = None

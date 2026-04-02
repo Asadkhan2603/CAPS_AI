@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from app.core.mongo import parse_object_id
+from app.services.public_ids import persist_public_id
 
 SEMESTERS_PER_YEAR = 2
 
@@ -152,7 +153,7 @@ def build_batch_document(
     now: datetime,
     auto_generated: bool = False,
 ) -> dict[str, Any]:
-    return {
+    document = {
         "faculty_id": program_context.get("faculty_id"),
         "department_id": program_context.get("department_id"),
         "program_id": program_context.get("program_id"),
@@ -168,6 +169,7 @@ def build_batch_document(
         "auto_generated": auto_generated,
         "created_at": now,
     }
+    return persist_public_id(document, kind="batch")
 
 
 def build_semester_document(*, batch: dict[str, Any], semester_number: int, now: datetime) -> dict[str, Any]:
@@ -175,7 +177,7 @@ def build_semester_document(*, batch: dict[str, Any], semester_number: int, now:
         batch_start_year=batch.get("start_year"),
         semester_number=semester_number,
     )
-    return {
+    document = {
         "batch_id": batch["id"],
         "faculty_id": batch.get("faculty_id"),
         "department_id": batch.get("department_id"),
@@ -191,4 +193,5 @@ def build_semester_document(*, batch: dict[str, Any], semester_number: int, now:
         "is_active": True,
         "created_at": now,
     }
+    return persist_public_id(document, kind="semester")
 

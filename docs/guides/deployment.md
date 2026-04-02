@@ -19,6 +19,7 @@ This guide is based on the current deployable assets in the repo:
 - [k8s-mongodb.yaml](k8s-mongodb.yaml)
 - [k8s-redis.yaml](k8s-redis.yaml)
 - [k8s-backend.yaml](k8s-backend.yaml)
+- [k8s-backend-hpa.yaml](k8s-backend-hpa.yaml)
 - [k8s-backend-canary.yaml](k8s-backend-canary.yaml)
 - [k8s-backend-canary-ingress.yaml](k8s-backend-canary-ingress.yaml)
 - [k8s-frontend.yaml](k8s-frontend.yaml)
@@ -67,10 +68,11 @@ Build characteristics:
 - installs runtime dependencies from `requirements.txt`
 - copies only `app/`
 - serves FastAPI with uvicorn on port `8000`
+- defaults to `2` uvicorn workers in containerized production runtime via `WEB_CONCURRENCY`
 
 Entrypoint:
 ```text
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-2} --timeout-keep-alive ${UVICORN_TIMEOUT_KEEP_ALIVE:-30}
 ```
 
 Implications:
@@ -271,6 +273,7 @@ Current important backend config values in Kubernetes:
 - `MONGODB_DB=caps_ai`
 - `REDIS_ENABLED=true`
 - `REDIS_URL=redis://redis:6379/0`
+- `WEB_CONCURRENCY=2`
 - `RESPONSE_ENVELOPE_ENABLED=true`
 - `SCHEDULER_ENABLED=true`
 - CORS origins include example domain and localhost
@@ -323,12 +326,24 @@ Current backend topology:
 - liveness/readiness probes on `/health`
 
 Current resource settings:
-- requests: `250m CPU`, `512Mi memory`
-- limits: `500m CPU`, `1Gi memory`
+- requests: `500m CPU`, `768Mi memory`
+- limits: `1000m CPU`, `1536Mi memory`
 
 Important operational consequence:
 - scheduler is enabled in config while backend is multi-replica
 - correctness therefore depends on scheduler leader-election lock behavior
+- worker-level concurrency is now enabled, so scheduler identity must remain process-unique
+
+### Backend Autoscaling
+
+Manifest:
+- [k8s-backend-hpa.yaml](k8s-backend-hpa.yaml)
+
+Current autoscaling policy:
+- min replicas: `2`
+- max replicas: `6`
+- CPU target: `70%`
+- memory target: `80%`
 
 ### Frontend Runtime
 
@@ -377,6 +392,7 @@ kubectl apply -f k8s-mongodb.yaml
 kubectl apply -f k8s-redis.yaml
 kubectl apply -f k8s-uploads-pvc.yaml
 kubectl apply -f k8s-backend.yaml
+kubectl apply -f k8s-backend-hpa.yaml
 kubectl apply -f k8s-frontend.yaml
 kubectl apply -f k8s-ingress.yaml
 ```

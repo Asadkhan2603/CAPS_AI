@@ -30,12 +30,19 @@ class ClassUpdate(BaseModel):
 
 class ClassOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     faculty_id: str | None = None
     department_id: str | None = None
+    department_name: str | None = None
     program_id: str | None = None
+    program_name: str | None = None
     specialization_id: str | None = None
+    specialization_name: str | None = None
     batch_id: str | None = None
+    batch_name: str | None = None
     semester_id: str | None = None
+    semester_label: str | None = None
     name: str
     faculty_name: str | None = None
     branch_name: str | None = Field(
@@ -43,6 +50,7 @@ class ClassOut(BaseModel):
         description="Legacy compatibility field returned only for historical rows.",
     )
     class_coordinator_user_id: str | None = None
+    class_coordinator_name: str | None = None
     is_active: bool = True
     deleted_at: datetime | None = None
     deleted_by: str | None = None

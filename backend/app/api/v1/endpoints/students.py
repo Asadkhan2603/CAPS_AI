@@ -9,6 +9,7 @@ from app.core.schema_versions import STUDENT_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.models.students import student_public
 from app.schemas.student import StudentCreate, StudentOut, StudentUpdate
+from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
@@ -89,6 +90,7 @@ async def create_student(
         "created_at": datetime.now(timezone.utc),
         "schema_version": STUDENT_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="student")
     result = await db.students.insert_one(document)
     created = await db.students.find_one({"_id": result.inserted_id})
     return StudentOut(**student_public(created))
@@ -139,6 +141,7 @@ async def update_student(
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="student")
 
     result = await db.students.update_one(
         {"_id": student_obj_id},

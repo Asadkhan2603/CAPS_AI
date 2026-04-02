@@ -53,6 +53,8 @@ class ProgramOut(BaseModel):
     program_id: str
     program_code: str
     program_name: str
+    public_id: str | None = None
+    display_label: str | None = None
     name: str
     code: str
     department_id: str

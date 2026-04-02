@@ -15,7 +15,7 @@ export default function ProgramsPage() {
       params: { is_active: true },
       mapOption: (item) => ({
         value: item.id,
-        label: `${item.department_name || item.name} (${item.department_code || item.code})`,
+        label: item.display_label || `${item.department_name || item.name} (${item.public_id || item.department_code || item.code})`,
         department_name: item.department_name || item.name,
         department_code: item.department_code || item.code
       })
@@ -57,7 +57,7 @@ export default function ProgramsPage() {
 
   const createFields = useMemo(
     () => [
-      { name: 'program_id', label: 'Program ID', nullable: true },
+      { name: 'program_id', label: 'Legacy Business ID (Optional)', nullable: true },
       { name: 'program_name', label: 'Program Name', required: true },
       { name: 'program_code', label: 'Program Code', required: true },
       {
@@ -86,7 +86,7 @@ export default function ProgramsPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'program_id', label: 'Program ID', render: (row) => row.program_id || '-' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || row.program_id || '-' },
       { key: 'program_name', label: 'Program', render: (row) => row.program_name || row.name || '-' },
       { key: 'program_code', label: 'Code', render: (row) => row.program_code || row.code || '-' },
       { key: 'department_id', label: 'Department', render: (row) => departmentNameById[row.department_id] || '-' },

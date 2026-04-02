@@ -54,6 +54,8 @@ class ClubUpdate(BaseModel):
 
 class ClubOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     name: str
     slug: str | None = None
     description: str | None = None
@@ -63,9 +65,11 @@ class ClubOut(BaseModel):
     coordinator_user_id: str | None = None
     coordinator_name: str | None = None
     coordinator_email: str | None = None
+    coordinator_label: str | None = None
     president_user_id: str | None = None
     president_name: str | None = None
     president_email: str | None = None
+    president_label: str | None = None
     status: ClubStatus = "draft"
     registration_open: bool = False
     membership_type: ClubMembershipType = "approval_required"
@@ -83,10 +87,13 @@ class ClubOut(BaseModel):
 
 class ClubMembershipOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     club_id: str
     student_user_id: str
     student_name: str | None = None
     student_email: str | None = None
+    student_label: str | None = None
     role: ClubMemberRole = "member"
     status: ClubMemberStatus = "active"
     joined_at: datetime | None = None
@@ -101,13 +108,17 @@ class ClubMembershipUpdate(BaseModel):
 
 class ClubApplicationOut(BaseModel):
     id: str
+    public_id: str | None = None
+    display_label: str | None = None
     club_id: str
     student_user_id: str
     student_name: str | None = None
     student_email: str | None = None
+    student_label: str | None = None
     status: ClubApplicationStatus = "pending"
     applied_at: datetime | None = None
     reviewed_by: str | None = None
+    reviewed_by_label: str | None = None
     reviewed_at: datetime | None = None
     schema_version: int = 1
 

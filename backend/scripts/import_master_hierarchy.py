@@ -39,6 +39,7 @@ from app.services.master_hierarchy import (
     normalize_text,
     validate_business_identifier,
 )
+from app.services.public_ids import persist_public_id
 
 WORKBOOK_PATH = REPO_ROOT / "exports" / "Master_copy.xlsx"
 SUMMARY_PATH = REPO_ROOT / "docs" / "migrations" / "MASTER_HIERARCHY_IMPORT_SUMMARY.md"
@@ -731,6 +732,7 @@ async def replace_master_data(payload: WorkbookPayload) -> dict[str, Any]:
             "created_at": now,
             "schema_version": UNIVERSITY_SCHEMA_VERSION,
         }
+        persist_public_id(document, kind="university")
         result = await db.universities.insert_one(document)
         university_doc_by_business_id[document["university_id"]] = {**document, "_id": result.inserted_id}
 
@@ -751,6 +753,7 @@ async def replace_master_data(payload: WorkbookPayload) -> dict[str, Any]:
             "created_at": now,
             "schema_version": FACULTY_SCHEMA_VERSION,
         }
+        persist_public_id(document, kind="faculty")
         result = await db.faculties.insert_one(document)
         faculty_doc_by_business_id[document["faculty_id"]] = {**document, "_id": result.inserted_id}
 
@@ -774,6 +777,7 @@ async def replace_master_data(payload: WorkbookPayload) -> dict[str, Any]:
             "created_at": now,
             "schema_version": DEPARTMENT_SCHEMA_VERSION,
         }
+        persist_public_id(document, kind="department")
         result = await db.departments.insert_one(document)
         department_doc_by_business_id[document["department_id"]] = {**document, "_id": result.inserted_id}
 
@@ -801,6 +805,7 @@ async def replace_master_data(payload: WorkbookPayload) -> dict[str, Any]:
             "created_at": now,
             "schema_version": PROGRAM_SCHEMA_VERSION,
         }
+        persist_public_id(document, kind="program")
         result = await db.programs.insert_one(document)
         program_doc_by_business_id[document["program_id"]] = {**document, "_id": result.inserted_id}
 
@@ -832,6 +837,7 @@ async def replace_master_data(payload: WorkbookPayload) -> dict[str, Any]:
             "created_at": now,
             "schema_version": SPECIALIZATION_SCHEMA_VERSION,
         }
+        persist_public_id(document, kind="specialization")
         await db.specializations.insert_one(document)
         inserted_specializations += 1
 

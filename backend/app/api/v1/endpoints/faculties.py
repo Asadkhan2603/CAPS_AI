@@ -17,8 +17,10 @@ from app.services.master_hierarchy import (
     ensure_master_hierarchy_change_is_safe,
     normalize_code,
 )
+from app.services.public_ids import persist_public_id, persist_public_id_update
 from app.services.audit import log_destructive_action_event
 from app.services.governance import enforce_review_approval
+from app.services.section_read_models import sync_section_read_models_for_query
 
 router = APIRouter()
 
@@ -140,6 +142,7 @@ async def create_faculty(
         "created_at": datetime.now(timezone.utc),
         "schema_version": FACULTY_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="faculty")
     result = await db.faculties.insert_one(document)
     created = await db.faculties.find_one({"_id": result.inserted_id})
     return FacultyOut(**faculty_public(created))
@@ -210,11 +213,13 @@ async def update_faculty(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Faculty ID or code already exists")
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    persist_public_id_update(current, update_data, kind="faculty")
     update_data["schema_version"] = FACULTY_SCHEMA_VERSION
     result = await db.faculties.update_one({"_id": faculty_obj_id}, build_state_update(update_data))
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Faculty not found")
     updated = await db.faculties.find_one({"_id": faculty_obj_id})
+    await sync_section_read_models_for_query(query={"faculty_id": faculty_id}, database=db)
     return FacultyOut(**faculty_public(updated))
 
 
@@ -260,6 +265,7 @@ async def delete_faculty(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Faculty not found")
+    await sync_section_read_models_for_query(query={"faculty_id": faculty_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,
         action="faculties.delete",

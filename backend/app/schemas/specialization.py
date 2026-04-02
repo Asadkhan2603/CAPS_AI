@@ -51,6 +51,8 @@ class SpecializationOut(BaseModel):
     specialization_id: str
     specialization_code: str
     specialization_name: str
+    public_id: str | None = None
+    display_label: str | None = None
     name: str
     code: str
     program_id: str

@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 from app.core.database import db
 from app.core.schema_versions import AUDIT_LOG_SCHEMA_VERSION
+from app.services.public_ids import build_public_id, persist_public_id
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,11 @@ async def log_audit_event(
         "created_at": created_at,
         "schema_version": AUDIT_LOG_SCHEMA_VERSION,
     }
+    persist_public_id(document, kind="audit_log")
     result = await db.audit_logs.insert_one(document)
+    public_id = build_public_id("audit_log", {**document, "_id": result.inserted_id}, prefer_existing=False)
+    if public_id:
+        await db.audit_logs.update_one({"_id": result.inserted_id}, {"$set": {"public_id": public_id}})
     created = await db.audit_logs.find_one({"_id": result.inserted_id})
 
     immutable_collection = getattr(db, "audit_logs_immutable", None)
@@ -71,6 +76,7 @@ async def log_audit_event(
             integrity_hash = hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
             immutable_document = {
                 **document,
+                "public_id": public_id,
                 "integrity_hash": integrity_hash,
                 "previous_hash": previous_hash,
                 "source_audit_log_id": str(result.inserted_id),

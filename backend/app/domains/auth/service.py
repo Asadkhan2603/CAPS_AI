@@ -17,7 +17,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.users import user_public
-from app.schemas.auth import Token
+from app.schemas.auth import BootstrapStatus, DevBootstrapAdminRequest, Token
 from app.schemas.user import UserCreate, UserLogin, UserOut
 from app.services.audit import log_audit_event
 
@@ -149,6 +149,58 @@ class AuthService:
                 ) from exc
             raise
 
+        created_user = await self.repository.find_user_by_id(result.inserted_id)
+        return UserOut(**user_public(created_user))
+
+    async def get_bootstrap_status(self) -> BootstrapStatus:
+        has_admin = await self.repository.is_any_admin_registered()
+        policy = settings.auth_registration_policy
+        can_self_register_admin = policy == "open" or not has_admin
+        return BootstrapStatus(
+            environment=settings.environment,
+            auth_registration_policy=policy,
+            has_admin=has_admin,
+            can_self_register_admin=can_self_register_admin,
+            local_auth_recovery_enabled=settings.environment == "development",
+        )
+
+    async def bootstrap_or_recover_admin(self, payload: DevBootstrapAdminRequest) -> UserOut:
+        if settings.environment != "development":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Local auth recovery is unavailable outside development.",
+            )
+
+        email = payload.email.lower().strip()
+        existing_user = await self.repository.find_user_by_email(email)
+        now = self._utc_now()
+        base_updates = {
+            "full_name": payload.full_name.strip(),
+            "email": email,
+            "hashed_password": get_password_hash(payload.password),
+            "role": "admin",
+            "admin_type": "super_admin",
+            "extended_roles": [],
+            "role_scope": {},
+            "is_active": True,
+            "status": "active",
+            "must_change_password": False,
+            "failed_login_attempts": 0,
+            "last_failed_login_at": None,
+            "lockout_until": None,
+            "updated_at": now,
+        }
+
+        if existing_user:
+            await self.repository.update_user(existing_user["_id"], base_updates)
+            updated_user = await self.repository.find_user_by_id(existing_user["_id"])
+            return UserOut(**user_public(updated_user))
+
+        document = {
+            **base_updates,
+            "created_at": now,
+        }
+        result = await self.repository.insert_user(document)
         created_user = await self.repository.find_user_by_id(result.inserted_id)
         return UserOut(**user_public(created_user))
 

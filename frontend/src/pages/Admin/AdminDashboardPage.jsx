@@ -17,7 +17,7 @@ export default function AdminDashboardPage() {
       setError('');
       try {
         const [summaryRes, systemRes, governanceRes] = await Promise.all([
-          apiClient.get('/admin/analytics/overview'),
+          apiClient.get('/admin/analytics/bootstrap'),
           apiClient.get('/admin/system/health'),
           fetchGovernanceDashboard()
         ]);

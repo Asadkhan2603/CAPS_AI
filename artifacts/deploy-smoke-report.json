@@ -1,0 +1,17 @@
+{
+  "backend": {
+    "health_status_code": 200,
+    "mode": "local",
+    "ok": true,
+    "root_status_code": 200
+  },
+  "frontend_dist": {
+    "asset_reference_count": 7,
+    "has_root_mount": true,
+    "index_exists": true,
+    "missing_assets": [],
+    "ok": true
+  },
+  "ok": true,
+  "remote_frontend": null
+}

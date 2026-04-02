@@ -1,10 +1,11 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import ASSIGNMENT_SCHEMA_VERSION, normalize_schema_version
+from app.services.public_ids import apply_public_identity
 
 
 def assignment_public(document: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "id": str(document["_id"]),
         "title": document.get("title", ""),
         "description": document.get("description"),
@@ -21,3 +22,4 @@ def assignment_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=ASSIGNMENT_SCHEMA_VERSION,
         ),
     }
+    return apply_public_identity(payload, kind="assignment", document=document, display_name=document.get("title"))

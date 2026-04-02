@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import FormInput from '../components/ui/FormInput';
-import Modal from '../components/ui/Modal';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { PROGRAM_DURATION_TO_SEMESTERS } from '../constants/academicHierarchy';
 import { useToast } from '../hooks/useToast';
 import { apiClient } from '../services/apiClient';
-import { searchLookupOptions } from '../services/paginatedLookups';
+import BatchFormModal from './batches/BatchFormModal';
+import { useBatchesData } from './batches/useBatchesData';
 import { formatApiError } from '../utils/apiError';
 
 function buildBatchCodeSuffix(startYear, endYear) {
@@ -71,11 +71,6 @@ function createEmptyForm() {
 
 export default function BatchesPage() {
   const { pushToast } = useToast();
-  const [programs, setPrograms] = useState([]);
-  const [specializations, setSpecializations] = useState([]);
-  const [batches, setBatches] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [programFilter, setProgramFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,79 +80,28 @@ export default function BatchesPage() {
   const [editingBatch, setEditingBatch] = useState(null);
   const [formValues, setFormValues] = useState(createEmptyForm());
   const [identityTouched, setIdentityTouched] = useState({ name: false, code: false, endYear: false });
-  const [error, setError] = useState('');
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(50);
-
-  function mergeById(setter, rows) {
-    setter((prev) => {
-      const merged = new Map((prev || []).map((item) => [String(item.id), item]));
-      (rows || []).forEach((item) => {
-        if (item?.id) {
-          merged.set(String(item.id), item);
-        }
-      });
-      return Array.from(merged.values());
-    });
-  }
-
-  async function hydrateBatchRelations(batchRows) {
-    const programIds = Array.from(new Set((batchRows || []).map((item) => item.program_id).filter(Boolean)));
-    const specializationIds = Array.from(new Set((batchRows || []).map((item) => item.specialization_id).filter(Boolean)));
-
-    const knownProgramIds = new Set(programs.map((item) => item.id));
-    const knownSpecializationIds = new Set(specializations.map((item) => item.id));
-
-    const missingProgramIds = programIds.filter((id) => !knownProgramIds.has(id));
-    const missingSpecializationIds = specializationIds.filter((id) => !knownSpecializationIds.has(id));
-
-    const [programResponses, specializationResponses] = await Promise.all([
-      Promise.allSettled(missingProgramIds.map((id) => apiClient.get(`/programs/${id}`))),
-      Promise.allSettled(missingSpecializationIds.map((id) => apiClient.get(`/specializations/${id}`)))
-    ]);
-
-    mergeById(
-      setPrograms,
-      programResponses
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => result.value.data)
-    );
-    mergeById(
-      setSpecializations,
-      specializationResponses
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => result.value.data)
-    );
-  }
-
-  async function loadPageData() {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await apiClient.get('/batches/', {
-        params: {
-          skip,
-          limit,
-          q: searchQuery || undefined,
-          program_id: programFilter || undefined,
-          is_active: showInactive ? undefined : true
-        }
-      });
-      const batchRows = Array.isArray(response.data) ? response.data : [];
-      setBatches(batchRows);
-      await hydrateBatchRelations(batchRows);
-    } catch (err) {
-      const message = formatApiError(err, 'Failed to load batches');
-      setError(message);
-      pushToast({ title: 'Load failed', description: message, variant: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadPageData();
-  }, [limit, programFilter, searchQuery, showInactive, skip]);
+  const {
+    batches,
+    deleteBatch,
+    error,
+    loadPageData,
+    loadProgramOptions,
+    loadSpecializationOptions,
+    loading,
+    onSeedBatches,
+    programs,
+    specializations,
+    syncing
+  } = useBatchesData({
+    limit,
+    programFilter,
+    pushToast,
+    searchQuery,
+    showInactive,
+    skip
+  });
 
   const programMap = useMemo(() => Object.fromEntries(programs.map((item) => [item.id, item])), [programs]);
   const specializationMap = useMemo(() => Object.fromEntries(specializations.map((item) => [item.id, item])), [specializations]);
@@ -314,38 +258,6 @@ export default function BatchesPage() {
     [formValues.program_id, specializationOptions]
   );
 
-  async function loadProgramOptions(query) {
-    const options = await searchLookupOptions({
-      path: '/programs/',
-      q: query,
-      params: { is_active: true },
-      mapOption: (item) => ({ value: item.id, label: `${item.name} (${item.code})`, name: item.name, code: item.code })
-    });
-    mergeById(setPrograms, options.map((item) => ({ id: item.value, name: item.name, code: item.code })));
-    return options;
-  }
-
-  async function loadSpecializationOptions(query) {
-    if (!formValues.program_id) return [];
-    const options = await searchLookupOptions({
-      path: '/specializations/',
-      q: query,
-      params: { is_active: true, program_id: formValues.program_id },
-      mapOption: (item) => ({
-        value: item.id,
-        label: `${item.name} (${item.code})`,
-        name: item.name,
-        code: item.code,
-        program_id: item.program_id
-      })
-    });
-    mergeById(
-      setSpecializations,
-      options.map((item) => ({ id: item.value, name: item.name, code: item.code, program_id: item.program_id }))
-    );
-    return options;
-  }
-
   function openCreateModal() {
     setEditingBatch(null);
     setFormValues(createEmptyForm());
@@ -429,41 +341,6 @@ export default function BatchesPage() {
       pushToast({ title: 'Save failed', description: message, variant: 'error' });
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function deleteBatch(batch) {
-    if (!window.confirm(`Archive ${batch.name} (${batch.code})?`)) return;
-
-    try {
-      await apiClient.delete(`/batches/${batch.id}`);
-      pushToast({
-        title: 'Batch archived',
-        description: `${batch.name} has been archived.`,
-        variant: 'success'
-      });
-      await loadPageData();
-    } catch (err) {
-      const message = formatApiError(err, 'Failed to archive batch');
-      pushToast({ title: 'Archive failed', description: message, variant: 'error' });
-    }
-  }
-
-  async function onSeedBatches() {
-    setSyncing(true);
-    try {
-      const response = await apiClient.post('/programs/seed-batches');
-      pushToast({
-        title: 'Batches synced',
-        description: `${response.data?.batch_count ?? 0} batches ensured across ${response.data?.program_count ?? 0} programs.`,
-        variant: 'success'
-      });
-      await loadPageData();
-    } catch (err) {
-      const detail = formatApiError(err, 'Failed to sync program batches');
-      pushToast({ title: 'Sync failed', description: detail, variant: 'error' });
-    } finally {
-      setSyncing(false);
     }
   }
 
@@ -690,107 +567,23 @@ export default function BatchesPage() {
         </div>
       </Card>
 
-      <Modal open={modalOpen} title={editingBatch ? 'Edit Batch' : 'Create Batch'} onClose={closeModal}>
-        <form className="space-y-4" onSubmit={submitForm}>
-          <SearchableSelect
-            label="Program"
-            value={formValues.program_id}
-            options={programOptions}
-            loadOptions={loadProgramOptions}
-            selectedLabel={selectedProgram ? `${selectedProgram.name} (${selectedProgram.code})` : ''}
-            placeholder="Select program"
-            onValueChange={(value) => {
-              updateFormValue('program_id', value);
-              updateFormValue('specialization_id', '');
-            }}
-            required
-          />
-
-          <SearchableSelect
-            label="Specialization"
-            value={formValues.specialization_id}
-            options={filteredSpecializationOptions}
-            loadOptions={loadSpecializationOptions}
-            selectedLabel={selectedSpecialization ? `${selectedSpecialization.name} (${selectedSpecialization.code})` : ''}
-            allowEmpty
-            disabled={!formValues.program_id}
-            emptyLabel="Program-level batch"
-            placeholder={formValues.program_id ? 'Select specialization' : 'Select program first'}
-            onValueChange={(value) => updateFormValue('specialization_id', value)}
-          />
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormInput
-              label="Start Year / Join Year"
-              type="number"
-              min="2000"
-              max="2100"
-              value={formValues.start_year}
-              placeholder="2022"
-              onChange={(event) => updateFormValue('start_year', event.target.value)}
-            />
-            <FormInput
-              label="End Year / Pass-out Year"
-              type="number"
-              min="2000"
-              max="2100"
-              value={formValues.end_year}
-              placeholder="2026 for Aug 2022 to May 2026"
-              onChange={(event) => {
-                setIdentityTouched((prev) => ({ ...prev, endYear: true }));
-                updateFormValue('end_year', event.target.value);
-              }}
-            />
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-            Suggested identity: <span className="font-semibold">{suggestedIdentity.name || 'Batch 2022-2026'}</span> |{' '}
-            <span className="font-semibold">{suggestedIdentity.code || 'B.Sc.-B22-26'}</span>
-          </div>
-
-          <FormInput
-            label="Batch Name"
-            value={formValues.name}
-            placeholder="Batch 2022-2026"
-            onChange={(event) => {
-              setIdentityTouched((prev) => ({ ...prev, name: true }));
-              updateFormValue('name', event.target.value);
-            }}
-            required
-          />
-
-          <FormInput
-            label="Batch Code"
-            value={formValues.code}
-            placeholder="B.Sc.-B22-26"
-            onChange={(event) => {
-              setIdentityTouched((prev) => ({ ...prev, code: true }));
-              updateFormValue('code', event.target.value);
-            }}
-            required
-          />
-
-          {editingBatch ? (
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={Boolean(formValues.is_active)}
-                onChange={(event) => updateFormValue('is_active', event.target.checked)}
-              />
-              Batch is active
-            </label>
-          ) : null}
-
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={closeModal} disabled={saving}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? 'Saving...' : editingBatch ? 'Update Batch' : 'Create Batch'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+      <BatchFormModal
+        closeModal={closeModal}
+        editingBatch={editingBatch}
+        filteredSpecializationOptions={filteredSpecializationOptions}
+        formValues={formValues}
+        loadProgramOptions={loadProgramOptions}
+        loadSpecializationOptions={loadSpecializationOptions}
+        modalOpen={modalOpen}
+        onSubmit={submitForm}
+        programOptions={programOptions}
+        saving={saving}
+        selectedProgram={selectedProgram}
+        selectedSpecialization={selectedSpecialization}
+        setIdentityTouched={setIdentityTouched}
+        suggestedIdentity={suggestedIdentity}
+        updateFormValue={updateFormValue}
+      />
     </div>
   );
 }

@@ -41,6 +41,8 @@ class FacultyOut(BaseModel):
     faculty_id: str
     faculty_code: str
     faculty_name: str
+    public_id: str | None = None
+    display_label: str | None = None
     name: str
     code: str
     university_id: str | None = None

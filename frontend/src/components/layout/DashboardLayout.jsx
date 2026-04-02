@@ -6,13 +6,14 @@ import { useToast } from '../../hooks/useToast';
 
 export default function DashboardLayout() {
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, sessionBootstrap, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { toasts, removeToast } = useToast();
 
   return (
     <AppLayout
       user={user}
+      sessionBootstrap={sessionBootstrap}
       isDark={isDark}
       onToggleTheme={toggleTheme}
       onLogout={logout}

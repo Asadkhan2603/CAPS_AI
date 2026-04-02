@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import EntityManager from '../components/ui/EntityManager';
 import { apiClient } from '../services/apiClient';
 import { useAuth } from '../hooks/useAuth';
-import { getAllSections } from '../services/sectionsApi';
+import { getSectionPage } from '../services/sectionsApi';
 
 const DAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => ({
   value: day,
@@ -19,7 +19,7 @@ export default function ClassSlotsPage() {
     async function loadOfferings() {
       const [offeringsRes, sectionsRes] = await Promise.allSettled([
         apiClient.get('/course-offerings/', { params: { skip: 0, limit: 500 } }),
-        getAllSections(100)
+        getSectionPage({}, 100)
       ]);
       setOfferings(offeringsRes.status === 'fulfilled' ? offeringsRes.value.data || [] : []);
       setSections(sectionsRes.status === 'fulfilled' ? sectionsRes.value || [] : []);

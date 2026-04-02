@@ -1,44 +1,62 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import EntityManager from '../components/ui/EntityManager';
-import { listAllPages } from '../services/paginatedLookups';
+import { mergeLookupItems } from '../services/paginatedLookups';
+import { loadBatchOptions } from '../services/academicAdminLookups';
 
 export default function SemestersPage() {
   const [batches, setBatches] = useState([]);
 
-  useEffect(() => {
-    async function loadBatches() {
-      try {
-        setBatches(await listAllPages('/batches/'));
-      } catch {
-        setBatches([]);
-      }
-    }
-    loadBatches();
-  }, []);
+  async function loadBatchLookupOptions({ query }) {
+    const options = await loadBatchOptions(query, '__any_program__', undefined, { requireProgram: false });
+    setBatches((current) =>
+      mergeLookupItems(
+        current,
+        options.map((item) => ({
+          id: item.value,
+          name: item.name,
+          code: item.code
+        }))
+      )
+    );
+    return options;
+  }
 
-  const batchOptions = useMemo(
-    () => batches.map((batch) => ({ value: batch.id, label: `${batch.name} (${batch.code})` })),
-    [batches]
-  );
   const batchNameById = useMemo(() => Object.fromEntries(batches.map((batch) => [batch.id, batch.name])), [batches]);
 
   const filters = useMemo(
     () => [
       { name: 'q', label: 'Search' },
-      { name: 'batch_id', label: 'Batch', type: 'select', options: batchOptions, placeholder: 'All Batches' },
+      {
+        name: 'batch_id',
+        label: 'Batch',
+        type: 'select',
+        searchable: true,
+        placeholder: 'All Batches',
+        loadOptions: loadBatchLookupOptions,
+        selectedLabelResolver: ({ filterValues }) => batchNameById[filterValues.batch_id] || ''
+      },
       { name: 'semester_number', label: 'Semester Number', type: 'number', min: 1, max: 12, nullable: true },
       { name: 'is_active', label: 'Active', type: 'switch', defaultValue: null }
     ],
-    [batchOptions]
+    [batchNameById]
   );
 
   const createFields = useMemo(
     () => [
-      { name: 'batch_id', label: 'Batch', type: 'select', options: batchOptions, required: true },
+      {
+        name: 'batch_id',
+        label: 'Batch',
+        type: 'select',
+        searchable: true,
+        required: true,
+        placeholder: 'Search batch',
+        loadOptions: loadBatchLookupOptions,
+        selectedLabelResolver: ({ createValues }) => batchNameById[createValues.batch_id] || ''
+      },
       { name: 'semester_number', label: 'Semester Number', type: 'number', min: 1, max: 12, required: true },
       { name: 'label', label: 'Label', required: true }
     ],
-    [batchOptions]
+    [batchNameById]
   );
 
   const columns = useMemo(
