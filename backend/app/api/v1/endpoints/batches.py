@@ -22,11 +22,13 @@ from app.services.academic_hierarchy import (
     validate_batch_specialization_scope,
 )
 from app.services.audit import log_destructive_action_event
+from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
 from app.services.batch_read_models import (
     get_batch_read_model,
     hydrate_batches_from_read_models,
     sync_batch_read_model,
 )
+from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.governance import enforce_review_approval
 from app.services.semester_read_models import sync_semester_read_models_for_query
 from app.services.section_read_models import sync_section_read_models_for_query
@@ -307,6 +309,8 @@ async def update_batch(
             )
     updated = await sync_batch_read_model(batch=updated, database=db)
     await sync_semester_read_models_for_query(query={"batch_id": batch_id}, database=db)
+    await sync_course_offering_read_models_for_query(query={"batch_id": batch_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"batch_id": batch_id}, database=db)
     await sync_section_read_models_for_query(query={"batch_id": batch_id}, database=db)
     return BatchOut(**batch_public(updated))
 
@@ -348,6 +352,8 @@ async def delete_batch(
     if archived:
         await sync_batch_read_model(batch=archived, database=db)
     await sync_semester_read_models_for_query(query={"batch_id": batch_id}, database=db)
+    await sync_course_offering_read_models_for_query(query={"batch_id": batch_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"batch_id": batch_id}, database=db)
     await sync_section_read_models_for_query(query={"batch_id": batch_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,

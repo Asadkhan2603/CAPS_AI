@@ -1,0 +1,1 @@
+import{j as a}from"./motion-vendor-DClHCHFU.js";import{R as p}from"./charts-vendor-BmVXoaOR.js";function x({width:o="100%",height:e="100%",minWidth:n=0,minHeight:r=1,debounce:s=16,children:t,...i}){return a.jsx(p,{width:o,height:e,minWidth:n,minHeight:r,debounce:s,...i,children:t})}export{x as S};

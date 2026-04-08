@@ -30,6 +30,7 @@ from app.api.v1.endpoints import (
     similarity,
     specializations,
     groups,
+    grievances,
     students,
     subjects,
     submissions,
@@ -71,6 +72,7 @@ api_router.include_router(branding.router, prefix="/branding", tags=["branding"]
 api_router.include_router(notices.router, prefix="/notices", tags=["notices"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(review_tickets.router, prefix="/review-tickets", tags=["review-tickets"])
+api_router.include_router(grievances.router, prefix="/grievances", tags=["grievances"])
 api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-logs"])
 api_router.include_router(enrollments.router, prefix="/enrollments", tags=["enrollments"])
 api_router.include_router(clubs.router, prefix="/clubs", tags=["clubs"])

@@ -10,6 +10,7 @@ import {
   FileText,
   GitBranch,
   GraduationCap,
+  MessageSquareWarning,
   History,
   LayoutDashboard,
   Library,
@@ -26,25 +27,99 @@ import {
 import { FEATURE_ACCESS } from './featureAccess';
 import { canAccessFeature } from '../utils/permissions';
 
-const adminTeacherNavigationGroups = [
+const adminNavigationGroups = [
   {
     key: 'adminPanel',
-    label: 'Admin Panel',
+    label: 'Control Center',
     items: [
       { to: '/admin/dashboard', label: 'Admin Dashboard', featureKey: 'adminDashboard', icon: LayoutDashboard, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'] },
-      { to: '/admin/governance', label: 'Governance', featureKey: 'adminGovernance', icon: Shield, requiredAdminTypes: ['super_admin', 'admin'] },
+      { to: '/admin/onboarding', label: 'Onboarding', featureKey: 'adminOnboarding', icon: Sparkles, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'] },
+      { to: '/admin/analytics', label: 'Admin Analytics', featureKey: 'adminAnalytics', icon: ChartNoAxesCombined, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'] }
+    ]
+  },
+  {
+    key: 'academics',
+    label: 'Students & Academics',
+    items: [
       { to: '/academic-structure', label: 'Academic Structure', featureKey: 'adminAcademicStructure', icon: Network, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'] },
-      { to: '/students', label: 'Operations', featureKey: 'adminOperations', icon: Wrench, requiredAdminTypes: ['super_admin', 'admin'] },
-      { to: '/clubs', label: 'Clubs', featureKey: 'adminClubs', icon: Users, requiredAdminTypes: ['super_admin', 'admin'] },
-      { to: '/communication/announcements', label: 'Communication', featureKey: 'adminCommunication', icon: Megaphone, requiredAdminTypes: ['super_admin', 'admin'] },
-      { to: '/audit-logs', label: 'Compliance', featureKey: 'adminCompliance', icon: Shield, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
-      { to: '/admin/analytics', label: 'Admin Analytics', featureKey: 'adminAnalytics', icon: ChartNoAxesCombined, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'] },
+      { to: '/students', label: 'Students', featureKey: 'students', icon: GraduationCap },
+      { to: '/students/bulk-import', label: 'Bulk Import', featureKey: 'studentBulkImport', icon: Users },
+      { to: '/groups', label: 'Groups', featureKey: 'groups', icon: Users },
+      { to: '/subjects', label: 'Subjects', featureKey: 'subjects', icon: BookOpen },
+      { to: '/course-offerings', label: 'Course Delivery', featureKey: 'courseOfferings', icon: Library },
+      { to: '/class-slots', label: 'Class Slots', featureKey: 'classSlots', icon: CalendarRange },
+      { to: '/sections', label: 'Sections', featureKey: 'adminSections', icon: School },
+      { to: '/attendance-records', label: 'Attendance', featureKey: 'attendanceRecords', icon: ClipboardCheck },
+      { to: '/assignments', label: 'Assignments', featureKey: 'assignments', icon: FileText },
+      { to: '/submissions', label: 'Submissions', featureKey: 'submissions', icon: ClipboardCheck },
+      { to: '/ai-operations', label: 'AI Operations', featureKey: 'aiModule', icon: Sparkles },
+      { to: '/review-tickets', label: 'Review Tickets', featureKey: 'reviewTickets', icon: ScrollText },
+      { to: '/grievances/hod', label: 'HOD Grievances', featureKey: 'grievancesHod', icon: MessageSquareWarning, requiredAdminTypes: ['hod'] },
+      { to: '/grievances/dean', label: 'Dean Grievances', featureKey: 'grievancesDean', icon: MessageSquareWarning, requiredAdminTypes: ['dean'] },
+      { to: '/grievances/assigned', label: 'Assigned Grievances', featureKey: 'grievancesAssigned', icon: MessageSquareWarning },
+      { to: '/grievances/fallback', label: 'Fallback Grievances', featureKey: 'grievancesFallback', icon: MessageSquareWarning, requiredAdminTypes: ['academic_admin', 'super_admin'] },
+      { to: '/evaluations', label: 'Evaluations', featureKey: 'evaluations', icon: CheckSquare },
+      { to: '/enrollments', label: 'Enrollments', featureKey: 'enrollments', icon: UserCheck }
+    ]
+  },
+  {
+    key: 'communication',
+    label: 'Communication',
+    items: [
+      { to: '/communication/feed', label: 'Feed', featureKey: 'communicationFeed', icon: Bell },
+      { to: '/notifications', label: 'Notifications', featureKey: 'notifications', icon: Bell },
+      { to: '/communication/announcements', label: 'Announcements', featureKey: 'communicationAnnouncements', icon: Megaphone },
+      { to: '/communication/messages', label: 'Messages', featureKey: 'communicationMessages', icon: Users }
+    ]
+  },
+  {
+    key: 'clubs',
+    label: 'Clubs',
+    items: [
+      { to: '/clubs', label: 'Clubs Hub', featureKey: 'clubs', icon: Users },
+      { to: '/club-events', label: 'Event Inventory', featureKey: 'clubEvents', icon: CalendarDays },
+      { to: '/event-registrations', label: 'Registration Records', featureKey: 'eventRegistrations', icon: UserCheck }
+    ]
+  },
+  {
+    key: 'administration',
+    label: 'Administration',
+    items: [
+      { to: '/admin/governance', label: 'Governance', featureKey: 'adminGovernance', icon: Shield, requiredAdminTypes: ['super_admin', 'admin'] },
+      { to: '/admin/rbac', label: 'RBAC', featureKey: 'adminRbac', icon: UserCheck, requiredAdminTypes: ['super_admin'] },
+      { to: '/users', label: 'Users', featureKey: 'users', icon: Users },
+      { to: '/universities', label: 'Universities', featureKey: 'universities', icon: Building2 },
+      { to: '/faculties', label: 'Faculties', featureKey: 'faculties', icon: Building2 },
+      { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
+      { to: '/programs', label: 'Programs', featureKey: 'programs', icon: Library },
+      { to: '/specializations', label: 'Specializations', featureKey: 'specializations', icon: GitBranch },
+      { to: '/batches', label: 'Batches', featureKey: 'batches', icon: GraduationCap },
+      { to: '/semesters', label: 'Semesters', featureKey: 'semesters', icon: CalendarRange }
+    ]
+  },
+  {
+    key: 'system',
+    label: 'System & Compliance',
+    items: [
+      { to: '/audit-logs', label: 'Audit Logs', featureKey: 'auditLogs', icon: Shield },
       { to: '/admin/system', label: 'System Health', featureKey: 'adminSystem', icon: School, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
       { to: '/admin/observability', label: 'Observability', featureKey: 'adminSystem', icon: ChartNoAxesCombined, requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin'] },
       { to: '/admin/recovery', label: 'Recovery', featureKey: 'adminRecovery', icon: History, requiredAdminTypes: ['super_admin', 'admin'] },
-      { to: '/admin/developer', label: 'Developer', featureKey: 'adminDeveloper', icon: Wrench, requiredAdminTypes: ['super_admin'] }
+      { to: '/admin/developer', label: 'Developer', featureKey: 'adminDeveloper', icon: Wrench, requiredAdminTypes: ['super_admin'] },
+      { to: '/developer-panel', label: 'Developer Panel', featureKey: 'developerPanel', icon: Wrench }
     ]
   },
+  {
+    key: 'profile',
+    label: 'Profile',
+    items: [
+      { to: '/profile', label: 'My Profile', featureKey: 'profile', icon: UserCheck },
+      { to: '/help', label: 'Help & Support', featureKey: 'helpSupport', icon: Shield }
+    ]
+  }
+];
+
+const teacherNavigationGroups = [
   {
     key: 'overview',
     label: 'Overview',
@@ -61,15 +136,20 @@ const adminTeacherNavigationGroups = [
     label: 'Academics',
     items: [
       { to: '/students', label: 'Students', featureKey: 'students', icon: GraduationCap },
+      { to: '/students/bulk-import', label: 'Bulk Import', featureKey: 'studentBulkImport', icon: Users },
       { to: '/groups', label: 'Groups', featureKey: 'groups', icon: Users },
       { to: '/subjects', label: 'Subjects', featureKey: 'subjects', icon: BookOpen },
       { to: '/course-offerings', label: 'Course Delivery', featureKey: 'courseOfferings', icon: Library },
       { to: '/class-slots', label: 'Class Slots', featureKey: 'classSlots', icon: CalendarRange },
+      { to: '/sections', label: 'Sections', featureKey: 'teacherSections', icon: School },
+      { to: '/students/section-mapping', label: 'Section Mapping', featureKey: 'coordinatorStudentMapping', icon: GitBranch },
       { to: '/attendance-records', label: 'Attendance', featureKey: 'attendanceRecords', icon: ClipboardCheck },
       { to: '/assignments', label: 'Assignments', featureKey: 'assignments', icon: FileText },
       { to: '/submissions', label: 'Submissions', featureKey: 'submissions', icon: ClipboardCheck },
       { to: '/ai-operations', label: 'AI Operations', featureKey: 'aiModule', icon: Sparkles },
       { to: '/review-tickets', label: 'Review Tickets', featureKey: 'reviewTickets', icon: ScrollText },
+      { to: '/grievances/coordinator', label: 'Coordinator Grievances', featureKey: 'grievancesCoordinator', icon: MessageSquareWarning },
+      { to: '/grievances/assigned', label: 'Assigned Grievances', featureKey: 'grievancesAssigned', icon: MessageSquareWarning },
       { to: '/evaluations', label: 'Evaluations', featureKey: 'evaluations', icon: CheckSquare },
       { to: '/enrollments', label: 'Enrollments', featureKey: 'enrollments', icon: UserCheck }
     ]
@@ -79,6 +159,7 @@ const adminTeacherNavigationGroups = [
     label: 'Communication',
     items: [
       { to: '/communication/feed', label: 'Feed', featureKey: 'communicationFeed', icon: Bell },
+      { to: '/notifications', label: 'Notifications', featureKey: 'notifications', icon: Bell },
       { to: '/communication/announcements', label: 'Announcements', featureKey: 'communicationAnnouncements', icon: Megaphone },
       { to: '/communication/messages', label: 'Messages', featureKey: 'communicationMessages', icon: Users }
     ]
@@ -88,38 +169,23 @@ const adminTeacherNavigationGroups = [
     label: 'Clubs',
     items: [
       { to: '/clubs', label: 'Clubs Hub', featureKey: 'clubs', icon: Users },
-      { to: '/club-events', label: 'Club Events', featureKey: 'clubEvents', icon: CalendarDays },
-      { to: '/event-registrations', label: 'Event Registrations', featureKey: 'eventRegistrations', icon: UserCheck }
+      { to: '/club-events', label: 'Event Inventory', featureKey: 'clubEvents', icon: CalendarDays },
+      { to: '/event-registrations', label: 'Registration Records', featureKey: 'eventRegistrations', icon: UserCheck }
     ]
   },
   {
     key: 'operations',
     label: 'Operations',
     items: [
-      { to: '/audit-logs', label: 'Audit Logs', featureKey: 'auditLogs', icon: Shield },
-      { to: '/developer-panel', label: 'Developer Panel', featureKey: 'developerPanel', icon: Wrench },
-      { to: '/users', label: 'Users', featureKey: 'users', icon: Users }
-    ]
-  },
-  {
-    key: 'setup',
-    label: 'Academic Setup',
-    items: [
-      { to: '/universities', label: 'Universities', featureKey: 'universities', icon: Building2 },
-      { to: '/faculties', label: 'Faculties', featureKey: 'faculties', icon: Building2 },
-      { to: '/departments', label: 'Departments', featureKey: 'departments', icon: Building2 },
-      { to: '/programs', label: 'Programs', featureKey: 'programs', icon: Library },
-      { to: '/specializations', label: 'Specializations', featureKey: 'specializations', icon: GitBranch },
-      { to: '/batches', label: 'Batches', featureKey: 'batches', icon: GraduationCap },
-      { to: '/semesters', label: 'Semesters', featureKey: 'semesters', icon: CalendarRange },
-      { to: '/sections', label: 'Sections', featureKey: 'sections', icon: School }
+      { to: '/audit-logs', label: 'Audit Logs', featureKey: 'auditLogs', icon: Shield }
     ]
   },
   {
     key: 'profile',
     label: 'Profile',
     items: [
-      { to: '/profile', label: 'My Profile', featureKey: 'profile', icon: UserCheck }
+      { to: '/profile', label: 'My Profile', featureKey: 'profile', icon: UserCheck },
+      { to: '/help', label: 'Help & Support', featureKey: 'helpSupport', icon: Shield }
     ]
   }
 ];
@@ -158,34 +224,47 @@ const studentNavigationGroups = [
     label: 'Clubs',
     items: [
       { to: '/clubs', label: 'Clubs Hub', featureKey: 'clubs', icon: Users },
-      { to: '/club-events', label: 'Club Events', featureKey: 'clubEvents', icon: CalendarDays },
-      { to: '/event-registrations', label: 'Registrations', featureKey: 'eventRegistrations', icon: UserCheck }
+      { to: '/club-events', label: 'Event Inventory', featureKey: 'clubEvents', icon: CalendarDays },
+      { to: '/event-registrations', label: 'My Registrations', featureKey: 'eventRegistrations', icon: UserCheck }
     ]
   },
   {
     key: 'profile',
     label: 'Profile',
     items: [
-      { to: '/profile', label: 'My Profile', featureKey: 'profile', icon: UserCheck }
+      { to: '/profile', label: 'My Profile', featureKey: 'profile', icon: UserCheck },
+      { to: '/grievances', label: 'My Grievances', featureKey: 'grievancesStudent', icon: MessageSquareWarning },
+      { to: '/help', label: 'Help & Support', featureKey: 'helpSupport', icon: Shield }
     ]
   }
 ];
 
 function getNavigationGroupsForRole(role) {
+  if (role === 'admin') {
+    return adminNavigationGroups;
+  }
+  if (role === 'teacher') {
+    return teacherNavigationGroups;
+  }
   if (role === 'student') {
     return studentNavigationGroups;
   }
-  return adminTeacherNavigationGroups;
+  return teacherNavigationGroups;
 }
 
 export function getRoleGroupOrder(role) {
   if (role === 'admin') {
-    return ['adminPanel', 'overview', 'academics', 'communication', 'clubs', 'operations', 'setup', 'profile'];
+    return ['adminPanel', 'academics', 'communication', 'clubs', 'administration', 'system', 'profile'];
   }
   if (role === 'teacher') {
     return ['overview', 'academics', 'communication', 'clubs', 'operations', 'profile'];
   }
   return ['home', 'academics', 'notices', 'clubs', 'profile'];
+}
+
+function getGroupOrderIndex(groupKey, roleGroupOrder) {
+  const index = roleGroupOrder.indexOf(groupKey);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 export function getVisibleNavigationGroups(user) {
@@ -197,6 +276,9 @@ export function getVisibleNavigationGroups(user) {
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
+        if (role === 'admin' && group.key === 'overview') {
+          return false;
+        }
         if (role === 'admin' && item.requiredAdminTypes?.length) {
           const currentAdminType = user?.admin_type || 'admin';
           if (!item.requiredAdminTypes.includes(currentAdminType)) {
@@ -207,7 +289,7 @@ export function getVisibleNavigationGroups(user) {
       })
     }))
     .filter((group) => group.items.length > 0)
-    .sort((a, b) => roleGroupOrder.indexOf(a.key) - roleGroupOrder.indexOf(b.key));
+    .sort((a, b) => getGroupOrderIndex(a.key, roleGroupOrder) - getGroupOrderIndex(b.key, roleGroupOrder));
 }
 
 export function getWorkspaceGroupPath(groupKey) {
@@ -219,18 +301,21 @@ export function getWorkspaceItemPath(groupKey, itemPath) {
 }
 
 export function findNavigationGroupByItemPath(itemPath, user) {
-  const groups = user ? getVisibleNavigationGroups(user) : [...studentNavigationGroups, ...adminTeacherNavigationGroups];
+  const groups = user ? getVisibleNavigationGroups(user) : [...studentNavigationGroups, ...teacherNavigationGroups, ...adminNavigationGroups];
   return groups.find((group) => group.items.some((item) => item.to === itemPath)) || null;
 }
 
 export function getWorkspaceGroupLandingPath(groupKey, user) {
-  const groups = user ? getVisibleNavigationGroups(user) : [...studentNavigationGroups, ...adminTeacherNavigationGroups];
+  const groups = user ? getVisibleNavigationGroups(user) : [...studentNavigationGroups, ...teacherNavigationGroups, ...adminNavigationGroups];
   const group = groups.find((item) => item.key === groupKey) || null;
   const firstItem = group?.items?.[0] || null;
   return firstItem ? getWorkspaceItemPath(group.key, firstItem.to) : '/dashboard';
 }
 
 export function getWorkspaceHomeItemPath(user) {
+  if (user?.role === 'admin') {
+    return getWorkspaceItemPath('adminPanel', '/admin/dashboard');
+  }
   const homeGroup = findNavigationGroupByItemPath('/dashboard', user);
   return getWorkspaceItemPath(homeGroup?.key || 'overview', '/dashboard');
 }

@@ -74,18 +74,27 @@ async def compute_platform_snapshot(*, snapshot_date: str | None = None) -> dict
     week_ahead = now + timedelta(days=7)
 
     users_total = await db.users.count_documents({})
+    students_total = await db.students.count_documents({})
     active_students = await db.students.count_documents({"is_active": True})
+    programs_total = await db.programs.count_documents({})
+    batches_total = await db.batches.count_documents({})
+    semesters_total = await db.semesters.count_documents({})
+    classes_total = await db.classes.count_documents({})
+    subjects_total = await db.subjects.count_documents({})
     assignments_total = await db.assignments.count_documents({})
     submissions_total = await db.submissions.count_documents({})
+    evaluations_total = await db.evaluations.count_documents({})
+    similarity_flags_total = await db.similarity_logs.count_documents({"is_flagged": True})
+    notices_total = await db.notices.count_documents({"is_active": True})
     assignment_completion_pct = round((submissions_total / assignments_total) * 100, 2) if assignments_total else 0.0
 
     clubs_total = await db.clubs.count_documents({"status": {"$in": ["active", "registration_closed"]}})
     active_club_members = await _active_club_members_count()
     club_participation_pct = round((active_club_members / active_students) * 100, 2) if active_students else 0.0
 
-    events_total = await db.club_events.count_documents({})
+    club_events_total = await db.club_events.count_documents({})
     event_registrations = await db.event_registrations.count_documents({"status": {"$in": ["registered", "approved"]}})
-    event_attendance_pct = round((event_registrations / events_total) * 100, 2) if events_total else 0.0
+    event_attendance_pct = round((event_registrations / club_events_total) * 100, 2) if club_events_total else 0.0
 
     pending_tickets = await db.review_tickets.count_documents({"status": {"$in": ["pending", "open"]}})
     login_count_24h = await db.audit_logs.count_documents(
@@ -110,9 +119,20 @@ async def compute_platform_snapshot(*, snapshot_date: str | None = None) -> dict
     snapshot = {
         "date": key,
         "users_total": users_total,
+        "students_total": students_total,
+        "programs_total": programs_total,
+        "batches_total": batches_total,
+        "semesters_total": semesters_total,
+        "classes_total": classes_total,
+        "subjects_total": subjects_total,
         "active_students": active_students,
         "assignments_total": assignments_total,
         "submissions_total": submissions_total,
+        "evaluations_total": evaluations_total,
+        "similarity_flags_total": similarity_flags_total,
+        "notices_total": notices_total,
+        "clubs_total": clubs_total,
+        "club_events_total": club_events_total,
         "daily_active_users": daily_active_users,
         "login_count_24h": login_count_24h,
         "assignment_completion_pct": assignment_completion_pct,

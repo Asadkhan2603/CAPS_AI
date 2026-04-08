@@ -4,6 +4,7 @@ export type SidebarState = {
   isPinned: boolean;
   isHovered: boolean;
   isMobileOpen: boolean;
+  isTablet: boolean;
   isDesktop: boolean;
   isExpanded: boolean;
 };

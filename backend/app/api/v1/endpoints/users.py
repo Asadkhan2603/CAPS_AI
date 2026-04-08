@@ -9,8 +9,12 @@ from app.core.security import get_password_hash, require_permission
 from app.models.users import user_public
 from app.schemas.user import UserCreate, UserExtensionRolesUpdate, UserOut
 from app.services.audit import log_audit_event
+from app.services.club_governance import assign_student_as_club_president, clear_student_club_president
+from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
+from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.governance import enforce_review_approval
 from app.services.section_read_models import sync_section_read_models_for_ids
+from app.services.student_profiles import ensure_student_profile_for_user
 
 router = APIRouter()
 
@@ -84,6 +88,11 @@ async def create_user(
     }
     result = await db.users.insert_one(document)
     created = await db.users.find_one({"_id": result.inserted_id})
+    try:
+        await ensure_student_profile_for_user(created)
+    except Exception:
+        await db.users.delete_one({"_id": result.inserted_id})
+        raise
     return UserOut(**user_public(created))
 
 
@@ -178,21 +187,11 @@ async def update_user_extension_roles(
                 club_doc = await db.clubs.find_one({"_id": parse_object_id(club_id)})
                 if not club_doc:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Club not found for club president scope")
-                await db.clubs.update_many(
-                    {"president_user_id": user_id},
-                    {"$set": {"president_user_id": None, "schema_version": CLUB_SCHEMA_VERSION}},
-                )
-                await db.clubs.update_one(
-                    {"_id": parse_object_id(club_id)},
-                    {"$set": {"president_user_id": user_id, "schema_version": CLUB_SCHEMA_VERSION}},
-                )
+                await assign_student_as_club_president(user_id, club_id, sync_target_user_record=False)
                 role_scope["club_president"] = {"club_id": club_id}
         else:
             role_scope.pop("club_president", None)
-            await db.clubs.update_many(
-                {"president_user_id": user_id},
-                {"$set": {"president_user_id": None, "schema_version": CLUB_SCHEMA_VERSION}},
-            )
+            await clear_student_club_president(user_id, sync_target_user_record=False)
 
         role_scope.pop("class_coordinator", None)
 
@@ -271,6 +270,8 @@ async def deactivate_user(
         detail="User deactivated by super admin",
         severity="high",
     )
+    await sync_course_offering_read_models_for_query(query={"teacher_user_id": user_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"teacher_user_id": user_id}, database=db)
     if affected_section_ids:
         await sync_section_read_models_for_ids(section_ids=sorted(affected_section_ids), database=db)
     return {"message": "User deactivated"}

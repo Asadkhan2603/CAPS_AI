@@ -44,21 +44,55 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.users, [('email', ASCENDING)], unique=True)
     await _safe_create_index(db.notices, [('is_active', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.notices, [('scope', ASCENDING), ('scope_ref_id', ASCENDING)])
+    await _safe_create_index(
+        db.notices,
+        [('is_active', ASCENDING), ('scheduled_at', ASCENDING), ('fanout_dispatched_at', ASCENDING), ('fanout_next_retry_at', ASCENDING)],
+    )
+    await _safe_create_index(
+        db.notices,
+        [('fanout_status', ASCENDING), ('fanout_processing_expires_at', ASCENDING), ('scheduled_at', ASCENDING)],
+    )
     await _safe_create_index(db.assignments, [('created_by', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.submissions, [('assignment_id', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.evaluations, [('student_user_id', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.evaluations, [('teacher_user_id', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.notifications, [('target_user_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.grievances, [('student_user_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.grievances, [('section_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.grievances, [('department_id', ASCENDING), ('current_stage', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.grievances, [('assigned_resolver_user_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.grievances, [('status', ASCENDING), ('stage_due_at', ASCENDING)])
+    await _safe_create_index(db.communication_deliveries, [('source_kind', ASCENDING), ('source_id', ASCENDING), ('channel', ASCENDING), ('target_user_id', ASCENDING)])
+    await _safe_create_index(db.communication_deliveries, [('source_kind', ASCENDING), ('source_id', ASCENDING), ('channel', ASCENDING), ('target_email', ASCENDING)])
+    await _safe_create_index(db.communication_deliveries, [('target_user_id', ASCENDING), ('channel', ASCENDING), ('status', ASCENDING), ('updated_at', ASCENDING)])
+    await _safe_create_index(
+        db.communication_digests,
+        [('status', ASCENDING), ('scheduled_for', ASCENDING), ('digest_frequency', ASCENDING)],
+    )
+    await _safe_create_index(
+        db.communication_digests,
+        [('source_kind', ASCENDING), ('source_id', ASCENDING), ('target_user_id', ASCENDING), ('digest_frequency', ASCENDING)],
+    )
     await _safe_create_index(db.audit_logs, [('created_at', ASCENDING)])
     await _safe_create_index(db.audit_logs, [('resource_type', ASCENDING), ('severity', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.clubs, [('slug', ASCENDING), ('academic_year', ASCENDING)], unique=True)
     await _safe_create_index(db.clubs, [('status', ASCENDING), ('updated_at', ASCENDING)])
+    await _safe_create_index(db.clubs, [('academic_year', ASCENDING), ('updated_at', ASCENDING)])
+    await _safe_create_index(db.clubs, [('registration_open', ASCENDING), ('updated_at', ASCENDING)])
     await _safe_create_index(db.clubs, [('coordinator_user_id', ASCENDING)])
+    await _safe_create_index(db.clubs, [('president_user_id', ASCENDING)])
     await _safe_create_index(db.club_members, [('club_id', ASCENDING), ('student_user_id', ASCENDING)], unique=True)
     await _safe_create_index(db.club_members, [('club_id', ASCENDING), ('status', ASCENDING)])
+    await _safe_create_index(db.club_members, [('club_id', ASCENDING), ('joined_at', ASCENDING)])
+    await _safe_create_index(db.club_members, [('student_user_id', ASCENDING), ('status', ASCENDING), ('club_id', ASCENDING)])
     await _safe_create_index(db.club_applications, [('club_id', ASCENDING), ('student_user_id', ASCENDING), ('status', ASCENDING)])
+    await _safe_create_index(db.club_applications, [('club_id', ASCENDING), ('status', ASCENDING), ('applied_at', ASCENDING)])
     await _safe_create_index(db.club_events, [('club_id', ASCENDING), ('status', ASCENDING), ('event_date', ASCENDING)])
+    await _safe_create_index(db.club_events, [('is_deleted', ASCENDING), ('club_id', ASCENDING), ('status', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.club_events, [('is_deleted', ASCENDING), ('visibility', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.event_registrations, [('event_id', ASCENDING), ('student_user_id', ASCENDING)])
+    await _safe_create_index(db.event_registrations, [('event_id', ASCENDING), ('status', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.event_registrations, [('student_user_id', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.token_blacklist, [('jti', ASCENDING)], unique=True)
     await _safe_create_index(db.token_blacklist, [('expires_at', ASCENDING)], expireAfterSeconds=0)
     await _safe_create_index(db.user_sessions, [('user_id', ASCENDING), ('created_at', ASCENDING)])
@@ -176,6 +210,10 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.section_read_models, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.section_read_models, [('department_id', ASCENDING), ('batch_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.section_read_models, [('semester_id', ASCENDING), ('class_coordinator_user_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.course_offering_read_models, [('is_active', ASCENDING), ('section_id', ASCENDING), ('group_id', ASCENDING)])
+    await _safe_create_index(db.course_offering_read_models, [('teacher_user_id', ASCENDING), ('subject_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.class_slot_read_models, [('is_active', ASCENDING), ('section_id', ASCENDING), ('group_id', ASCENDING), ('day', ASCENDING)])
+    await _safe_create_index(db.class_slot_read_models, [('course_offering_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.timetables, [('class_id', ASCENDING), ('semester', ASCENDING), ('status', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.timetables, [('entries.teacher_user_id', ASCENDING), ('status', ASCENDING)])
     await _safe_create_index(db.timetables, [('entries.room_code', ASCENDING), ('status', ASCENDING)])
@@ -214,6 +252,8 @@ async def ensure_indexes() -> None:
     await _safe_create_index(db.ai_jobs, [('status', ASCENDING), ('requested_at', ASCENDING)])
     await _safe_create_index(db.ai_jobs, [('job_type', ASCENDING), ('requested_by_user_id', ASCENDING), ('requested_at', ASCENDING)])
     await _safe_create_index(db.ai_jobs, [('job_type', ASCENDING), ('idempotency_key', ASCENDING), ('status', ASCENDING)])
+    await _safe_create_index(db.club_queue_views, [('scope_type', ASCENDING), ('scope_id', ASCENDING), ('queue_type', ASCENDING), ('updated_at', ASCENDING)])
+    await _safe_create_index(db.club_queue_snapshots, [('scope_type', ASCENDING), ('scope_id', ASCENDING), ('queue_type', ASCENDING), ('captured_at', ASCENDING)])
     await _safe_create_index(db.system_health_snapshots, [('bucket_minute', ASCENDING)], unique=True)
     await _safe_create_index(db.system_health_snapshots, [('recorded_at', ASCENDING)])
     await _safe_create_index(db.operational_alert_routes, [('alert_code', ASCENDING)], unique=True)

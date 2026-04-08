@@ -9,6 +9,8 @@ from app.core.schema_versions import SUBJECT_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.models.subjects import subject_public
 from app.schemas.subject import SubjectCreate, SubjectOut, SubjectUpdate
+from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
+from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
@@ -101,6 +103,8 @@ async def update_subject(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
 
     updated = await db.subjects.find_one({"_id": subject_obj_id})
+    await sync_course_offering_read_models_for_query(query={"subject_id": subject_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"subject_id": subject_id}, database=db)
     return SubjectOut(**subject_public(updated))
 
 
@@ -112,4 +116,6 @@ async def delete_subject(
     result = await db.subjects.delete_one({"_id": parse_object_id(subject_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
+    await sync_course_offering_read_models_for_query(query={"subject_id": subject_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"subject_id": subject_id}, database=db)
     return {"message": "Subject deleted"}

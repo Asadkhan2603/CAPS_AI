@@ -27,16 +27,27 @@ export default function ClassSlotsPage() {
     loadOfferings();
   }, []);
 
+  function sectionLabel(item) {
+    if (!item) return '';
+    return item.display_label || `${item.name} (${item.public_id || 'Section'})`;
+  }
+
+  function offeringLabel(item) {
+    if (!item) return '';
+    const section = sectionMap[item.section_id] || item.section_name || 'Section';
+    return item.display_label || `${section} | ${item.public_id || item.offering_type}`;
+  }
+
   const sectionOptions = useMemo(
     () =>
       sections.map((item) => ({
         value: item.id,
-        label: item.name
+        label: sectionLabel(item)
       })),
     [sections]
   );
   const sectionMap = useMemo(
-    () => Object.fromEntries(sections.map((item) => [item.id, item.name])),
+    () => Object.fromEntries(sections.map((item) => [item.id, sectionLabel(item)])),
     [sections]
   );
 
@@ -44,17 +55,14 @@ export default function ClassSlotsPage() {
     () =>
       offerings.map((item) => ({
         value: item.id,
-        label: `${sectionMap[item.section_id] || item.section_name || item.section_id} | ${item.academic_year} | ${item.offering_type}`
+        label: offeringLabel(item)
       })),
     [offerings, sectionMap]
   );
   const offeringMap = useMemo(
     () =>
       Object.fromEntries(
-        offerings.map((item) => [
-          item.id,
-          `${sectionMap[item.section_id] || item.section_name || item.section_id} | ${item.offering_type}`
-        ])
+        offerings.map((item) => [item.id, offeringLabel(item)])
       ),
     [offerings, sectionMap]
   );
@@ -89,7 +97,8 @@ export default function ClassSlotsPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'course_offering_id', label: 'Offering', render: (row) => offeringMap[row.course_offering_id] || row.course_offering_id || '-' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || '-' },
+      { key: 'course_offering_id', label: 'Offering', render: (row) => offeringMap[row.course_offering_id] || '-' },
       { key: 'day', label: 'Day' },
       { key: 'start_time', label: 'Start' },
       { key: 'end_time', label: 'End' },

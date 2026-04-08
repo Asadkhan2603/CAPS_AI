@@ -6,39 +6,42 @@ export const USER_KEY = 'caps_ai_user';
 const MAX_TRACE_ENTRIES = 100;
 const traceEntries = [];
 
-function getSessionStore() {
+function readFromStore(storeName, key) {
   try {
-    return globalThis.sessionStorage || null;
+    return globalThis?.[storeName]?.getItem(key) || '';
   } catch {
-    return null;
+    return '';
   }
 }
 
-function removeLegacyLocalValue(key) {
+function writeToStore(storeName, key, value) {
   try {
-    globalThis.localStorage?.removeItem(key);
+    globalThis?.[storeName]?.setItem(key, value);
   } catch {
-    // Ignore legacy storage cleanup failures.
+    // Ignore storage persistence failures.
+  }
+}
+
+function removeFromStore(storeName, key) {
+  try {
+    globalThis?.[storeName]?.removeItem(key);
+  } catch {
+    // Ignore storage cleanup failures.
   }
 }
 
 export function readAuthStorage(key) {
-  const store = getSessionStore();
-  return store?.getItem(key) || '';
+  return readFromStore('sessionStorage', key) || readFromStore('localStorage', key) || '';
 }
 
 export function writeAuthStorage(key, value) {
-  const store = getSessionStore();
-  if (store) {
-    store.setItem(key, value);
-  }
-  removeLegacyLocalValue(key);
+  writeToStore('sessionStorage', key, value);
+  writeToStore('localStorage', key, value);
 }
 
 export function removeAuthStorage(key) {
-  const store = getSessionStore();
-  store?.removeItem(key);
-  removeLegacyLocalValue(key);
+  removeFromStore('sessionStorage', key);
+  removeFromStore('localStorage', key);
 }
 
 export function clearAuthStorage() {

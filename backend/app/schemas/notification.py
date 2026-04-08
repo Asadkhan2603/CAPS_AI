@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field
 
+from app.schemas.communication_delivery import DeliverySummary
+
 
 class NotificationCreate(BaseModel):
     title: str = Field(min_length=2, max_length=140)
@@ -24,5 +26,6 @@ class NotificationOut(BaseModel):
     created_by: str | None = None
     created_by_label: str | None = None
     is_read: bool = False
+    delivery_summary: DeliverySummary = Field(default_factory=DeliverySummary)
     created_at: datetime | None = None
     schema_version: int = 1

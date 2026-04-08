@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import Card from '../../components/ui/Card';
 import AdminDomainNav from '../../components/admin/AdminDomainNav';
+import AlertRoutingHistorySection from './system/AlertRoutingHistorySection';
 import SafeResponsiveContainer from '../../components/charts/SafeResponsiveContainer';
+import ClubObservabilityTrendSection from './system/ClubObservabilityTrendSection';
 import { apiClient } from '../../services/apiClient';
 import { formatApiError } from '../../utils/apiError';
 
@@ -14,8 +16,39 @@ export default function AdminObservabilityPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const requestMetrics = data?.observability?.request_metrics || {};
+  const clubsMetrics = data?.observability?.clubs_metrics || {};
   const aiMetrics = data?.observability?.ai_metrics || {};
   const snapshotStore = data?.snapshot_store || {};
+  const clubsObservability = useMemo(() => {
+    const source = data?.clubs_observability || {};
+    const mapPoint = (point, formatOptions) => ({
+      bucketStart: point.bucket_start,
+      label: point.bucket_start ? new Date(point.bucket_start).toLocaleString([], formatOptions) : '-',
+      clubRequestsAvg: point.club_requests_avg ?? 0,
+      clubRequestsPeak: point.club_requests_peak ?? 0,
+      clubP95Avg: point.club_p95_duration_ms_avg ?? 0,
+      clubP95Peak: point.club_p95_duration_ms_peak ?? 0,
+      clubSlowTotal: point.club_slow_requests_total ?? 0,
+      clubServerErrorsTotal: point.club_server_errors_total ?? 0,
+      pressureLevel: point.pressure_level || 'ok',
+      pressureSignal:
+        point.pressure_level === 'critical'
+          ? 2
+          : point.pressure_level === 'warning'
+            ? 1
+            : 0,
+    });
+    return {
+      summary: source.summary || {},
+      hourly24h: (source.hourly_24h || []).map((point) => mapPoint(point, { hour: '2-digit', minute: '2-digit' })),
+      daily14d: (source.daily_14d || []).map((point) => mapPoint(point, { month: 'short', day: 'numeric' })),
+      recentPressureWindows: (source.recent_pressure_windows || []).map((point) =>
+        mapPoint(point, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      ),
+    };
+  }, [data?.clubs_observability]);
+  const alertRouting = data?.alert_routing || {};
+  const alertRouteHistory = data?.alert_route_history || [];
 
   const liveHistoryData = useMemo(
     () =>
@@ -97,6 +130,12 @@ export default function AdminObservabilityPage() {
         <Metric label="Slow Requests (15m)" value={requestMetrics.slow_requests_15m ?? 0} />
       </div>
       <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Club Requests (15m)" value={clubsMetrics.requests_15m ?? 0} />
+        <Metric label="Club P95 (15m)" value={formatDuration(clubsMetrics.p95_duration_ms_15m)} />
+        <Metric label="Club Slow (15m)" value={clubsMetrics.slow_requests_15m ?? 0} />
+        <Metric label="Club 5xx (15m)" value={clubsMetrics.server_errors_15m ?? 0} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
         <Metric label="AI Queued Jobs" value={aiMetrics.queued_jobs ?? 0} />
         <Metric label="Oldest AI Job Age" value={formatSeconds(aiMetrics.oldest_queued_age_seconds)} />
         <Metric label="Fallback Rate (15m)" value={formatPercent(aiMetrics.fallback_rate_pct_15m)} />
@@ -126,6 +165,8 @@ export default function AdminObservabilityPage() {
           <p className="text-sm text-emerald-600 dark:text-emerald-400">No active operational alerts.</p>
         )}
       </Card>
+      <AlertRoutingHistorySection alertRouting={alertRouting} alertRouteHistory={alertRouteHistory} />
+      <ClubObservabilityTrendSection clubsObservability={clubsObservability} />
       <div className="grid gap-3 xl:grid-cols-3">
         <ChartCard title="Live Queue Depth" empty={!liveHistoryData.length}>
           <SafeResponsiveContainer>
@@ -218,6 +259,34 @@ export default function AdminObservabilityPage() {
           </div>
         </Card>
       </div>
+      <Card className="space-y-2">
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Clubs Workspace Pressure</p>
+        <div className="grid gap-2 text-xs text-slate-500 md:grid-cols-3 xl:grid-cols-6">
+          <div>Club requests: {clubsMetrics.requests_15m ?? 0}</div>
+          <div>Club P95: {formatDuration(clubsMetrics.p95_duration_ms_15m)}</div>
+          <div>Club slow requests: {clubsMetrics.slow_requests_15m ?? 0}</div>
+          <div>Club 5xx: {clubsMetrics.server_errors_15m ?? 0}</div>
+          <div>`/clubs`: {clubsMetrics.clubs_requests_15m ?? 0}</div>
+          <div>`/club-events` + `/event-registrations`: {(clubsMetrics.club_events_requests_15m ?? 0) + (clubsMetrics.event_registrations_requests_15m ?? 0)}</div>
+        </div>
+        {clubsMetrics.top_paths_15m?.length ? (
+          <div className="space-y-2">
+            {clubsMetrics.top_paths_15m.map((row) => (
+              <div key={row.path} className="rounded-xl border border-slate-200 px-3 py-2 text-xs dark:border-slate-700">
+                <div className="font-medium">{row.path}</div>
+                <div className="text-slate-600 dark:text-slate-300">
+                  requests={row.requests} | 5xx={row.server_errors} | slow={row.slow_requests}
+                </div>
+                <div className="text-slate-500">
+                  avg={formatDuration(row.avg_duration_ms)} | p95={formatDuration(row.p95_duration_ms)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">No recent clubs workspace traffic yet.</p>
+        )}
+      </Card>
     </div>
   );
 }

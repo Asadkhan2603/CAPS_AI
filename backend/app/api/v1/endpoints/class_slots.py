@@ -11,6 +11,11 @@ from app.core.schema_versions import CLASS_SLOT_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.class_slots import class_slot_public
 from app.schemas.class_slot import ClassSlotCreate, ClassSlotOut, ClassSlotUpdate
+from app.services.class_slot_read_models import (
+    sync_class_slot_read_model,
+    sync_class_slot_read_models_for_offering_query,
+    sync_class_slot_read_models_for_query,
+)
 from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
@@ -118,36 +123,36 @@ async def list_class_slots(
     if is_active is not None:
         query["is_active"] = is_active
 
+    offering_scope_query: dict[str, Any] | None = None
     if section_id:
-        offering_ids = await _distinct_strings(
-            db.course_offerings,
-            "_id",
-            {"section_id": section_id, "is_active": True},
-            fallback_length=5000,
-        )
-        if not offering_ids:
-            return []
-        query["course_offering_id"] = {"$in": offering_ids}
+        query["section_id"] = section_id
+        offering_scope_query = {"section_id": section_id, "is_active": True}
 
     if current_user.get("role") == "student":
         student = await db.students.find_one({"email": current_user.get("email"), "is_active": True})
         if not student or not student.get("class_id"):
             return []
-        ids = await _distinct_strings(
-            db.course_offerings,
-            "_id",
-            {
-                "section_id": student["class_id"],
-                "is_active": True,
-                "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
-            },
-            fallback_length=5000,
-        )
-        if not ids:
-            return []
-        query["course_offering_id"] = {"$in": ids}
+        query["section_id"] = student["class_id"]
+        query["$or"] = [{"group_id": None}, {"group_id": student.get("group_id")}]
+        offering_scope_query = {
+            "section_id": student["class_id"],
+            "is_active": True,
+            "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
+        }
 
-    rows = await db.class_slots.find(query).skip(skip).limit(limit).to_list(length=limit)
+    if offering_scope_query is not None:
+        await sync_class_slot_read_models_for_offering_query(offering_query=offering_scope_query, database=db)
+    else:
+        raw_slot_query = {}
+        if course_offering_id:
+            raw_slot_query["course_offering_id"] = course_offering_id
+        if day:
+            raw_slot_query["day"] = day
+        if is_active is not None:
+            raw_slot_query["is_active"] = is_active
+        await sync_class_slot_read_models_for_query(query=raw_slot_query, database=db)
+
+    rows = await db.class_slot_read_models.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [ClassSlotOut(**class_slot_public(item)) for item in rows]
 
 
@@ -158,19 +163,21 @@ async def my_slots(
     student = await db.students.find_one({"email": current_user.get("email"), "is_active": True})
     if not student or not student.get("class_id"):
         return []
-    ids = await _distinct_strings(
-        db.course_offerings,
-        "_id",
-        {
+    await sync_class_slot_read_models_for_offering_query(
+        offering_query={
             "section_id": student["class_id"],
             "is_active": True,
             "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
         },
-        fallback_length=5000,
+        database=db,
     )
-    if not ids:
-        return []
-    rows = await db.class_slots.find({"course_offering_id": {"$in": ids}, "is_active": True}).to_list(length=5000)
+    rows = await db.class_slot_read_models.find(
+        {
+            "section_id": student["class_id"],
+            "is_active": True,
+            "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
+        }
+    ).to_list(length=5000)
     return [ClassSlotOut(**class_slot_public(item)) for item in rows]
 
 
@@ -203,6 +210,7 @@ async def create_class_slot(
     persist_public_id(document, kind="class_slot")
     result = await db.class_slots.insert_one(document)
     created = await db.class_slots.find_one({"_id": result.inserted_id})
+    created = await sync_class_slot_read_model(slot=created, database=db)
     return ClassSlotOut(**class_slot_public(created))
 
 
@@ -239,6 +247,7 @@ async def update_class_slot(
         {"$set": {**update_data, "schema_version": CLASS_SLOT_SCHEMA_VERSION}},
     )
     updated = await db.class_slots.find_one({"_id": slot_obj_id})
+    updated = await sync_class_slot_read_model(slot=updated, database=db)
     return ClassSlotOut(**class_slot_public(updated))
 
 
@@ -263,4 +272,7 @@ async def delete_class_slot(
             }
         },
     )
+    archived = await db.class_slots.find_one({"_id": slot_obj_id})
+    if archived:
+        await sync_class_slot_read_model(slot=archived, database=db)
     return {"message": "Class slot archived"}

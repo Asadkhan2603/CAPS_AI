@@ -12,32 +12,32 @@
 
 ## 2. 📊 Performance Scorecard (0–100)
 
-### Overall Performance Score: 72/100
-Reason: The heaviest startup, delivery, and request-fanout problems have been reduced, Phase 2 frontend decomposition is complete, admin system health and admin analytics now read from persisted snapshots by default, and section/class, batch, and semester reads now use denormalized read models instead of repeated enrichment on the hot path, though broader analytics and course-delivery denormalization is still unfinished.
+### Overall Performance Score: 76/100
+Reason: The heaviest startup, delivery, and request-fanout problems have been reduced, Phase 2 and the tracked Phase 3 backend work are complete, and Phase 1 is substantially complete in code. The main verification gap against the original checklist is that active nginx config enables `gzip` but does not yet configure Brotli. Remaining performance work is now mostly long-term scale, observability, and heavy AI/background-job isolation rather than the original core request-path bottlenecks.
 
 ### Frontend Performance: 69/100
 Reason: The login shell, header, dashboard, hierarchy lookups, and the largest admin surfaces are materially lighter now, and admin analytics now boots from a single snapshot-backed request, though some pages still carry large local state and vendor-heavy rendering paths.
 
-### Backend Performance: 66/100
-Reason: Hot paths are cheaper, runtime concurrency is better tuned, admin system health and admin analytics no longer recompute their full payloads on every read, and the section/class, batch, and semester endpoints now read from persisted denormalized models, but wider analytics and course-delivery reads still consume more CPU and DB work than they should.
+### Backend Performance: 72/100
+Reason: Hot paths are cheaper, runtime concurrency is better tuned, admin system health and the admin dashboard shell now prefer persisted analytics snapshots, and the section/class, batch, semester, course-offering, and class-slot endpoints read from denormalized models instead of rebuilding related context on every request. The main backend risks now sit more in specialty workloads such as similarity processing and large background fanout rather than the everyday academic read paths.
 
-### API Response Time: 68/100
-Reason: Session bootstrap, dashboard consolidation, lightweight notice counts, stricter paged hierarchy reads, snapshot-first admin health reads, a single admin analytics bootstrap payload, and denormalized section/class, batch, and semester responses have reduced first-load and repeated-read latency, but broader cold analytics is still expensive.
+### API Response Time: 72/100
+Reason: Session bootstrap, dashboard consolidation, lightweight notice counts, stricter paged hierarchy reads, snapshot-first admin health reads, snapshot-backed admin summary/dashboard analytics, and denormalized section/class, batch, semester, course-offering, and class-slot responses have materially reduced first-load and repeated-read latency on the most common authenticated paths.
 
-### Database Performance: 62/100
-Reason: Overfetch and repeated lookup churn are lower than the original baseline, admin snapshot-driven reads are in place, and section/class, batch, and semester reads now avoid repeated multi-collection enrichment via denormalized read models, but broader hierarchy and analytics read models are still missing.
+### Database Performance: 68/100
+Reason: Overfetch and repeated lookup churn are lower than the original baseline, admin snapshot-driven reads are in place, and section/class, batch, semester, course-offering, and class-slot reads now avoid repeated multi-collection enrichment or context assembly via denormalized models. The biggest remaining DB risks are now the heavier analytics, similarity, and batch-processing workloads rather than the original list/detail request paths.
 
 ### Network Efficiency: 68/100
-Reason: Static compression and immutable asset caching are now in place, though CDN/edge delivery and selective API cache/revalidation are still absent.
+Reason: Static gzip compression and immutable asset caching are now in place, though Brotli, CDN/edge delivery, and selective API cache/revalidation are still absent.
 
 ### Bundle Size Optimization: 60/100
 Reason: Chart code is no longer on the default dashboard critical path and several page-level admin and hierarchy flows are split more cleanly, but the build still ships a large `charts-vendor` chunk and several feature pages remain heavier than ideal.
 
-### Caching Effectiveness: 75/100
-Reason: Lookup TTL caching, unread-count bootstrap data, better frontend shell reuse, persisted admin health snapshots, persisted admin analytics snapshots, and denormalized section/class, batch, and semester read models now reduce repeat traffic and repeated backend hydration significantly, though broader API/result caching is still limited.
+### Caching Effectiveness: 79/100
+Reason: Lookup TTL caching, unread-count bootstrap data, better frontend shell reuse, persisted admin health snapshots, persisted analytics snapshots for admin shell reads, and denormalized section/class, batch, semester, course-offering, and class-slot read models now reduce repeat traffic and repeated backend hydration significantly, though broader API/result caching is still limited.
 
-### Scalability Readiness: 69/100
-Reason: Multi-worker serving, HPA, lower request fan-out, completed Phase 2 paging cleanup, slimmer admin page state, snapshot-first admin reads, and denormalized section/class, batch, and semester responses improved headroom, but analytics cold paths and wider inline enrichment still limit safe scale growth.
+### Scalability Readiness: 75/100
+Reason: Multi-worker serving, HPA, lower request fan-out, completed Phase 2 paging cleanup, slimmer admin page state, snapshot-first admin shell reads, and denormalized section/class, batch, semester, course-offering, and class-slot responses materially improved headroom. The next scale barriers are now load-profile validation, AI/similarity isolation, and deeper background-job batching rather than the original request-storm and enrichment-heavy paths.
 
 ---
 
@@ -286,6 +286,12 @@ The biggest problems are:
   - `motion-vendor` 127.00 kB
   - Evidence: `npm run build` output (2026-03-11 local run)
 
+## Codebase Verification Snapshot (2026-04-02)
+- Phase 1 status in code: substantially complete, with one verified gap. Active `frontend/nginx.conf` enables `gzip` and immutable asset caching, but Brotli directives were not found in the active repo configuration.
+- Phase 2 status in code: complete for the tracked audit scope. The consolidated session bootstrap, strict hierarchy paging, lookup caching, load-all helper removal, and page-state decompositions are all present in the active frontend/backend paths.
+- Phase 3 status in code: complete for the tracked audit scope. Snapshot-backed admin shell analytics and denormalized read models for sections/classes, batches/semesters, course offerings, and class slots are present in the active backend routes and services.
+- Legacy compatibility code still exists but is not wired into the active app shell. `frontend/src/components/layout/Topbar.jsx` still contains older notice and branding fetch logic, and `frontend/src/context/sessionBootstrap.js` still includes a fallback path for older servers that do not expose `/session/bootstrap`.
+
 ## Key Bottlenecks
 
 ### 1. Large In-Memory Query Materialization
@@ -362,8 +368,10 @@ Impact:
 
 ## Phase 1 Execution Status
 
-- [complete] Enable gzip/brotli.
-  Note: frontend nginx now enables gzip for text, JSON, JS, CSS, SVG, and font asset types.
+Status: substantially complete. All tracked quick wins are present except Brotli, which is still not configured in the active nginx file.
+
+- [partial] Enable gzip/brotli.
+  Note: frontend nginx enables gzip for text, JSON, JS, CSS, SVG, and font asset types, but Brotli directives were not found in the active repo configuration.
 - [complete] Add immutable static asset cache headers.
   Note: hashed frontend assets under `/assets/` now ship with `Cache-Control: public, immutable`.
 - [complete] Add unread notice count endpoint.
@@ -400,11 +408,15 @@ Status: complete.
 
 ## Phase 3 Execution Status
 
-Status: in progress.
+Status: complete.
 
-- [in progress] Move dashboard/admin analytics to snapshot-based architecture.
-  Note: `/api/v1/admin/system/health` now serves persisted snapshot payloads by default when the latest system snapshot is fresh, and `/api/v1/admin/analytics/bootstrap` now serves the admin analytics page from the latest persisted analytics snapshot by default. Both admin views only recompute their heavier DB/log workloads on stale or explicit refresh reads, and the admin analytics UI now boots from one snapshot-backed request instead of separate overview and platform calls.
+- [complete] Move dashboard/admin analytics to snapshot-based architecture.
+  Note: `/api/v1/admin/system/health`, `/api/v1/admin/analytics/bootstrap`, `/api/v1/analytics/summary`, and the admin-role `/api/v1/analytics/dashboard` now prefer persisted snapshots by default. The heavier admin shell counts only recompute when a fresh analytics snapshot is missing or an explicit refresh path is used, so the default admin experience no longer rebuilds the same expensive metrics on every read.
 - [complete] Introduce denormalized read models for section/class reads.
   Note: `/api/v1/sections` now serves through the active `classes` router using persisted `section_read_models`, so section/class list and detail reads no longer redo the same faculty/department/program/batch/semester/coordinator enrichment on every request. Parent hierarchy updates and coordinator reassignment/deactivation flows now refresh affected read models, keeping the denormalized view current after admin changes.
 - [complete] Introduce denormalized read models for batch and semester reads.
   Note: `/api/v1/batches` and `/api/v1/semesters` now hydrate from persisted `batch_read_models` and `semester_read_models`, so hierarchy pages stop redoing repeated program/specialization/batch enrichment on each list or detail request. Program, specialization, batch, and semester admin updates now refresh the affected read models so those denormalized responses stay current after lineage or naming changes.
+- [complete] Introduce denormalized read models for course offerings and class slots.
+  Note: `/api/v1/course-offerings` and `/api/v1/class-slots` now serve from persisted read models, so delivery pages stop rebuilding subject, teacher, section, group, batch, and semester context on each request. Subject, section, group, batch, semester, user deactivation, course-offering, and class-slot writes now refresh the affected delivery read models so timetable-facing responses stay current after admin changes.
+- [complete] Reduce inline enrichment across the highest-traffic academic list APIs.
+  Note: the tracked hierarchy and delivery endpoints that previously did repeated multi-collection hydration on every request now return ready-to-render denormalized data, which closes the main inline-enrichment hotspot described in the original audit.

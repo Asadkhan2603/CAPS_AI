@@ -4,8 +4,13 @@ from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.core.observability import observability_state
 from app.main import app
+from app.services import background_jobs as background_jobs_service
+from app.services import communication_digests as communication_digests_service
+from app.services import communication_delivery_retry as communication_delivery_retry_service
+from app.services import notifications as notifications_service
 from app.services.scheduler import app_scheduler
 from app.services import system_health_snapshots as snapshot_service
 from tests.test_auth import _create_section_payload, _seed_canonical_structure, _setup_fake_db
@@ -289,6 +294,10 @@ def test_notifications_create_list_and_mark_read() -> None:
     assert created.status_code == 201
     notification_id = created.json()["id"]
 
+    unread_before = client.get("/api/v1/notifications/unread-count", headers=headers)
+    assert unread_before.status_code == 200
+    assert unread_before.json()["count"] == 1
+
     listed = client.get("/api/v1/notifications/", headers=headers)
     assert listed.status_code == 200
     assert len(listed.json()) == 1
@@ -296,6 +305,1167 @@ def test_notifications_create_list_and_mark_read() -> None:
     marked = client.patch(f"/api/v1/notifications/{notification_id}/read", headers=headers)
     assert marked.status_code == 200
     assert marked.json()["is_read"] is True
+
+    unread_after = client.get("/api/v1/notifications/unread-count", headers=headers)
+    assert unread_after.status_code == 200
+    assert unread_after.json()["count"] == 0
+
+
+def test_targeted_notification_tracks_delivery_ledger_email_and_read_receipt() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_notification_delivery@example.com")
+
+    student_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Delivery Student",
+            "email": "student_notification_delivery@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert student_register.status_code == 201
+
+    async def fake_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+        _ = (subject, body)
+        return [
+            {
+                "user_id": recipient.get("user_id"),
+                "email": recipient.get("email"),
+                "status": "sent",
+                "error": None,
+                "sent_at": datetime.now(timezone.utc),
+            }
+            for recipient in recipients
+        ]
+
+    original_send_email_batch = notifications_service.send_outbound_email_batch
+    notifications_service.send_outbound_email_batch = fake_send_email_batch
+    try:
+        created = client.post(
+            "/api/v1/notifications/",
+            json={
+                "title": "Account Review",
+                "message": "Please confirm your profile details.",
+                "priority": "normal",
+                "scope": "system",
+                "target_user_id": student_register.json()["id"],
+            },
+            headers=admin_headers,
+        )
+        assert created.status_code == 201, created.text
+        body = created.json()
+        assert body["delivery_summary"]["total_recipients"] == 1
+        assert body["delivery_summary"]["email"]["sent_count"] == 1
+        assert body["delivery_summary"]["read_count"] == 0
+
+        source_rows = [row for row in fake_db.communication_deliveries.items if row.get("source_kind") == "notification"]
+        assert len(source_rows) == 2
+        assert {row.get("channel") for row in source_rows} == {"in_app", "email"}
+
+        student_login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "student_notification_delivery@example.com", "password": "password123"},
+        )
+        assert student_login.status_code == 200
+        student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+
+        listed = client.get("/api/v1/notifications/", headers=student_headers)
+        assert listed.status_code == 200
+        assert len(listed.json()) == 1
+        assert listed.json()[0]["is_read"] is False
+
+        marked = client.patch(f"/api/v1/notifications/{body['id']}/read", headers=student_headers)
+        assert marked.status_code == 200
+        assert marked.json()["is_read"] is True
+        assert marked.json()["delivery_summary"]["read_count"] == 1
+        assert marked.json()["delivery_summary"]["unread_count"] == 0
+
+        in_app_row = next(
+            row
+            for row in fake_db.communication_deliveries.items
+            if row.get("source_kind") == "notification" and row.get("channel") == "in_app"
+        )
+        assert in_app_row["status"] == "read"
+        assert in_app_row["read_at"] is not None
+    finally:
+        notifications_service.send_outbound_email_batch = original_send_email_batch
+
+
+def test_notice_fanout_records_delivery_ledger_email_status_and_read_summary() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    admin_headers = _admin_headers(client, "admin_notice_delivery@example.com")
+    student_headers = _student_headers(client, "student_notice_delivery@example.com")
+
+    structure = _seed_canonical_structure(fake_db, suffix="NDLV", start_year=2024, semester_number=2)
+    section = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Notice Delivery Section"),
+        headers=admin_headers,
+    )
+    assert section.status_code == 201
+
+    student_doc_id = ObjectId()
+    fake_db.students.items.append(
+        {
+            "_id": student_doc_id,
+            "full_name": "Delivery Student",
+            "roll_number": "NDLV-001",
+            "email": "student_notice_delivery@example.com",
+            "class_id": section.json()["id"],
+            "is_active": True,
+        }
+    )
+    fake_db.enrollments.items.append(
+        {
+            "_id": ObjectId(),
+            "student_id": str(student_doc_id),
+            "class_id": section.json()["id"],
+        }
+    )
+
+    async def fake_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+        _ = (subject, body)
+        return [
+            {
+                "user_id": recipient.get("user_id"),
+                "email": recipient.get("email"),
+                "status": "sent",
+                "error": None,
+                "sent_at": datetime.now(timezone.utc),
+            }
+            for recipient in recipients
+        ]
+
+    original_send_email_batch = background_jobs_service.send_outbound_email_batch
+    background_jobs_service.send_outbound_email_batch = fake_send_email_batch
+    try:
+        created = client.post(
+            "/api/v1/notices/",
+            json={
+                "title": "Lab Window",
+                "message": "Submit your lab report before Friday.",
+                "priority": "urgent",
+                "scope": "class",
+                "scope_ref_id": section.json()["id"],
+            },
+            headers=admin_headers,
+        )
+        assert created.status_code == 201, created.text
+
+        asyncio.run(background_jobs_service.fanout_notice_notifications(created.json()["id"]))
+
+        notice_row = next(item for item in fake_db.notices.items if str(item["_id"]) == created.json()["id"])
+        assert notice_row["fanout_status"] == "dispatched"
+        assert notice_row["fanout_count"] == 1
+
+        delivery_rows = [row for row in fake_db.communication_deliveries.items if row.get("source_kind") == "notice"]
+        assert len(delivery_rows) == 2
+        assert {row.get("channel") for row in delivery_rows} == {"in_app", "email"}
+
+        student_notices = client.get("/api/v1/notices/", headers=student_headers)
+        assert student_notices.status_code == 200
+        assert len(student_notices.json()) == 1
+        student_notice = student_notices.json()[0]
+        assert student_notice["delivery_summary"]["total_recipients"] == 1
+        assert student_notice["delivery_summary"]["email"]["sent_count"] == 1
+        assert student_notice["delivery_summary"]["read_count"] == 0
+
+        marked = client.post(f"/api/v1/notices/{student_notice['id']}/read", headers=student_headers)
+        assert marked.status_code == 200
+        assert marked.json()["is_read"] is True
+        assert marked.json()["delivery_summary"]["read_count"] == 1
+        assert marked.json()["delivery_summary"]["unread_count"] == 0
+    finally:
+        background_jobs_service.send_outbound_email_batch = original_send_email_batch
+
+
+def test_scheduled_notice_dispatch_retries_then_succeeds() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    _admin_headers(client, "admin_scheduled_retry@example.com")
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Scheduled Student",
+            "email": "student_scheduled_retry@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+
+    notice_id = ObjectId()
+    now = datetime.now(timezone.utc)
+    fake_db.notices.items.append(
+        {
+            "_id": notice_id,
+            "title": "Scheduled Retry Notice",
+            "message": "Retry this scheduled notice.",
+            "priority": "normal",
+            "scope": "college",
+            "scope_ref_id": None,
+            "scheduled_at": now - timedelta(minutes=5),
+            "fanout_status": "scheduled",
+            "fanout_attempts": 0,
+            "fanout_last_attempt_at": None,
+            "fanout_next_retry_at": None,
+            "fanout_count": 0,
+            "fanout_dispatched_at": None,
+            "fanout_failed_at": None,
+            "fanout_error": None,
+            "fanout_processing_started_at": None,
+            "fanout_processing_expires_at": None,
+            "is_active": True,
+            "created_at": now - timedelta(minutes=10),
+        }
+    )
+
+    original_send_email_batch = background_jobs_service.send_outbound_email_batch
+    original_retry_limit = settings.scheduled_notice_retry_limit
+    original_retry_backoff_seconds = settings.scheduled_notice_retry_backoff_seconds
+    try:
+        settings.scheduled_notice_retry_limit = 3
+        settings.scheduled_notice_retry_backoff_seconds = 60
+
+        async def failing_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+            _ = (subject, body, recipients)
+            raise RuntimeError("smtp timeout")
+
+        async def successful_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+            _ = (subject, body)
+            return [
+                {
+                    "user_id": recipient.get("user_id"),
+                    "email": recipient.get("email"),
+                    "status": "sent",
+                    "error": None,
+                    "sent_at": datetime.now(timezone.utc),
+                }
+                for recipient in recipients
+            ]
+
+        background_jobs_service.send_outbound_email_batch = failing_send_email_batch
+        first_dispatch = asyncio.run(background_jobs_service.dispatch_scheduled_notice_notifications(limit=10))
+        assert first_dispatch == 0
+
+        stored = fake_db.notices.items[0]
+        assert stored["fanout_status"] == "retry_scheduled"
+        assert stored["fanout_attempts"] == 1
+        assert stored["fanout_next_retry_at"] is not None
+        assert stored["fanout_error"] == "smtp timeout"
+        assert stored["fanout_processing_expires_at"] is None
+
+        stored["fanout_next_retry_at"] = now - timedelta(seconds=1)
+        background_jobs_service.send_outbound_email_batch = successful_send_email_batch
+        second_dispatch = asyncio.run(background_jobs_service.dispatch_scheduled_notice_notifications(limit=10))
+        assert second_dispatch == 1
+
+        stored = fake_db.notices.items[0]
+        assert stored["fanout_status"] == "dispatched"
+        assert stored["fanout_attempts"] == 2
+        assert stored["fanout_next_retry_at"] is None
+        assert stored["fanout_error"] is None
+        assert stored["fanout_count"] == 2
+        assert len(fake_db.notifications.items) == 2
+    finally:
+        background_jobs_service.send_outbound_email_batch = original_send_email_batch
+        settings.scheduled_notice_retry_limit = original_retry_limit
+        settings.scheduled_notice_retry_backoff_seconds = original_retry_backoff_seconds
+
+
+def test_admin_can_fetch_notice_delivery_details() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    admin_headers = _admin_headers(client, "admin_notice_detail@example.com")
+    student_headers = _student_headers(client, "student_notice_detail@example.com")
+
+    structure = _seed_canonical_structure(fake_db, suffix="NDTD", start_year=2024, semester_number=2)
+    section = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Notice Detail Section"),
+        headers=admin_headers,
+    )
+    assert section.status_code == 201
+
+    student_doc_id = ObjectId()
+    fake_db.students.items.append(
+        {
+            "_id": student_doc_id,
+            "full_name": "Detail Student",
+            "roll_number": "NDTD-001",
+            "email": "student_notice_detail@example.com",
+            "class_id": section.json()["id"],
+            "is_active": True,
+        }
+    )
+    fake_db.enrollments.items.append(
+        {"_id": ObjectId(), "student_id": str(student_doc_id), "class_id": section.json()["id"]}
+    )
+
+    async def fake_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+        _ = (subject, body)
+        return [
+            {
+                "user_id": recipient.get("user_id"),
+                "email": recipient.get("email"),
+                "status": "sent",
+                "error": None,
+                "sent_at": datetime.now(timezone.utc),
+            }
+            for recipient in recipients
+        ]
+
+    original_send_email_batch = background_jobs_service.send_outbound_email_batch
+    background_jobs_service.send_outbound_email_batch = fake_send_email_batch
+    try:
+        created = client.post(
+            "/api/v1/notices/",
+            json={
+                "title": "Detail Notice",
+                "message": "Inspect delivery rows",
+                "priority": "normal",
+                "scope": "class",
+                "scope_ref_id": section.json()["id"],
+            },
+            headers=admin_headers,
+        )
+        assert created.status_code == 201
+        asyncio.run(background_jobs_service.fanout_notice_notifications(created.json()["id"]))
+
+        student_list = client.get("/api/v1/notices/", headers=student_headers)
+        assert student_list.status_code == 200
+        student_notice_id = student_list.json()[0]["id"]
+        marked = client.post(f"/api/v1/notices/{student_notice_id}/read", headers=student_headers)
+        assert marked.status_code == 200
+
+        details = client.get(
+            f"/api/v1/admin/communication/delivery/notices/{created.json()['id']}",
+            headers=admin_headers,
+        )
+        assert details.status_code == 200, details.text
+        body = details.json()
+        assert body["source_kind"] == "notice"
+        assert body["summary"]["total_recipients"] == 1
+        assert body["summary"]["read_count"] == 1
+        assert len(body["items"]) == 2
+        assert {item["channel"] for item in body["items"]} == {"in_app", "email"}
+        assert any(item["status"] == "read" for item in body["items"] if item["channel"] == "in_app")
+    finally:
+        background_jobs_service.send_outbound_email_batch = original_send_email_batch
+
+
+def test_admin_can_fetch_notification_delivery_details() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_notification_detail@example.com")
+
+    student_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Notification Detail Student",
+            "email": "student_notification_detail@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert student_register.status_code == 201
+
+    async def fake_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+        _ = (subject, body)
+        return [
+            {
+                "user_id": recipient.get("user_id"),
+                "email": recipient.get("email"),
+                "status": "sent",
+                "error": None,
+                "sent_at": datetime.now(timezone.utc),
+            }
+            for recipient in recipients
+        ]
+
+    original_send_email_batch = notifications_service.send_outbound_email_batch
+    notifications_service.send_outbound_email_batch = fake_send_email_batch
+    try:
+        created = client.post(
+            "/api/v1/notifications/",
+            json={
+                "title": "Detail Notification",
+                "message": "Inspect notification delivery rows",
+                "priority": "normal",
+                "scope": "system",
+                "target_user_id": student_register.json()["id"],
+            },
+            headers=admin_headers,
+        )
+        assert created.status_code == 201
+
+        details = client.get(
+            f"/api/v1/admin/communication/delivery/notifications/{created.json()['id']}",
+            headers=admin_headers,
+        )
+        assert details.status_code == 200, details.text
+        body = details.json()
+        assert body["source_kind"] == "notification"
+        assert body["summary"]["total_recipients"] == 1
+        assert len(body["items"]) == 2
+        assert {item["channel"] for item in body["items"]} == {"in_app", "email"}
+        assert any(item["target_user_id"] == student_register.json()["id"] for item in body["items"])
+    finally:
+        notifications_service.send_outbound_email_batch = original_send_email_batch
+
+
+def test_notification_delivery_respects_email_preference() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_notification_pref@example.com")
+
+    student_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Preference Notification Student",
+            "email": "student_notification_pref@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert student_register.status_code == 201
+
+    for user in fake_db.users.items:
+        if user.get("email") == "student_notification_pref@example.com":
+            user["communication_preferences"] = {
+                "announcement_email": True,
+                "club_announcement_email": True,
+                "notification_email": False,
+            }
+
+    send_calls: list[list[dict]] = []
+
+    async def fake_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+        _ = (subject, body)
+        send_calls.append(recipients)
+        return []
+
+    original_send_email_batch = notifications_service.send_outbound_email_batch
+    notifications_service.send_outbound_email_batch = fake_send_email_batch
+    try:
+        created = client.post(
+            "/api/v1/notifications/",
+            json={
+                "title": "Preference Notification",
+                "message": "Email should be skipped by preference",
+                "priority": "normal",
+                "scope": "system",
+                "target_user_id": student_register.json()["id"],
+            },
+            headers=admin_headers,
+        )
+        assert created.status_code == 201, created.text
+        body = created.json()
+        assert body["delivery_summary"]["email"]["sent_count"] == 0
+        assert body["delivery_summary"]["email"]["skipped_count"] == 1
+        assert send_calls == []
+
+        email_rows = [
+            row
+            for row in fake_db.communication_deliveries.items
+            if row.get("source_kind") == "notification" and row.get("channel") == "email"
+        ]
+        assert len(email_rows) == 1
+        assert email_rows[0]["status"] == "skipped"
+        assert email_rows[0]["error"] == "Recipient disabled email notifications for system scope"
+    finally:
+        notifications_service.send_outbound_email_batch = original_send_email_batch
+
+
+def test_notification_delivery_can_queue_daily_digest_and_process_it() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_notification_digest@example.com")
+
+    student_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Digest Student",
+            "email": "student_notification_digest@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert student_register.status_code == 201
+
+    for user in fake_db.users.items:
+        if user.get("email") == "student_notification_digest@example.com":
+            user["communication_preferences"] = {
+                "notification_email_mode": "daily_digest",
+                "notification_scope_preferences": {
+                    "system": {"email_mode": "daily_digest", "in_app": True},
+                },
+                "digest_preferences": {
+                    "daily_digest_hour_utc": 8,
+                    "weekly_digest_day_of_week": 2,
+                },
+            }
+
+    async def fake_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+        _ = (subject, body)
+        return [
+            {
+                "user_id": recipient.get("user_id"),
+                "email": recipient.get("email"),
+                "status": "sent",
+                "error": None,
+                "sent_at": datetime.now(timezone.utc),
+            }
+            for recipient in recipients
+        ]
+
+    original_send_email_batch = communication_digests_service.send_outbound_email_batch
+    communication_digests_service.send_outbound_email_batch = fake_send_email_batch
+    try:
+        created = client.post(
+            "/api/v1/notifications/",
+            json={
+                "title": "Digest Notification",
+                "message": "Queue this notification for digest delivery",
+                "priority": "normal",
+                "scope": "system",
+                "target_user_id": student_register.json()["id"],
+            },
+            headers=admin_headers,
+        )
+        assert created.status_code == 201, created.text
+        body = created.json()
+        assert body["delivery_summary"]["email"]["pending_count"] == 1
+        assert len(fake_db.communication_digests.items) == 1
+
+        fake_db.communication_digests.items[0]["scheduled_for"] = datetime.now(timezone.utc) - timedelta(minutes=1)
+
+        processed = client.post("/api/v1/admin/communication/digests/process?limit=25", headers=admin_headers)
+        assert processed.status_code == 200, processed.text
+        assert processed.json()["processed_count"] == 1
+
+        digest_row = fake_db.communication_digests.items[0]
+        assert digest_row["status"] == "sent"
+
+        delivery_details = client.get(
+            f"/api/v1/admin/communication/delivery/notifications/{created.json()['id']}",
+            headers=admin_headers,
+        )
+        assert delivery_details.status_code == 200, delivery_details.text
+        delivery_body = delivery_details.json()
+        assert delivery_body["summary"]["email"]["sent_count"] == 1
+        assert any(
+            item["channel"] == "email"
+            and item["status"] == "sent"
+            and item["metadata"].get("digest_frequency") == "daily_digest"
+            for item in delivery_body["items"]
+        )
+    finally:
+        communication_digests_service.send_outbound_email_batch = original_send_email_batch
+
+
+def test_admin_delivery_report_and_exports_include_digest_metadata() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_delivery_report@example.com")
+
+    notification_id = ObjectId()
+    other_notification_id = ObjectId()
+    fake_db.notifications.items.append(
+        {
+            "_id": notification_id,
+            "public_id": "NTF-REPORT-001",
+            "title": "Digest-ready Notification",
+            "message": "Delivery metadata report",
+            "scope": "system",
+            "created_by": "creator-1",
+            "created_at": datetime.now(timezone.utc),
+            "is_read": False,
+        }
+    )
+    fake_db.notifications.items.append(
+        {
+            "_id": other_notification_id,
+            "public_id": "NTF-REPORT-002",
+            "title": "Other Notification",
+            "message": "Other scope row",
+            "scope": "ai",
+            "created_by": "creator-2",
+            "created_at": datetime.now(timezone.utc),
+            "is_read": False,
+        }
+    )
+    fake_db.communication_deliveries.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-REPORT-001",
+                "target_user_id": "user-1",
+                "target_email": "user1@example.com",
+                "channel": "email",
+                "status": "pending",
+                "updated_at": datetime.now(timezone.utc),
+                "metadata": {"digest_frequency": "daily_digest", "delivery_mode": "daily_digest"},
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-REPORT-001",
+                "target_user_id": "user-1",
+                "channel": "in_app",
+                "status": "sent",
+                "sent_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "metadata": {"scope": "system"},
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(other_notification_id),
+                "source_public_id": "NTF-REPORT-002",
+                "target_user_id": "user-2",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": datetime.now(timezone.utc),
+                "metadata": {"scope": "ai"},
+            },
+        ]
+    )
+    fake_db.communication_digests.items.append(
+        {
+            "_id": ObjectId(),
+            "source_kind": "notification",
+            "source_id": str(notification_id),
+            "digest_frequency": "daily_digest",
+            "status": "queued",
+            "scheduled_for": datetime.now(timezone.utc) + timedelta(hours=1),
+        }
+    )
+
+    report = client.get(
+        "/api/v1/admin/communication/delivery/report?days=30&source_kind=notification&scope=system&status=pending&created_by=creator-1",
+        headers=admin_headers,
+    )
+    assert report.status_code == 200, report.text
+    report_body = report.json()
+    assert report_body["total_rows"] == 1
+    assert report_body["total_sources"] == 1
+    assert report_body["by_channel"]["email"] == 1
+    assert report_body["by_scope"]["system"] == 1
+    assert report_body["digest"]["queued_total"] == 1
+    assert report_body["digest"]["daily_total"] == 1
+    assert report_body["creator_rows"][0]["key"] == "creator-1"
+    assert report_body["creator_rows"][0]["failed_rate_pct"] == 0
+    assert report_body["scope_rows"][0]["key"] == "system"
+    assert report_body["email_health"]["total_rows"] == 1
+    assert report_body["email_health"]["pending_count"] == 1
+    assert report_body["email_health"]["delivered_rate_pct"] == 0
+
+    export_response = client.get(
+        f"/api/v1/admin/communication/delivery/notifications/{notification_id}/export",
+        headers=admin_headers,
+    )
+    assert export_response.status_code == 200, export_response.text
+    assert "text/csv" in export_response.headers["content-type"]
+    assert "metadata" in export_response.text
+    assert "daily_digest" in export_response.text
+    assert "source_created_by" in export_response.text
+    assert "source_scope" in export_response.text
+
+    report_export = client.get(
+        "/api/v1/admin/communication/delivery/report/export?days=30&source_kind=notification&scope=system&status=pending&created_by=creator-1",
+        headers=admin_headers,
+    )
+    assert report_export.status_code == 200, report_export.text
+    assert "daily_digest" in report_export.text
+    assert "creator-1" in report_export.text
+    assert "system" in report_export.text
+    assert "NTF-REPORT-002" not in report_export.text
+    assert "Digest-ready Notification" in report_export.text
+
+    creator_export = client.get(
+        "/api/v1/admin/communication/delivery/report/export?days=30&source_kind=notification&scope=system&view=creator_summary",
+        headers=admin_headers,
+    )
+    assert creator_export.status_code == 200, creator_export.text
+    assert "failed_rate_pct" in creator_export.text
+    assert "creator-1" in creator_export.text
+
+    scope_export = client.get(
+        "/api/v1/admin/communication/delivery/report/export?days=30&source_kind=notification&view=scope_summary",
+        headers=admin_headers,
+    )
+    assert scope_export.status_code == 200, scope_export.text
+    assert "label" in scope_export.text
+    assert "System" in scope_export.text
+
+    email_health_export = client.get(
+        "/api/v1/admin/communication/delivery/report/export?days=30&source_kind=notification&view=email_health",
+        headers=admin_headers,
+    )
+    assert email_health_export.status_code == 200, email_health_export.text
+    assert "attention_rate_pct" in email_health_export.text
+    assert "queued_total" in email_health_export.text
+
+
+def test_admin_delivery_report_trends_respect_saved_view_filters() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_delivery_trends@example.com")
+
+    now = datetime.now(timezone.utc)
+    notification_id = ObjectId()
+    other_notification_id = ObjectId()
+    fake_db.notifications.items.extend(
+        [
+            {
+                "_id": notification_id,
+                "public_id": "NTF-TREND-001",
+                "title": "System Trend Notification",
+                "message": "Trend target",
+                "scope": "system",
+                "created_by": "creator-trend",
+                "created_at": now - timedelta(days=1),
+                "is_read": False,
+            },
+            {
+                "_id": other_notification_id,
+                "public_id": "NTF-TREND-002",
+                "title": "AI Trend Notification",
+                "message": "Should be filtered out",
+                "scope": "ai",
+                "created_by": "creator-other",
+                "created_at": now - timedelta(days=1),
+                "is_read": False,
+            },
+        ]
+    )
+    fake_db.communication_deliveries.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-TREND-001",
+                "target_user_id": "user-1",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now - timedelta(days=1),
+                "metadata": {"scope": "system"},
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-TREND-001",
+                "target_user_id": "user-2",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now,
+                "metadata": {"scope": "system"},
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(other_notification_id),
+                "source_public_id": "NTF-TREND-002",
+                "target_user_id": "user-3",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now,
+                "metadata": {"scope": "ai"},
+            },
+        ]
+    )
+
+    response = client.get(
+        "/api/v1/admin/communication/delivery/report/trends?days=3&source_kind=notification&scope=system&status=failed&created_by=creator-trend",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["granularity"] == "day"
+    assert body["days"] == 3
+    assert len(body["points"]) == 3
+    assert sum(point["failed_count"] for point in body["points"]) == 2
+    assert sum(point["total_count"] for point in body["points"]) == 2
+    assert all(point["skipped_count"] == 0 for point in body["points"])
+
+
+def test_admin_delivery_report_includes_creator_and_scope_comparisons() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_delivery_compare@example.com")
+
+    now = datetime.now(timezone.utc)
+    notification_ids = [ObjectId(), ObjectId(), ObjectId()]
+    fake_db.notifications.items.extend(
+        [
+            {
+                "_id": notification_ids[0],
+                "public_id": "NTF-COMP-001",
+                "title": "Creator One System",
+                "message": "compare",
+                "scope": "system",
+                "created_by": "creator-one",
+                "created_at": now,
+                "is_read": False,
+            },
+            {
+                "_id": notification_ids[1],
+                "public_id": "NTF-COMP-002",
+                "title": "Creator One AI",
+                "message": "compare",
+                "scope": "ai",
+                "created_by": "creator-one",
+                "created_at": now,
+                "is_read": False,
+            },
+            {
+                "_id": notification_ids[2],
+                "public_id": "NTF-COMP-003",
+                "title": "Creator Two System",
+                "message": "compare",
+                "scope": "system",
+                "created_by": "creator-two",
+                "created_at": now,
+                "is_read": False,
+            },
+        ]
+    )
+    fake_db.communication_deliveries.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_ids[0]),
+                "source_public_id": "NTF-COMP-001",
+                "target_user_id": "user-1",
+                "channel": "email",
+                "status": "sent",
+                "updated_at": now,
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_ids[0]),
+                "source_public_id": "NTF-COMP-001",
+                "target_user_id": "user-2",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now,
+                "error": "Mailbox unavailable",
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_ids[1]),
+                "source_public_id": "NTF-COMP-002",
+                "target_user_id": "user-3",
+                "channel": "email",
+                "status": "pending",
+                "updated_at": now,
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_ids[2]),
+                "source_public_id": "NTF-COMP-003",
+                "target_user_id": "user-4",
+                "channel": "email",
+                "status": "skipped",
+                "updated_at": now,
+                "error": "Recipient disabled email notifications for system scope",
+            },
+        ]
+    )
+
+    response = client.get(
+        "/api/v1/admin/communication/delivery/report?days=7&source_kind=notification",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    creator_rows = {item["key"]: item for item in body["creator_rows"]}
+    scope_rows = {item["key"]: item for item in body["scope_rows"]}
+
+    assert creator_rows["creator-one"]["total_count"] == 3
+    assert creator_rows["creator-one"]["failed_count"] == 1
+    assert creator_rows["creator-one"]["pending_count"] == 1
+    assert creator_rows["creator-one"]["failed_rate_pct"] == round((1 / 3) * 100, 2)
+    assert creator_rows["creator-two"]["skipped_count"] == 1
+    assert scope_rows["system"]["total_count"] == 3
+    assert scope_rows["ai"]["pending_count"] == 1
+    assert body["email_health"]["top_errors"][0]["count"] == 1
+    assert body["email_health"]["retry_candidate_count"] == 2
+
+
+def test_admin_delivery_report_anomalies_detect_failure_spike_and_pending_buildup() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_delivery_anomalies@example.com")
+
+    now = datetime.now(timezone.utc)
+    notification_id = ObjectId()
+    fake_db.notifications.items.append(
+        {
+            "_id": notification_id,
+            "public_id": "NTF-ANOM-001",
+            "title": "Anomaly Notification",
+            "message": "Anomaly target",
+            "scope": "system",
+            "created_by": "creator-anomaly",
+            "created_at": now - timedelta(days=2),
+            "is_read": False,
+        }
+    )
+    fake_db.communication_deliveries.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-1",
+                "channel": "email",
+                "status": "pending",
+                "updated_at": now - timedelta(days=2),
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-2",
+                "channel": "email",
+                "status": "pending",
+                "updated_at": now - timedelta(days=1),
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-2b",
+                "channel": "email",
+                "status": "pending",
+                "updated_at": now - timedelta(days=1),
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-3",
+                "channel": "email",
+                "status": "pending",
+                "updated_at": now,
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-4",
+                "channel": "email",
+                "status": "pending",
+                "updated_at": now,
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-5",
+                "channel": "email",
+                "status": "pending",
+                "updated_at": now,
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-6",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now - timedelta(days=2),
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-7",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now,
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-8",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now,
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-9",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now,
+            },
+            {
+                "_id": ObjectId(),
+                "source_kind": "notification",
+                "source_id": str(notification_id),
+                "source_public_id": "NTF-ANOM-001",
+                "target_user_id": "user-10",
+                "channel": "email",
+                "status": "failed",
+                "updated_at": now,
+            },
+        ]
+    )
+
+    response = client.get(
+        "/api/v1/admin/communication/delivery/report/anomalies?days=3&source_kind=notification&scope=system&created_by=creator-anomaly",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    codes = {item["code"] for item in body["alerts"]}
+    assert "delivery.failed_rate_spike" in codes
+    assert "delivery.pending_backlog_rising" in codes
+
+
+def test_admin_can_retry_failed_notice_email_delivery() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    admin_headers = _admin_headers(client, "admin_notice_retry@example.com")
+
+    structure = _seed_canonical_structure(fake_db, suffix="NTRY", start_year=2024, semester_number=2)
+    section = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Notice Retry Section"),
+        headers=admin_headers,
+    )
+    assert section.status_code == 201
+
+    student_register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Retry Student",
+            "email": "student_notice_retry@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert student_register.status_code == 201
+
+    student_doc_id = ObjectId()
+    fake_db.students.items.append(
+        {
+            "_id": student_doc_id,
+            "full_name": "Retry Student",
+            "roll_number": "NTRY-001",
+            "email": "student_notice_retry@example.com",
+            "class_id": section.json()["id"],
+            "is_active": True,
+        }
+    )
+    fake_db.enrollments.items.append(
+        {"_id": ObjectId(), "student_id": str(student_doc_id), "class_id": section.json()["id"]}
+    )
+
+    async def failing_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+        _ = (subject, body)
+        return [
+            {
+                "user_id": recipient.get("user_id"),
+                "email": recipient.get("email"),
+                "status": "failed",
+                "error": "SMTP timeout",
+                "sent_at": None,
+            }
+            for recipient in recipients
+        ]
+
+    async def successful_send_email_batch(*, subject: str, body: str, recipients: list[dict]) -> list[dict]:
+        _ = (subject, body)
+        return [
+            {
+                "user_id": recipient.get("user_id"),
+                "email": recipient.get("email"),
+                "status": "sent",
+                "error": None,
+                "sent_at": datetime.now(timezone.utc),
+            }
+            for recipient in recipients
+        ]
+
+    original_notice_send = background_jobs_service.send_outbound_email_batch
+    original_retry_send = communication_delivery_retry_service.send_outbound_email_batch
+    background_jobs_service.send_outbound_email_batch = failing_send_email_batch
+    communication_delivery_retry_service.send_outbound_email_batch = successful_send_email_batch
+    try:
+        created = client.post(
+            "/api/v1/notices/",
+            json={
+                "title": "Retryable Notice",
+                "message": "Initial email delivery fails",
+                "priority": "normal",
+                "scope": "class",
+                "scope_ref_id": section.json()["id"],
+            },
+            headers=admin_headers,
+        )
+        assert created.status_code == 201, created.text
+
+        asyncio.run(background_jobs_service.fanout_notice_notifications(created.json()["id"]))
+
+        before_retry = client.get(
+            f"/api/v1/admin/communication/delivery/notices/{created.json()['id']}",
+            headers=admin_headers,
+        )
+        assert before_retry.status_code == 200, before_retry.text
+        assert before_retry.json()["summary"]["email"]["failed_count"] == 1
+
+        retried = client.post(
+            f"/api/v1/admin/communication/delivery/notices/{created.json()['id']}/retry-email",
+            json={"include_skipped": True},
+            headers=admin_headers,
+        )
+        assert retried.status_code == 200, retried.text
+        body = retried.json()
+        assert body["retried_count"] == 1
+        assert body["details"]["summary"]["email"]["sent_count"] == 1
+        assert body["details"]["summary"]["email"]["failed_count"] == 0
+
+        email_rows = [
+            row
+            for row in fake_db.communication_deliveries.items
+            if row.get("source_kind") == "notice" and row.get("channel") == "email"
+        ]
+        assert len(email_rows) == 1
+        assert email_rows[0]["status"] == "sent"
+    finally:
+        background_jobs_service.send_outbound_email_batch = original_notice_send
+        communication_delivery_retry_service.send_outbound_email_batch = original_retry_send
 
 
 def test_analytics_summary_returns_counts() -> None:
@@ -967,6 +2137,54 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
                 },
             ]
         )
+        fake_db.notices.items.extend(
+            [
+                {
+                    "_id": ObjectId(),
+                    "title": "Due Scheduled Notice",
+                    "is_active": True,
+                    "scheduled_at": now - timedelta(minutes=12),
+                    "fanout_status": "scheduled",
+                    "fanout_attempts": 0,
+                    "fanout_dispatched_at": None,
+                    "fanout_next_retry_at": None,
+                    "fanout_processing_expires_at": None,
+                },
+                {
+                    "_id": ObjectId(),
+                    "title": "Retry Pending Notice",
+                    "is_active": True,
+                    "scheduled_at": now - timedelta(minutes=15),
+                    "fanout_status": "retry_scheduled",
+                    "fanout_attempts": 1,
+                    "fanout_dispatched_at": None,
+                    "fanout_next_retry_at": now + timedelta(minutes=5),
+                    "fanout_processing_expires_at": None,
+                },
+                {
+                    "_id": ObjectId(),
+                    "title": "In Progress Notice",
+                    "is_active": True,
+                    "scheduled_at": now - timedelta(minutes=8),
+                    "fanout_status": "dispatching",
+                    "fanout_attempts": 1,
+                    "fanout_dispatched_at": None,
+                    "fanout_next_retry_at": None,
+                    "fanout_processing_expires_at": now + timedelta(minutes=2),
+                },
+                {
+                    "_id": ObjectId(),
+                    "title": "Terminal Failed Notice",
+                    "is_active": True,
+                    "scheduled_at": now - timedelta(minutes=20),
+                    "fanout_status": "failed",
+                    "fanout_attempts": 3,
+                    "fanout_dispatched_at": None,
+                    "fanout_next_retry_at": None,
+                    "fanout_processing_expires_at": None,
+                },
+            ]
+        )
 
         response = client.get("/api/v1/admin/system/health", headers=headers)
         assert response.status_code == 200
@@ -981,6 +2199,12 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
         assert any(alert["code"] == "ai.fallback_rate_critical" for alert in body["alerts"])
         assert any(alert["code"] == "similarity.high_candidate_count" for alert in body["alerts"])
         assert body["scheduler_lock"]["owner_id"] is None
+        assert body["scheduled_notice_dispatch"]["pending_total"] == 4
+        assert body["scheduled_notice_dispatch"]["due_now_total"] == 1
+        assert body["scheduled_notice_dispatch"]["retry_pending_total"] == 1
+        assert body["scheduled_notice_dispatch"]["in_progress_total"] == 1
+        assert body["scheduled_notice_dispatch"]["terminal_failed_total"] == 1
+        assert body["scheduled_notice_dispatch"]["oldest_due_age_seconds"] >= 720
         assert body["observability"]["request_metrics"]["requests_15m"] >= 4
         assert body["observability"]["request_metrics"]["slow_requests_15m"] >= 3
         assert body["observability"]["request_metrics"]["top_paths_15m"][0]["path"] == "/api/v1/test/failing-endpoint"
@@ -1002,14 +2226,26 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
         assert body["snapshot_history"][0]["retained_rows"] == 1
         assert body["snapshot_history"][0]["last_pruned_deleted_count"] == 0
         assert body["snapshot_history"][0]["is_within_retention_bound"] is True
+        assert body["clubs_observability"]["summary"]["retention_days"] >= 7
+        assert "hourly_24h" in body["clubs_observability"]
+        assert "daily_14d" in body["clubs_observability"]
+        assert "recent_pressure_windows" in body["clubs_observability"]
         assert body["snapshot_store"]["retained_rows"] == 1
         assert body["snapshot_store"]["is_within_retention_bound"] is True
         assert body["snapshot_store"]["retention_minutes"] >= 60
+        assert body["snapshot_store"]["retention_days"] >= 7
         assert body["snapshot_store"]["last_pruned_deleted_count"] == 0
         assert body["alert_routing"]["enabled"] is True
         assert body["alert_routing"]["target_user_count"] == 1
+        assert body["alert_routing"]["active_alert_count"] >= 1
         assert body["alert_routing"]["notifications_created"] >= 1
         assert "http.high_server_error_rate" in body["alert_routing"]["routed_alert_codes"]
+        assert len(body["alert_route_history"]) >= 1
+        high_error_route = next((row for row in body["alert_route_history"] if row["alert_code"] == "http.high_server_error_rate"), None)
+        assert high_error_route is not None
+        assert high_error_route["routed_count"] >= 1
+        assert high_error_route["notifications_sent_total"] >= 1
+        assert any(entry["action"] == "routed" for entry in high_error_route["history"])
         assert len(fake_db.notifications.items) >= 1
         assert all(item["scope"] == "system" for item in fake_db.notifications.items)
         notification_count_after_first_call = len(fake_db.notifications.items)
@@ -1027,6 +2263,11 @@ def test_admin_system_health_includes_observability_metrics_and_alerts() -> None
         third_body = third.json()
         assert third_body["snapshot_served_from"] == "live"
         assert third_body["alert_routing"]["notifications_created"] == 0
+        assert len(third_body["alert_route_history"]) >= 1
+        third_high_error_route = next((row for row in third_body["alert_route_history"] if row["alert_code"] == "http.high_server_error_rate"), None)
+        assert third_high_error_route is not None
+        assert third_high_error_route["cooldown_suppressed_count"] >= 1
+        assert third_high_error_route["last_routing_outcome"] == "cooldown_suppressed"
         assert len(fake_db.notifications.items) == notification_count_after_first_call
         assert fake_db.scheduler_locks.items == []
     finally:
@@ -1069,6 +2310,27 @@ def test_admin_system_health_normalizes_naive_scheduler_lock_datetimes() -> None
     finally:
         app_scheduler._enabled, app_scheduler._running, app_scheduler._is_leader = original_scheduler_state
         observability_state.reset()
+
+
+def test_clubs_observability_history_normalizes_naive_snapshot_datetimes() -> None:
+    fake_db = _setup_fake_db()
+    naive_recorded_at = (datetime.now(timezone.utc) - timedelta(minutes=10)).replace(tzinfo=None)
+    fake_db.system_health_snapshots.items.append(
+        {
+            "_id": ObjectId(),
+            "bucket_minute": "2026-04-07T09:00:00+00:00",
+            "recorded_at": naive_recorded_at,
+            "club_requests_15m": 4,
+            "club_p95_duration_ms_15m": 1800,
+            "club_slow_requests_15m": 1,
+            "club_server_errors_15m": 0,
+        }
+    )
+
+    history = asyncio.run(snapshot_service.get_clubs_observability_history(database=fake_db))
+
+    assert history["summary"]["hourly_windows_24h"] >= 1
+    assert history["hourly_24h"][0]["club_requests_peak"] == 4
 
 
 def test_system_health_snapshot_pruning_keeps_store_bounded() -> None:
@@ -1130,6 +2392,76 @@ def test_system_health_snapshot_pruning_keeps_store_bounded() -> None:
         assert latest_snapshot["is_within_retention_bound"] is True
     finally:
         snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES = original_retention
+        snapshot_service._last_pruned_bucket = original_last_pruned_bucket
+        snapshot_service._last_pruned_at = original_last_pruned_at
+        snapshot_service._last_pruned_deleted_count = original_last_pruned_deleted_count
+
+
+def test_system_health_snapshot_builds_long_horizon_club_observability() -> None:
+    fake_db = _setup_fake_db()
+    original_retention = snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES
+    original_retention_days = snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_DAYS
+    original_last_pruned_bucket = snapshot_service._last_pruned_bucket
+    original_last_pruned_at = snapshot_service._last_pruned_at
+    original_last_pruned_deleted_count = snapshot_service._last_pruned_deleted_count
+    try:
+        snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_DAYS = 14
+        snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES = 14 * 24 * 60
+        snapshot_service._last_pruned_bucket = None
+        snapshot_service._last_pruned_at = None
+        snapshot_service._last_pruned_deleted_count = 0
+        base_time = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(days=6)
+
+        for day_offset in range(7):
+            for hour_offset in (0, 8, 16):
+                timestamp = base_time + timedelta(days=day_offset, hours=hour_offset)
+                requests = 8 + day_offset if day_offset >= 4 else 2 + day_offset
+                p95 = 2400 if day_offset >= 5 else 700
+                slow = 4 if day_offset >= 5 else 0
+                errors = 1 if day_offset == 6 and hour_offset == 16 else 0
+                asyncio.run(
+                    snapshot_service.persist_system_health_snapshot(
+                        payload={
+                            "timestamp": timestamp,
+                            "db_status": "ok",
+                            "alert_count": 0,
+                            "observability": {
+                                "request_metrics": {
+                                    "requests_15m": requests + 3,
+                                    "server_error_rate_pct_15m": 0.0,
+                                    "p95_duration_ms_15m": 400,
+                                },
+                                "clubs_metrics": {
+                                    "requests_15m": requests,
+                                    "slow_requests_15m": slow,
+                                    "server_errors_15m": errors,
+                                    "p95_duration_ms_15m": p95,
+                                },
+                                "ai_metrics": {
+                                    "queued_jobs": 0,
+                                    "running_jobs": 0,
+                                    "failed_jobs": 0,
+                                    "oldest_queued_age_seconds": 0,
+                                    "fallback_rate_pct_15m": 0.0,
+                                    "last_similarity_candidate_count": 0,
+                                },
+                            },
+                        },
+                        database=fake_db,
+                    )
+                )
+
+        history = asyncio.run(snapshot_service.get_clubs_observability_history(database=fake_db))
+        assert history["summary"]["retention_days"] == 14
+        assert len(history["hourly_24h"]) >= 1
+        assert len(history["daily_14d"]) >= 7
+        assert history["summary"]["pressure_days_14d"] >= 1
+        assert history["summary"]["latest_pressure_level"] in {"warning", "critical"}
+        assert any(point["pressure_level"] in {"warning", "critical"} for point in history["daily_14d"])
+        assert history["recent_pressure_windows"]
+    finally:
+        snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_MINUTES = original_retention
+        snapshot_service.SYSTEM_HEALTH_SNAPSHOT_RETENTION_DAYS = original_retention_days
         snapshot_service._last_pruned_bucket = original_last_pruned_bucket
         snapshot_service._last_pruned_at = original_last_pruned_at
         snapshot_service._last_pruned_deleted_count = original_last_pruned_deleted_count
@@ -1225,6 +2557,90 @@ def test_admin_analytics_bootstrap_uses_snapshot_after_first_live_compute() -> N
     assert refreshed_body["snapshot_served_from"] == "live"
     assert refreshed_body["snapshot_age_hours"] == 0
     assert len(fake_db.analytics_snapshots.items) == 1
+
+
+def test_admin_dashboard_and_summary_use_persisted_analytics_snapshot() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_dashboard_snapshot@example.com")
+    now = datetime.now(timezone.utc)
+
+    fake_db.users.items.extend(
+        [
+            {"_id": ObjectId(), "email": "alpha@example.com"},
+            {"_id": ObjectId(), "email": "beta@example.com"},
+        ]
+    )
+    fake_db.students.items.extend(
+        [
+            {"_id": ObjectId(), "email": "student1@example.com", "is_active": True},
+            {"_id": ObjectId(), "email": "student2@example.com", "is_active": False},
+        ]
+    )
+    fake_db.programs.items.append({"_id": ObjectId(), "name": "Program One"})
+    fake_db.batches.items.append({"_id": ObjectId(), "name": "Batch One"})
+    fake_db.semesters.items.append({"_id": ObjectId(), "label": "Semester 1"})
+    fake_db.classes.items.append({"_id": ObjectId(), "name": "Section A"})
+    fake_db.subjects.items.append({"_id": ObjectId(), "name": "Algorithms"})
+    fake_db.assignments.items.extend([{"_id": ObjectId()}, {"_id": ObjectId()}])
+    fake_db.submissions.items.append({"_id": ObjectId()})
+    fake_db.evaluations.items.append({"_id": ObjectId()})
+    fake_db.similarity_logs.items.append({"_id": ObjectId(), "is_flagged": True})
+    fake_db.notices.items.append(
+        {
+            "_id": ObjectId(),
+            "title": "Urgent Notice",
+            "priority": "urgent",
+            "is_active": True,
+            "created_at": now - timedelta(minutes=5),
+            "scheduled_at": now - timedelta(minutes=10),
+            "author_user_id": None,
+            "target_roles": ["admin"],
+            "read_by": [],
+        }
+    )
+    fake_db.clubs.items.append({"_id": ObjectId(), "status": "active"})
+    fake_db.club_members.items.append({"_id": ObjectId(), "status": "active"})
+    fake_db.club_events.items.append({"_id": ObjectId(), "event_date": now + timedelta(days=2)})
+    fake_db.event_registrations.items.append({"_id": ObjectId(), "status": "registered"})
+    fake_db.review_tickets.items.append({"_id": ObjectId(), "status": "pending"})
+    fake_db.audit_logs.items.append(
+        {
+            "_id": ObjectId(),
+            "action_type": "login",
+            "actor_user_id": "user-1",
+            "created_at": now - timedelta(hours=1),
+        }
+    )
+
+    first_dashboard = client.get("/api/v1/analytics/dashboard", headers=headers)
+    assert first_dashboard.status_code == 200, first_dashboard.text
+    first_body = first_dashboard.json()
+    assert first_body["snapshot_served_from"] == "live"
+    assert first_body["summary"]["users"] == 3
+    assert first_body["summary"]["students"] == 2
+    assert first_body["summary"]["programs"] == 1
+    assert first_body["summary"]["assignments"] == 2
+    assert first_body["summary"]["similarity_flags"] == 1
+    assert len(first_body["urgent_notices"]) == 1
+    assert len(fake_db.analytics_snapshots.items) == 1
+
+    second_dashboard = client.get("/api/v1/analytics/dashboard", headers=headers)
+    assert second_dashboard.status_code == 200
+    second_body = second_dashboard.json()
+    assert second_body["snapshot_served_from"] == "snapshot"
+    assert second_body["summary"]["users"] == 3
+    assert second_body["summary"]["students"] == 2
+    assert len(fake_db.analytics_snapshots.items) == 1
+
+    summary = client.get("/api/v1/analytics/summary", headers=headers)
+    assert summary.status_code == 200, summary.text
+    summary_body = summary.json()
+    assert summary_body["snapshot_served_from"] == "snapshot"
+    assert summary_body["summary"]["users"] == 3
+    assert summary_body["summary"]["students"] == 2
+    assert summary_body["summary"]["classes"] == 1
+    assert summary_body["summary"]["club_events"] == 1
 
 
 def test_section_read_model_materializes_and_refreshes_after_semester_and_coordinator_updates() -> None:
@@ -1354,4 +2770,130 @@ def test_batch_and_semester_read_models_refresh_after_program_and_batch_updates(
     assert semester_after_batch.json()["batch_name"] == "Batch BRM2 Custom Updated"
     assert fake_db.batch_read_models.items[0]["program_name"] == "Program BRM2 Updated"
     assert any(item["batch_name"] == "Batch BRM2 Custom Updated" for item in fake_db.semester_read_models.items)
+
+
+def test_course_offering_and_class_slot_read_models_refresh_after_subject_section_and_group_updates() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_delivery_read_model@example.com")
+
+    teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Delivery Teacher",
+            "email": "delivery_teacher@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert teacher.status_code == 201
+    teacher_id = teacher.json()["id"]
+
+    structure = _seed_canonical_structure(fake_db, suffix="DLV1", semester_number=2)
+    section = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(structure, name="Delivery Section"),
+        headers=admin_headers,
+    )
+    assert section.status_code == 201, section.text
+    section_id = section.json()["id"]
+
+    group = client.post(
+        "/api/v1/groups/",
+        json={
+            "section_id": section_id,
+            "name": "Group Alpha",
+            "code": "GA",
+            "description": "Alpha group",
+        },
+        headers=admin_headers,
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    subject = client.post(
+        "/api/v1/subjects/",
+        json={"name": "Distributed Systems", "code": "DS-DLV1", "description": "DS"},
+        headers=admin_headers,
+    )
+    assert subject.status_code == 201, subject.text
+    subject_id = subject.json()["id"]
+
+    offering = client.post(
+        "/api/v1/course-offerings/",
+        json={
+            "subject_id": subject_id,
+            "teacher_user_id": teacher_id,
+            "batch_id": structure["batch_id"],
+            "semester_id": structure["semester_id"],
+            "section_id": section_id,
+            "group_id": group_id,
+            "academic_year": "2025-26",
+            "offering_type": "theory",
+        },
+        headers=admin_headers,
+    )
+    assert offering.status_code == 201, offering.text
+    offering_id = offering.json()["id"]
+
+    slot = client.post(
+        "/api/v1/class-slots/",
+        json={
+            "course_offering_id": offering_id,
+            "day": "Monday",
+            "start_time": "09:00",
+            "end_time": "10:00",
+            "room_code": "LAB-1",
+        },
+        headers=admin_headers,
+    )
+    assert slot.status_code == 201, slot.text
+
+    offerings_before = client.get(f"/api/v1/course-offerings/?section_id={section_id}", headers=admin_headers)
+    assert offerings_before.status_code == 200, offerings_before.text
+    assert offerings_before.json()[0]["subject_name"] == "Distributed Systems"
+    assert offerings_before.json()[0]["section_name"] == "Delivery Section"
+    assert offerings_before.json()[0]["group_name"] == "Group Alpha"
+
+    slots_before = client.get(f"/api/v1/class-slots/?section_id={section_id}", headers=admin_headers)
+    assert slots_before.status_code == 200, slots_before.text
+    assert slots_before.json()[0]["subject_name"] == "Distributed Systems"
+    assert slots_before.json()[0]["section_name"] == "Delivery Section"
+    assert slots_before.json()[0]["group_name"] == "Group Alpha"
+    assert slots_before.json()[0]["semester_label"] == "Semester 2"
+
+    update_subject = client.put(
+        f"/api/v1/subjects/{subject_id}",
+        json={"name": "Distributed Systems Updated"},
+        headers=admin_headers,
+    )
+    assert update_subject.status_code == 200, update_subject.text
+
+    update_section = client.put(
+        f"/api/v1/sections/{section_id}",
+        json={"name": "Delivery Section Updated"},
+        headers=admin_headers,
+    )
+    assert update_section.status_code == 200, update_section.text
+
+    update_group = client.put(
+        f"/api/v1/groups/{group_id}",
+        json={"name": "Group Alpha Updated"},
+        headers=admin_headers,
+    )
+    assert update_group.status_code == 200, update_group.text
+
+    offerings_after = client.get(f"/api/v1/course-offerings/?section_id={section_id}", headers=admin_headers)
+    assert offerings_after.status_code == 200
+    assert offerings_after.json()[0]["subject_name"] == "Distributed Systems Updated"
+    assert offerings_after.json()[0]["section_name"] == "Delivery Section Updated"
+    assert offerings_after.json()[0]["group_name"] == "Group Alpha Updated"
+
+    slots_after = client.get(f"/api/v1/class-slots/?section_id={section_id}", headers=admin_headers)
+    assert slots_after.status_code == 200
+    assert slots_after.json()[0]["subject_name"] == "Distributed Systems Updated"
+    assert slots_after.json()[0]["section_name"] == "Delivery Section Updated"
+    assert slots_after.json()[0]["group_name"] == "Group Alpha Updated"
+    assert len(fake_db.course_offering_read_models.items) == 1
+    assert len(fake_db.class_slot_read_models.items) == 1
 

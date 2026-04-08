@@ -60,6 +60,28 @@ Local URLs:
 - Health: `http://localhost:8000/health`
 - Frontend: `http://localhost:5173`
 
+## Outbound Email
+
+Communication delivery can now send email as well as in-app notifications.
+
+Backend email settings:
+- `OUTBOUND_EMAIL_ENABLED`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_USE_TLS`
+- `SMTP_USE_SSL`
+- `OUTBOUND_EMAIL_FROM`
+- `OUTBOUND_EMAIL_FROM_NAME`
+- `OUTBOUND_EMAIL_REPLY_TO`
+
+Rollout notes:
+- Keep `OUTBOUND_EMAIL_ENABLED=false` in local development unless you are intentionally testing SMTP.
+- Set `OUTBOUND_EMAIL_ENABLED=true` in production only after valid SMTP credentials are in place.
+- Keep `SCHEDULER_ENABLED=true` in production so scheduled notice delivery continues to dispatch automatically.
+- Notices and notifications will record `sent`, `failed`, and `skipped` email outcomes in the communication delivery ledger.
+
 ## Docker
 
 ```bash

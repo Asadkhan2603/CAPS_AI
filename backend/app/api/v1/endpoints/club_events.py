@@ -10,25 +10,28 @@ from app.core.security import require_roles
 from app.models.club_events import club_event_public
 from app.schemas.club_event import ClubEventCreate, ClubEventOut, ClubEventUpdate
 from app.services.audit import log_audit_event
+from app.services.club_permissions import can_manage_club_event
 from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
 
-
-def _is_admin(current_user: dict) -> bool:
-    return current_user.get("role") == "admin"
-
-
 def _can_manage_event(current_user: dict, club: dict) -> bool:
-    if _is_admin(current_user):
-        return True
-    if current_user.get("role") == "teacher":
-        if club.get("coordinator_user_id") == str(current_user.get("_id")):
-            return True
-        return "club_coordinator" in (current_user.get("extended_roles") or [])
-    if current_user.get("role") == "student":
-        return club.get("president_user_id") == str(current_user.get("_id"))
-    return False
+    return can_manage_club_event(current_user, club)
+
+
+async def _student_accessible_club_ids(student_user_id: str) -> list[str]:
+    member_docs = await db.club_members.find(
+        {"student_user_id": student_user_id, "status": "active"},
+        {"club_id": 1},
+    ).to_list(length=1000)
+    member_club_ids = {str(item.get("club_id")) for item in member_docs if item.get("club_id")}
+
+    president_docs = await db.clubs.find(
+        {"president_user_id": student_user_id},
+        {"_id": 1},
+    ).to_list(length=1000)
+    president_club_ids = {str(item.get("_id")) for item in president_docs if item.get("_id")}
+    return list(member_club_ids | president_club_ids)
 
 
 @router.get("/", response_model=List[ClubEventOut])
@@ -37,13 +40,18 @@ async def list_club_events(
     status_filter: str | None = Query(default=None, alias="status"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    _current_user=Depends(require_roles(["admin", "teacher", "student"])),
+    current_user=Depends(require_roles(["admin", "teacher", "student"])),
 ) -> List[ClubEventOut]:
     query = {"is_deleted": {"$in": [False, None]}}
     if club_id:
         query["club_id"] = club_id
     if status_filter:
         query["status"] = status_filter
+    if current_user.get("role") == "student":
+        accessible_club_ids = await _student_accessible_club_ids(str(current_user.get("_id")))
+        query["$or"] = [{"visibility": "public"}]
+        if accessible_club_ids:
+            query["$or"].append({"club_id": {"$in": accessible_club_ids}})
     items = await (
         db.club_events.find(query)
         .sort("created_at", -1)
@@ -174,6 +182,15 @@ async def update_club_event(
         {"$set": {**update_data, "schema_version": CLUB_EVENT_SCHEMA_VERSION}},
     )
     updated = await db.club_events.find_one({"_id": event_obj_id})
+    await log_audit_event(
+        actor_user_id=str(current_user["_id"]),
+        action="update_event",
+        entity_type="club_event",
+        entity_id=event_id,
+        detail="Updated club event",
+        old_value={key: event.get(key) for key in update_data.keys()},
+        new_value=update_data,
+    )
     return ClubEventOut(**club_event_public(updated))
 
 

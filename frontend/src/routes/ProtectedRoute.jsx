@@ -1,6 +1,8 @@
-import { Navigate } from 'react-router-dom';
+import React from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import PageLoader from '../components/ui/PageLoader';
+import AccessDeniedState from '../components/ui/AccessDeniedState';
 import { canAccessFeature } from '../utils/permissions';
 
 export default function ProtectedRoute({
@@ -10,6 +12,7 @@ export default function ProtectedRoute({
   requiredAdminTypes = null
 }) {
   const { isAuthenticated, checking, user } = useAuth();
+  const location = useLocation();
 
   if (checking) {
     return <PageLoader label="Checking session..." />;
@@ -26,7 +29,15 @@ export default function ProtectedRoute({
   });
 
   if (!hasAccess) {
-    return <Navigate to="/dashboard" replace />;
+    return (
+      <AccessDeniedState
+        user={user}
+        pathname={location.pathname}
+        allowedRoles={allowedRoles || []}
+        requiredTeacherExtensions={requiredTeacherExtensions || []}
+        requiredAdminTypes={requiredAdminTypes || []}
+      />
+    );
   }
 
   return children;

@@ -48,16 +48,24 @@ export default function ClassesPage() {
     class_coordinator_user_id: ''
   });
 
-  const facultyNameById = useMemo(() => Object.fromEntries(faculties.map((item) => [item.id, item.name])), [faculties]);
-  const departmentNameById = useMemo(() => Object.fromEntries(departments.map((item) => [item.id, item.name])), [departments]);
-  const programNameById = useMemo(() => Object.fromEntries(programs.map((item) => [item.id, item.name])), [programs]);
+  function entityLabel(item, fallbackLabel) {
+    if (!item) return fallbackLabel || '';
+    return item.display_label || (item.public_id ? `${item.name || fallbackLabel || ''} (${item.public_id})` : item.name || fallbackLabel || '');
+  }
+
+  const facultyNameById = useMemo(() => Object.fromEntries(faculties.map((item) => [item.id, entityLabel(item, 'Faculty')])), [faculties]);
+  const departmentNameById = useMemo(() => Object.fromEntries(departments.map((item) => [item.id, entityLabel(item, 'Department')])), [departments]);
+  const programNameById = useMemo(() => Object.fromEntries(programs.map((item) => [item.id, entityLabel(item, 'Program')])), [programs]);
   const specializationNameById = useMemo(
-    () => Object.fromEntries(specializations.map((item) => [item.id, item.name])),
+    () => Object.fromEntries(specializations.map((item) => [item.id, entityLabel(item, 'Specialization')])),
     [specializations]
   );
   const batchById = useMemo(() => Object.fromEntries(batches.map((item) => [item.id, item])), [batches]);
-  const batchNameById = useMemo(() => Object.fromEntries(batches.map((item) => [item.id, item.name])), [batches]);
-  const semesterLabelById = useMemo(() => Object.fromEntries(semesters.map((item) => [item.id, item.label])), [semesters]);
+  const batchNameById = useMemo(() => Object.fromEntries(batches.map((item) => [item.id, entityLabel(item, 'Batch')])), [batches]);
+  const semesterLabelById = useMemo(
+    () => Object.fromEntries(semesters.map((item) => [item.id, item.display_label || item.label || item.public_id || 'Semester'])),
+    [semesters]
+  );
   const teacherNameById = useMemo(() => Object.fromEntries(teachers.map((item) => [item.id, item.full_name])), [teachers]);
 
   const selectedFormBatch = form.batch_id ? batchById[form.batch_id] || null : null;
@@ -193,9 +201,9 @@ export default function ClassesPage() {
       path: '/faculties/',
       q: query,
       params: { is_active: true },
-      mapOption: (item) => ({ value: item.id, label: item.name })
+      mapOption: (item) => ({ value: item.id, label: item.display_label || item.name, ...item })
     });
-    mergeRows(setFaculties, options.map((item) => ({ id: item.value, name: item.label })));
+    mergeRows(setFaculties, options.map((item) => ({ id: item.value, name: item.name || item.label, public_id: item.public_id, display_label: item.display_label })));
     return options;
   }
 
@@ -205,9 +213,9 @@ export default function ClassesPage() {
       path: '/departments/',
       q: query,
       params: { is_active: true, faculty_id: facultyId },
-      mapOption: (item) => ({ value: item.id, label: item.name, faculty_id: item.faculty_id })
+      mapOption: (item) => ({ value: item.id, label: item.display_label || item.name, faculty_id: item.faculty_id, ...item })
     });
-    mergeRows(setDepartments, options.map((item) => ({ id: item.value, name: item.label, faculty_id: item.faculty_id })));
+    mergeRows(setDepartments, options.map((item) => ({ id: item.value, name: item.name || item.label, faculty_id: item.faculty_id, public_id: item.public_id, display_label: item.display_label })));
     return options;
   }
 
@@ -217,9 +225,9 @@ export default function ClassesPage() {
       path: '/programs/',
       q: query,
       params: { is_active: true, department_id: departmentId },
-      mapOption: (item) => ({ value: item.id, label: item.name, department_id: item.department_id })
+      mapOption: (item) => ({ value: item.id, label: item.display_label || item.name, department_id: item.department_id, ...item })
     });
-    mergeRows(setPrograms, options.map((item) => ({ id: item.value, name: item.label, department_id: item.department_id })));
+    mergeRows(setPrograms, options.map((item) => ({ id: item.value, name: item.name || item.label, department_id: item.department_id, public_id: item.public_id, display_label: item.display_label })));
     return options;
   }
 
@@ -229,9 +237,9 @@ export default function ClassesPage() {
       path: '/specializations/',
       q: query,
       params: { is_active: true, program_id: programId },
-      mapOption: (item) => ({ value: item.id, label: item.name, program_id: item.program_id })
+      mapOption: (item) => ({ value: item.id, label: item.display_label || item.name, program_id: item.program_id, ...item })
     });
-    mergeRows(setSpecializations, options.map((item) => ({ id: item.value, name: item.label, program_id: item.program_id })));
+    mergeRows(setSpecializations, options.map((item) => ({ id: item.value, name: item.name || item.label, program_id: item.program_id, public_id: item.public_id, display_label: item.display_label })));
     return options;
   }
 
@@ -243,16 +251,19 @@ export default function ClassesPage() {
       params: { is_active: true, program_id: programId, specialization_id: specializationId || undefined },
       mapOption: (item) => ({
         value: item.id,
-        label: item.name,
+        label: item.display_label || item.name,
         program_id: item.program_id,
-        specialization_id: item.specialization_id
+        specialization_id: item.specialization_id,
+        ...item
       })
     });
     mergeRows(
       setBatches,
       options.map((item) => ({
         id: item.value,
-        name: item.label,
+        name: item.name || item.label,
+        public_id: item.public_id,
+        display_label: item.display_label,
         program_id: item.program_id,
         specialization_id: item.specialization_id
       }))
@@ -266,9 +277,9 @@ export default function ClassesPage() {
       path: '/semesters/',
       q: query,
       params: { is_active: true, batch_id: batchId },
-      mapOption: (item) => ({ value: item.id, label: item.label, batch_id: item.batch_id })
+      mapOption: (item) => ({ value: item.id, label: item.display_label || item.label, batch_id: item.batch_id, ...item })
     });
-    mergeRows(setSemesters, options.map((item) => ({ id: item.value, label: item.label, batch_id: item.batch_id })));
+    mergeRows(setSemesters, options.map((item) => ({ id: item.value, label: item.label, batch_id: item.batch_id, public_id: item.public_id, display_label: item.display_label })));
     return options;
   }
 
@@ -278,7 +289,7 @@ export default function ClassesPage() {
       path: '/users/',
       q: query,
       params: { role: 'teacher', is_active: true, limit: 20 },
-      mapOption: (item) => ({ value: item.id, label: `${item.full_name} (${item.email})`, full_name: item.full_name })
+      mapOption: (item) => ({ value: item.id, label: `${item.full_name} (${item.email})`, full_name: item.full_name, ...item })
     });
     mergeRows(
       setTeachers,
@@ -376,6 +387,7 @@ export default function ClassesPage() {
   const columns = useMemo(
     () => [
       { key: 'name', label: 'Section' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || '-' },
       { key: 'faculty_id', label: 'Faculty', render: (row) => facultyNameById[row.faculty_id] || '-' },
       { key: 'department_id', label: 'Department', render: (row) => departmentNameById[row.department_id] || '-' },
       { key: 'program_id', label: 'Program', render: (row) => programNameById[row.program_id] || '-' },
@@ -391,7 +403,7 @@ export default function ClassesPage() {
         label: 'Coordinator',
         render: (row) =>
           row.class_coordinator_user_id
-            ? teacherNameById[row.class_coordinator_user_id] || row.class_coordinator_user_id
+            ? teacherNameById[row.class_coordinator_user_id] || '-'
             : '-'
       }
     ],

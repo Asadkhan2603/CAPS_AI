@@ -15,9 +15,11 @@ from app.core.observability import observability_state
 from app.core.schema_versions import SCHEDULER_LOCK_SCHEMA_VERSION
 from app.services.ai_jobs import process_ai_jobs_once, sample_ai_queue_metrics
 from app.services.background_jobs import (
+    dispatch_due_grievance_escalations,
     dispatch_scheduled_notice_notifications,
     run_daily_analytics_snapshot_job,
 )
+from app.services.communication_digests import dispatch_due_notification_digests
 
 logger = logging.getLogger("caps_scheduler")
 
@@ -50,6 +52,10 @@ class AppScheduler:
         self._last_notice_dispatch_at: datetime | None = None
         self._last_snapshot_at: datetime | None = None
         self._last_notice_dispatch_count = 0
+        self._last_digest_dispatch_at: datetime | None = None
+        self._last_digest_dispatch_count = 0
+        self._last_grievance_escalation_at: datetime | None = None
+        self._last_grievance_escalation_count = 0
 
     async def start(self) -> None:
         if not self._enabled or self._running:
@@ -64,6 +70,7 @@ class AppScheduler:
                 "lock_ttl_seconds": self._lock_ttl_seconds,
                 "lock_renew_seconds": self._lock_renew_seconds,
                 "scheduled_notice_poll_seconds": settings.scheduled_notice_poll_seconds,
+                "notification_digest_poll_seconds": settings.notification_digest_poll_seconds,
                 "ai_job_poll_seconds": settings.ai_job_poll_seconds,
                 "snapshot_hour_utc": settings.analytics_snapshot_hour_utc,
                 "snapshot_minute_utc": settings.analytics_snapshot_minute_utc,
@@ -93,10 +100,18 @@ class AppScheduler:
             "lock_ttl_seconds": self._lock_ttl_seconds,
             "lock_renew_seconds": self._lock_renew_seconds,
             "scheduled_notice_poll_seconds": settings.scheduled_notice_poll_seconds,
+            "notification_digest_poll_seconds": settings.notification_digest_poll_seconds,
+            "scheduled_notice_retry_limit": settings.scheduled_notice_retry_limit,
+            "scheduled_notice_retry_backoff_seconds": settings.scheduled_notice_retry_backoff_seconds,
+            "scheduled_notice_dispatch_lease_seconds": settings.scheduled_notice_dispatch_lease_seconds,
             "ai_job_poll_seconds": settings.ai_job_poll_seconds,
             "snapshot_time_utc": f"{settings.analytics_snapshot_hour_utc:02d}:{settings.analytics_snapshot_minute_utc:02d}",
             "last_notice_dispatch_at": self._last_notice_dispatch_at,
             "last_notice_dispatch_count": self._last_notice_dispatch_count,
+            "last_digest_dispatch_at": self._last_digest_dispatch_at,
+            "last_digest_dispatch_count": self._last_digest_dispatch_count,
+            "last_grievance_escalation_at": self._last_grievance_escalation_at,
+            "last_grievance_escalation_count": self._last_grievance_escalation_count,
             "last_snapshot_at": self._last_snapshot_at,
         }
 
@@ -146,6 +161,8 @@ class AppScheduler:
             return
         self._job_tasks = [
             asyncio.create_task(self._scheduled_notice_loop(), name="scheduled-notice-loop"),
+            asyncio.create_task(self._notification_digest_loop(), name="notification-digest-loop"),
+            asyncio.create_task(self._grievance_escalation_loop(), name="grievance-escalation-loop"),
             asyncio.create_task(self._ai_job_loop(), name="ai-job-loop"),
             asyncio.create_task(self._daily_snapshot_loop(), name="daily-snapshot-loop"),
         ]
@@ -263,6 +280,52 @@ class AppScheduler:
                 )
                 logger.exception({"event": "scheduler.daily_snapshot.error"})
                 await asyncio.sleep(30)
+
+    async def _notification_digest_loop(self) -> None:
+        sleep_for = max(60, settings.notification_digest_poll_seconds)
+        while self._running and self._is_leader:
+            started = datetime.now(timezone.utc)
+            try:
+                count = await dispatch_due_notification_digests()
+                self._last_digest_dispatch_at = datetime.now(timezone.utc)
+                self._last_digest_dispatch_count = count
+                observability_state.record_scheduler_job_run(
+                    job_name="notification_digest",
+                    success=True,
+                    duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+                    processed_count=count,
+                )
+            except Exception:
+                observability_state.record_scheduler_job_run(
+                    job_name="notification_digest",
+                    success=False,
+                    duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+                )
+                logger.exception({"event": "scheduler.notification_digest.error"})
+            await asyncio.sleep(sleep_for)
+
+    async def _grievance_escalation_loop(self) -> None:
+        sleep_for = max(15, settings.scheduled_notice_poll_seconds)
+        while self._running and self._is_leader:
+            started = datetime.now(timezone.utc)
+            try:
+                count = await dispatch_due_grievance_escalations()
+                self._last_grievance_escalation_at = datetime.now(timezone.utc)
+                self._last_grievance_escalation_count = count
+                observability_state.record_scheduler_job_run(
+                    job_name="grievance_escalation",
+                    success=True,
+                    duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+                    processed_count=count,
+                )
+            except Exception:
+                observability_state.record_scheduler_job_run(
+                    job_name="grievance_escalation",
+                    success=False,
+                    duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+                )
+                logger.exception({"event": "scheduler.grievance_escalation.error"})
+            await asyncio.sleep(sleep_for)
 
     async def _ai_job_loop(self) -> None:
         sleep_for = max(5, settings.ai_job_poll_seconds)

@@ -10,6 +10,11 @@ from app.core.security import require_roles
 from app.models.course_offerings import course_offering_public
 from app.schemas.course_offering import CourseOfferingCreate, CourseOfferingOut, CourseOfferingUpdate
 from app.services.academic_hierarchy import validate_section_branch
+from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
+from app.services.course_offering_read_models import (
+    hydrate_course_offerings_from_read_models,
+    sync_course_offering_read_model,
+)
 from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
@@ -131,49 +136,8 @@ async def list_course_offerings(
         query["$or"] = [{"group_id": None}, {"group_id": student.get("group_id")}]
 
     items = await db.course_offerings.find(query).skip(skip).limit(limit).to_list(length=limit)
-    if not items:
-        return []
-
-    subject_ids = [item.get("subject_id") for item in items if item.get("subject_id")]
-    teacher_ids = [item.get("teacher_user_id") for item in items if item.get("teacher_user_id")]
-    section_ids = [item.get("section_id") for item in items if item.get("section_id")]
-    group_ids = [item.get("group_id") for item in items if item.get("group_id")]
-    semester_ids = [item.get("semester_id") for item in items if item.get("semester_id")]
-    batch_ids = [item.get("batch_id") for item in items if item.get("batch_id")]
-
-    subjects = await db.subjects.find({"_id": {"$in": _safe_object_ids(subject_ids)}}, {"name": 1, "code": 1}).to_list(length=5000)
-    teachers = await db.users.find({"_id": {"$in": _safe_object_ids(teacher_ids)}}, {"full_name": 1}).to_list(length=5000)
-    batches = await db.batches.find({"_id": {"$in": _safe_object_ids(batch_ids)}}, {"name": 1, "code": 1}).to_list(length=5000)
-    sections = await db.classes.find({"_id": {"$in": _safe_object_ids(section_ids)}}, {"name": 1}).to_list(length=5000)
-    groups = await db.groups.find({"_id": {"$in": _safe_object_ids(group_ids)}}, {"name": 1}).to_list(length=5000)
-    semesters = await db.semesters.find({"_id": {"$in": _safe_object_ids(semester_ids)}}, {"label": 1}).to_list(length=5000)
-
-    subject_map = {str(item["_id"]): item for item in subjects if item.get("_id")}
-    teacher_map = {str(item["_id"]): item for item in teachers if item.get("_id")}
-    batch_map = {str(item["_id"]): item for item in batches if item.get("_id")}
-    section_map = {str(item["_id"]): item for item in sections if item.get("_id")}
-    group_map = {str(item["_id"]): item for item in groups if item.get("_id")}
-    semester_map = {str(item["_id"]): item for item in semesters if item.get("_id")}
-
-    payloads: List[CourseOfferingOut] = []
-    for item in items:
-        payload = course_offering_public(item)
-        subject = subject_map.get(payload["subject_id"], {})
-        teacher = teacher_map.get(payload["teacher_user_id"], {})
-        batch = batch_map.get(payload["batch_id"], {})
-        section = section_map.get(payload["section_id"], {})
-        group = group_map.get(payload["group_id"], {})
-        semester = semester_map.get(payload["semester_id"], {})
-        payload["subject_name"] = subject.get("name")
-        payload["subject_code"] = subject.get("code")
-        payload["teacher_name"] = teacher.get("full_name")
-        payload["batch_name"] = batch.get("name")
-        payload["section_name"] = section.get("name")
-        payload["group_name"] = group.get("name")
-        payload["semester_label"] = semester.get("label")
-        payloads.append(CourseOfferingOut(**payload))
-
-    return payloads
+    items = await hydrate_course_offerings_from_read_models(source_offerings=items, database=db)
+    return [CourseOfferingOut(**course_offering_public(item)) for item in items]
 
 
 @router.post("/", response_model=CourseOfferingOut, status_code=status.HTTP_201_CREATED)
@@ -208,6 +172,7 @@ async def create_course_offering(
     persist_public_id(document, kind="course_offering")
     result = await db.course_offerings.insert_one(document)
     created = await db.course_offerings.find_one({"_id": result.inserted_id})
+    created = await sync_course_offering_read_model(offering=created, database=db)
     return CourseOfferingOut(**course_offering_public(created))
 
 
@@ -232,6 +197,8 @@ async def update_course_offering(
         {"$set": {**update_data, "schema_version": COURSE_OFFERING_SCHEMA_VERSION}},
     )
     updated = await db.course_offerings.find_one({"_id": offering_obj_id})
+    updated = await sync_course_offering_read_model(offering=updated, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"_id": offering_obj_id}, database=db)
     return CourseOfferingOut(**course_offering_public(updated))
 
 
@@ -255,4 +222,8 @@ async def delete_course_offering(
             }
         },
     )
+    archived = await db.course_offerings.find_one({"_id": offering_obj_id})
+    if archived:
+        await sync_course_offering_read_model(offering=archived, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"_id": offering_obj_id}, database=db)
     return {"message": "Course offering archived"}

@@ -35,7 +35,7 @@ export default function AdminDashboardPage() {
     <div className="space-y-4 page-fade">
       <Card>
         <h1 className="text-2xl font-semibold">Admin Control Plane</h1>
-        <p className="text-sm text-slate-500">Domain-based admin panel aligned with admin.md v2 architecture.</p>
+        <p className="text-sm text-slate-500">Task-based admin workspace organized around control, academics, administration, and system visibility.</p>
       </Card>
       <AdminDomainNav />
       {error ? <Card><p className="text-sm text-rose-600">{error}</p></Card> : null}
@@ -59,12 +59,12 @@ export default function AdminDashboardPage() {
           {governance?.policy?.role_change_approval_enabled ? 'enabled' : 'disabled'}
         </p>
         <div className="flex flex-wrap gap-2">
-          <Link className="btn-secondary" to="/admin/governance">Go Governance</Link>
-          <Link className="btn-secondary" to="/faculties">Go Academic Structure</Link>
-          <Link className="btn-secondary" to="/students">Go Operations</Link>
-          <Link className="btn-secondary" to="/clubs">Go Clubs</Link>
+          <Link className="btn-secondary" to="/students">Go Students & Academics</Link>
+          <Link className="btn-secondary" to="/users">Go Administration</Link>
           <Link className="btn-secondary" to="/communication/announcements">Go Communication</Link>
-          <Link className="btn-secondary" to="/audit-logs">Go Compliance</Link>
+          <Link className="btn-secondary" to="/clubs">Go Clubs</Link>
+          <Link className="btn-secondary" to="/audit-logs">Go System & Compliance</Link>
+          <Link className="btn-secondary" to="/admin/governance">Go Governance</Link>
         </div>
       </Card>
     </div>

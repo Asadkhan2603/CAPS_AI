@@ -306,11 +306,14 @@ export default function EvaluateSubmissionPage() {
             <Card className="space-y-3">
               <h2 className="text-lg font-semibold">Submission Details</h2>
               <p className="text-sm text-slate-600 dark:text-slate-300">
-                Student: {student?.full_name || submission.student_user_id}
+                Student: {student?.display_label || (student?.full_name ? `${student.full_name}${student.public_id ? ` (${student.public_id})` : ''}` : submission.public_id || '-')}
               </p>
               <p className="text-sm text-slate-600 dark:text-slate-300">
-                Exam/Assignment: {assignment?.title || submission.assignment_id}
+                Exam/Assignment: {assignment?.display_label || (assignment?.title ? `${assignment.title}${assignment.public_id ? ` (${assignment.public_id})` : ''}` : submission.assignment_id || '-')}
               </p>
+              {submission.public_id ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">Submission ID: {submission.public_id}</p>
+              ) : null}
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 File: {submission.original_filename} ({submission.file_size_bytes} bytes)
               </p>

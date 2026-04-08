@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import CommunicationTabs from '../../components/communication/CommunicationTabs';
 import AnnouncementCard from '../../components/communication/AnnouncementCard';
+import CommunicationDeliveryModal from '../../components/communication/CommunicationDeliveryModal';
 import CreateAnnouncementModal from '../../components/communication/CreateAnnouncementModal';
 import EmptyState from '../../components/ui/EmptyState';
 import { apiClient } from '../../services/apiClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
+import { formatApiError } from '../../utils/apiError';
 import { pushApiErrorToast } from '../../utils/errorToast';
 
 const FILTERS = [
@@ -26,6 +30,7 @@ function notifyNoticeBadgeRefresh() {
 export default function AnnouncementsPage() {
   const { user } = useAuth();
   const { pushToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -35,9 +40,16 @@ export default function AnnouncementsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [showCreate, setShowCreate] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [deliveryError, setDeliveryError] = useState('');
+  const [deliveryNoticeId, setDeliveryNoticeId] = useState('');
+  const [deliveryDetails, setDeliveryDetails] = useState(null);
+  const [retryingDeliveryTarget, setRetryingDeliveryTarget] = useState('');
   const [batches, setBatches] = useState([]);
   const [sections, setSections] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const highlightedNoticeId = searchParams.get('highlight') || '';
 
   const canCreate = user?.role === 'admin' || user?.role === 'teacher';
   const isStudent = user?.role === 'student';
@@ -64,6 +76,7 @@ export default function AnnouncementsPage() {
       const response = await apiClient.get('/notices/', {
         params: {
           include_expired: true,
+          include_scheduled: canCreate,
           priority: activeFilter === 'urgent' ? 'urgent' : undefined,
           skip: 0,
           limit: 100
@@ -95,6 +108,15 @@ export default function AnnouncementsPage() {
       setActiveFilter('all');
     }
   }, [isStudent, activeFilter]);
+
+  useEffect(() => {
+    if (!highlightedNoticeId || loading || notices.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(`announcement-card-${highlightedNoticeId}`);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [highlightedNoticeId, loading, notices.length]);
 
   const audienceNameById = useMemo(() => {
     const map = {};
@@ -229,11 +251,18 @@ export default function AnnouncementsPage() {
       formData.append('message', payload.message);
       formData.append('priority', payload.priority);
       formData.append('scope', payload.scope);
+      formData.append('is_pinned', String(Boolean(payload.is_pinned)));
+      if (payload.template_key) {
+        formData.append('template_key', payload.template_key);
+      }
       if (payload.scope_ref_id) {
         formData.append('scope_ref_id', payload.scope_ref_id);
       }
       if (payload.expires_at) {
         formData.append('expires_at', payload.expires_at);
+      }
+      if (payload.scheduled_at) {
+        formData.append('scheduled_at', payload.scheduled_at);
       }
       (payload.attachments || []).forEach((file) => formData.append('images', file));
 
@@ -250,8 +279,14 @@ export default function AnnouncementsPage() {
           description: 'Announcement was created but attachment upload failed. Check Cloudinary config and retry.',
           variant: 'warning'
         });
+      } else if (payload.scheduled_at) {
+        pushToast({
+          title: 'Scheduled',
+          description: 'Announcement saved and queued for future delivery.',
+          variant: 'success'
+        });
       } else {
-        pushToast({ title: 'Published', description: 'Announcement published successfully.', variant: 'success' });
+        pushToast({ title: 'Published', description: 'Announcement published and delivery fanout is queued.', variant: 'success' });
       }
       setShowCreate(false);
       await loadNotices();
@@ -294,10 +329,80 @@ export default function AnnouncementsPage() {
     }
   }
 
+  async function loadDeliveryDetails(noticeId, { openModal = false } = {}) {
+    if (!noticeId) return;
+    if (openModal) {
+      setDeliveryOpen(true);
+      setDeliveryDetails(null);
+      setDeliveryError('');
+    }
+    setDeliveryNoticeId(noticeId);
+    setDeliveryLoading(true);
+    try {
+      const response = await apiClient.get(`/admin/communication/delivery/notices/${noticeId}`);
+      setDeliveryDetails(response.data || null);
+      setDeliveryError('');
+    } catch (err) {
+      setDeliveryDetails(null);
+      setDeliveryError(formatApiError(err, 'Unable to load delivery details.'));
+      pushApiErrorToast(pushToast, err, 'Unable to load delivery details');
+    } finally {
+      setDeliveryLoading(false);
+    }
+  }
+
+  async function retryDeliveryEmail(target = null) {
+    if (!deliveryNoticeId) return;
+    const payload = target
+      ? {
+          target_user_ids: target.target_user_id ? [target.target_user_id] : [],
+          target_emails: !target.target_user_id && target.target_email ? [target.target_email] : [],
+          include_skipped: true
+        }
+      : { include_skipped: true };
+    const retryKey = target ? `${target.target_user_id || ''}::${target.target_email || ''}` : '*';
+    setRetryingDeliveryTarget(retryKey);
+    try {
+      const response = await apiClient.post(`/admin/communication/delivery/notices/${deliveryNoticeId}/retry-email`, payload);
+      const retriedCount = Number(response.data?.retried_count || 0);
+      setDeliveryDetails(response.data?.details || null);
+      await loadNotices();
+      pushToast({
+        title: retriedCount > 0 ? 'Email retry queued' : 'Nothing to retry',
+        description:
+          retriedCount > 0
+            ? `${retriedCount} recipient${retriedCount === 1 ? '' : 's'} reprocessed for email delivery.`
+            : 'No failed or skipped email rows matched this retry action.',
+        variant: retriedCount > 0 ? 'success' : 'info'
+      });
+    } catch (err) {
+      pushApiErrorToast(pushToast, err, 'Unable to retry email delivery');
+    } finally {
+      setRetryingDeliveryTarget('');
+    }
+  }
+
   return (
     <div className="page-fade">
       <div className="mx-auto max-w-5xl">
         <CommunicationTabs />
+
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
+          <div>
+            <p className="font-semibold">Announcements publish institutional updates. Club-specific posts stay in the clubs workspace.</p>
+            <p className="mt-1 text-sky-800/90 dark:text-sky-200/85">
+              Use this page for college, batch, section, and subject broadcasts. Use the Club Updates tab or jump straight to the club announcement workspace when you need club-owned communication.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/clubs?tab=announcements" className="btn-secondary whitespace-nowrap">
+              Open Club Updates
+            </Link>
+            <Link to="/clubs" className="btn-secondary whitespace-nowrap">
+              Open Clubs Workspace
+            </Link>
+          </div>
+        </div>
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -349,13 +454,17 @@ export default function AnnouncementsPage() {
           {paged.map((notice) => {
             const audienceText = notice.scope === 'college' ? 'Entire college' : audienceNameById[notice.scope_ref_id] || 'Targeted audience';
             return (
-              <AnnouncementCard
-                key={notice.id}
-                notice={notice}
-                audienceText={audienceText}
-                isRead={Boolean(notice?.is_read)}
-                onMarkRead={handleMarkRead}
-              />
+              <div key={notice.id} id={`announcement-card-${notice.id}`}>
+                <AnnouncementCard
+                  notice={notice}
+                  audienceText={audienceText}
+                  isRead={Boolean(notice?.is_read)}
+                  onMarkRead={handleMarkRead}
+                  canInspectDelivery={canCreate}
+                  onViewDelivery={(item) => loadDeliveryDetails(item.id, { openModal: true })}
+                  highlighted={highlightedNoticeId === notice.id}
+                />
+              </div>
             );
           })}
         </div>
@@ -364,6 +473,18 @@ export default function AnnouncementsPage() {
           <button className="btn-secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
             Prev
           </button>
+          {highlightedNoticeId ? (
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.delete('highlight');
+                setSearchParams(next, { replace: true });
+              }}
+            >
+              Clear Highlight
+            </button>
+          ) : null}
           <span className="text-slate-500">
             {page} / {totalPages}
           </span>
@@ -391,6 +512,22 @@ export default function AnnouncementsPage() {
         audienceOptions={audienceOptions}
         submitting={publishing}
         uploadProgress={uploadProgress}
+      />
+      <CommunicationDeliveryModal
+        open={deliveryOpen}
+        onClose={() => {
+          setDeliveryOpen(false);
+          setDeliveryError('');
+          setRetryingDeliveryTarget('');
+        }}
+        onRefresh={() => loadDeliveryDetails(deliveryNoticeId)}
+        onRetryAllEmail={() => retryDeliveryEmail()}
+        onRetryRecipientEmail={(item) => retryDeliveryEmail(item)}
+        loading={deliveryLoading}
+        retryingTarget={retryingDeliveryTarget}
+        error={deliveryError}
+        details={deliveryDetails}
+        title="Announcement Delivery"
       />
     </div>
   );

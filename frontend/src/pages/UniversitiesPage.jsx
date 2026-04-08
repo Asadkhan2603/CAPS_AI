@@ -25,7 +25,6 @@ export default function UniversitiesPage() {
       createFields={createFields}
       columns={columns}
       enableEdit
-      enableDelete
     />
   );
 }

@@ -9,6 +9,8 @@ from app.core.schema_versions import GROUP_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.groups import group_public
 from app.schemas.group_item import GroupCreate, GroupOut, GroupUpdate
+from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
+from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
@@ -112,6 +114,8 @@ async def update_group(
         {"$set": {**update_data, "schema_version": GROUP_SCHEMA_VERSION}},
     )
     updated = await db.groups.find_one({"_id": group_obj_id})
+    await sync_course_offering_read_models_for_query(query={"group_id": group_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"group_id": group_id}, database=db)
     return GroupOut(**group_public(updated))
 
 
@@ -135,4 +139,6 @@ async def delete_group(
             }
         },
     )
+    await sync_course_offering_read_models_for_query(query={"group_id": group_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"group_id": group_id}, database=db)
     return {"message": "Group archived"}

@@ -25,9 +25,12 @@ export default function TeacherClassTiles({ items = [] }) {
           <Card key={tile.class_id} className="border-l-4 border-l-brand-500 transition hover:-translate-y-0.5">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-base font-semibold">{tile.class_name}</p>
+                <p className="text-base font-semibold">{tile.class_label || tile.class_name}</p>
+                {tile.class_public_id ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">ID: {tile.class_public_id}</p>
+                ) : null}
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Semester: {tile.semester_id || '-'}
+                  Semester: {tile.semester_label || tile.semester_public_id || tile.semester_id || '-'}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Subjects: {(tile.subjects || []).join(', ') || '-'}</p>
               </div>

@@ -28,10 +28,25 @@ class ClassSlotOut(BaseModel):
     public_id: str | None = None
     display_label: str | None = None
     course_offering_id: str
+    subject_id: str | None = None
+    teacher_user_id: str | None = None
+    batch_id: str | None = None
+    semester_id: str | None = None
+    section_id: str | None = None
+    group_id: str | None = None
+    academic_year: str | None = None
+    offering_type: str | None = None
     day: DayName
     start_time: str
     end_time: str
     room_code: str
+    subject_name: str | None = None
+    subject_code: str | None = None
+    teacher_name: str | None = None
+    batch_name: str | None = None
+    section_name: str | None = None
+    group_name: str | None = None
+    semester_label: str | None = None
     is_active: bool = True
     created_at: datetime | None = None
     schema_version: int = 1

@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import ProtectedRoute from './ProtectedRoute';
 import PageSkeleton from '../components/ui/PageSkeleton';
@@ -12,6 +12,8 @@ const LoginPage = lazy(() => import('../pages/LoginPage'));
 const RegisterPage = lazy(() => import('../pages/RegisterPage'));
 const DashboardPage = lazy(() => import('../pages/DashboardPage'));
 const AdminDashboardPage = lazy(() => import('../pages/Admin/AdminDashboardPage'));
+const AdminOnboardingPage = lazy(() => import('../pages/Admin/AdminOnboardingPage'));
+const AdminRbacPage = lazy(() => import('../pages/Admin/AdminRbacPage'));
 const AdminGovernancePage = lazy(() => import('../pages/Admin/AdminGovernancePage'));
 const AdminAnalyticsPage = lazy(() => import('../pages/Admin/AdminAnalyticsPage'));
 const AdminSystemPage = lazy(() => import('../pages/Admin/AdminSystemPage'));
@@ -32,6 +34,7 @@ const SemestersPage = lazy(() => import('../pages/SemestersPage'));
 const SectionsPage = lazy(() => import('../pages/ClassesPage'));
 const GroupsPage = lazy(() => import('../pages/GroupsPage'));
 const StudentsPage = lazy(() => import('../pages/StudentsPage'));
+const StudentBulkImportPage = lazy(() => import('../pages/StudentBulkImportPage'));
 const SubjectsPage = lazy(() => import('../pages/SubjectsPage'));
 const CourseOfferingsPage = lazy(() => import('../pages/CourseOfferingsPage'));
 const ClassSlotsPage = lazy(() => import('../pages/ClassSlotsPage'));
@@ -40,6 +43,7 @@ const AssignmentsPage = lazy(() => import('../pages/AssignmentsPage'));
 const SubmissionsPage = lazy(() => import('../pages/SubmissionsPage'));
 const AIModulePage = lazy(() => import('../pages/AIModulePage'));
 const ReviewTicketsPage = lazy(() => import('../pages/ReviewTicketsPage'));
+const GrievancesPage = lazy(() => import('../pages/GrievancesPage'));
 const CommunicationFeedPage = lazy(() => import('../pages/Communication/FeedPage'));
 const CommunicationAnnouncementsPage = lazy(() => import('../pages/Communication/AnnouncementsPage'));
 const CommunicationMessagesPage = lazy(() => import('../pages/Communication/MessagesPage'));
@@ -49,13 +53,17 @@ const EventRegistrationsPage = lazy(() => import('../pages/EventRegistrationsPag
 const NotificationsPage = lazy(() => import('../pages/NotificationsPage'));
 const EvaluationsPage = lazy(() => import('../pages/EvaluationsPage'));
 const EnrollmentsPage = lazy(() => import('../pages/EnrollmentsPage'));
+const CoordinatorStudentMappingPage = lazy(() => import('../pages/CoordinatorStudentMappingPage'));
 const AuditLogsPage = lazy(() => import('../pages/AuditLogsPage'));
 const DeveloperPanelPage = lazy(() => import('../pages/DeveloperPanelPage'));
 const UsersPage = lazy(() => import('../pages/UsersPage'));
+const HelpSupportPage = lazy(() => import('../pages/HelpSupportPage'));
 const EvaluateSubmissionPage = lazy(() => import('../pages/Teacher/EvaluateSubmission'));
 
 const workspaceRouteMap = {
   '/admin/dashboard': { access: FEATURE_ACCESS.adminDashboard, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'compliance_admin'], element: <AdminDashboardPage /> },
+  '/admin/onboarding': { access: FEATURE_ACCESS.adminOnboarding, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'], element: <AdminOnboardingPage /> },
+  '/admin/rbac': { access: FEATURE_ACCESS.adminRbac, requiredAdminTypes: ['super_admin'], element: <AdminRbacPage /> },
   '/admin/governance': { access: FEATURE_ACCESS.adminGovernance, requiredAdminTypes: ['super_admin', 'admin'], element: <AdminGovernancePage /> },
   '/admin/academic-structure': { access: FEATURE_ACCESS.adminAcademicStructure, requiredAdminTypes: ['super_admin', 'admin', 'academic_admin'], element: <Navigate to="/academic-structure" replace /> },
   '/admin/operations': { access: FEATURE_ACCESS.adminOperations, requiredAdminTypes: ['super_admin', 'admin'], element: <Navigate to="/students" replace /> },
@@ -72,8 +80,11 @@ const workspaceRouteMap = {
   '/history': { access: FEATURE_ACCESS.history, element: <HistoryPage /> },
   '/timetable': { access: FEATURE_ACCESS.timetable, element: <TimetablePage /> },
   '/profile': { access: FEATURE_ACCESS.profile, element: <ProfilePage /> },
+  '/help': { access: FEATURE_ACCESS.helpSupport, element: <HelpSupportPage /> },
   '/academic-structure': { access: FEATURE_ACCESS.academicStructure, element: <AcademicStructurePage /> },
   '/students': { access: FEATURE_ACCESS.students, element: <StudentsPage /> },
+  '/students/bulk-import': { access: FEATURE_ACCESS.studentBulkImport, element: <StudentBulkImportPage /> },
+  '/students/section-mapping': { access: FEATURE_ACCESS.coordinatorStudentMapping, element: <CoordinatorStudentMappingPage /> },
   '/groups': { access: FEATURE_ACCESS.groups, element: <GroupsPage /> },
   '/subjects': { access: FEATURE_ACCESS.subjects, element: <SubjectsPage /> },
   '/course-offerings': { access: FEATURE_ACCESS.courseOfferings, element: <CourseOfferingsPage /> },
@@ -83,6 +94,12 @@ const workspaceRouteMap = {
   '/submissions': { access: FEATURE_ACCESS.submissions, element: <SubmissionsPage /> },
   '/ai-operations': { access: FEATURE_ACCESS.aiModule, element: <AIModulePage /> },
   '/review-tickets': { access: FEATURE_ACCESS.reviewTickets, element: <ReviewTicketsPage /> },
+  '/grievances': { access: FEATURE_ACCESS.grievancesStudent, element: <GrievancesPage mode="student" /> },
+  '/grievances/coordinator': { access: FEATURE_ACCESS.grievancesCoordinator, element: <GrievancesPage mode="coordinator" /> },
+  '/grievances/hod': { access: FEATURE_ACCESS.grievancesHod, element: <GrievancesPage mode="hod" /> },
+  '/grievances/dean': { access: FEATURE_ACCESS.grievancesDean, element: <GrievancesPage mode="dean" /> },
+  '/grievances/assigned': { access: FEATURE_ACCESS.grievancesAssigned, element: <GrievancesPage mode="assigned" /> },
+  '/grievances/fallback': { access: FEATURE_ACCESS.grievancesFallback, element: <GrievancesPage mode="fallback" /> },
   '/evaluations': { access: FEATURE_ACCESS.evaluations, element: <EvaluationsPage /> },
   '/enrollments': { access: FEATURE_ACCESS.enrollments, element: <EnrollmentsPage /> },
   '/communication/feed': { access: FEATURE_ACCESS.communicationFeed, element: <CommunicationFeedPage /> },
@@ -126,6 +143,7 @@ function WorkspaceModuleRoute() {
 
 function WorkspaceRedirect({ path }) {
   const { user } = useAuth();
+  const location = useLocation();
   const group = findNavigationGroupByItemPath(path, user);
   if (!group) {
     const route = workspaceRouteMap[path];
@@ -138,7 +156,7 @@ function WorkspaceRedirect({ path }) {
     }
     return <Navigate to={path} replace />;
   }
-  return <Navigate to={getWorkspaceItemPath(group.key, path)} replace />;
+  return <Navigate to={{ pathname: getWorkspaceItemPath(group.key, path), search: location.search, hash: location.hash }} replace />;
 }
 
 function WorkspaceGroupRedirect() {
@@ -177,6 +195,8 @@ export function AppRoutes() {
             }
           />
           <Route path="/admin/dashboard" element={<WorkspaceRedirect path="/admin/dashboard" />} />
+          <Route path="/admin/onboarding" element={<WorkspaceRedirect path="/admin/onboarding" />} />
+          <Route path="/admin/rbac" element={<WorkspaceRedirect path="/admin/rbac" />} />
           <Route path="/admin/governance" element={<WorkspaceRedirect path="/admin/governance" />} />
           <Route path="/admin/academic-structure" element={<WorkspaceRedirect path="/admin/academic-structure" />} />
           <Route path="/admin/operations" element={<WorkspaceRedirect path="/admin/operations" />} />
@@ -198,6 +218,7 @@ export function AppRoutes() {
               </ProtectedRoute>
             }
           />
+          <Route path="/help" element={<WorkspaceRedirect path="/help" />} />
           <Route path="/analytics" element={<WorkspaceRedirect path="/analytics" />} />
           <Route path="/workspace/:groupKey" element={<WorkspaceGroupRedirect />} />
           <Route path="/workspace/:groupKey/*" element={<WorkspaceModuleRoute />} />
@@ -214,6 +235,8 @@ export function AppRoutes() {
           <Route path="/semesters" element={<WorkspaceRedirect path="/semesters" />} />
           <Route path="/sections" element={<WorkspaceRedirect path="/sections" />} />
           <Route path="/students" element={<WorkspaceRedirect path="/students" />} />
+          <Route path="/students/bulk-import" element={<WorkspaceRedirect path="/students/bulk-import" />} />
+          <Route path="/students/section-mapping" element={<WorkspaceRedirect path="/students/section-mapping" />} />
           <Route path="/groups" element={<WorkspaceRedirect path="/groups" />} />
           <Route path="/subjects" element={<WorkspaceRedirect path="/subjects" />} />
           <Route path="/course-offerings" element={<WorkspaceRedirect path="/course-offerings" />} />
@@ -231,6 +254,12 @@ export function AppRoutes() {
             }
           />
           <Route path="/review-tickets" element={<WorkspaceRedirect path="/review-tickets" />} />
+          <Route path="/grievances" element={<WorkspaceRedirect path="/grievances" />} />
+          <Route path="/grievances/coordinator" element={<WorkspaceRedirect path="/grievances/coordinator" />} />
+          <Route path="/grievances/hod" element={<WorkspaceRedirect path="/grievances/hod" />} />
+          <Route path="/grievances/dean" element={<WorkspaceRedirect path="/grievances/dean" />} />
+          <Route path="/grievances/assigned" element={<WorkspaceRedirect path="/grievances/assigned" />} />
+          <Route path="/grievances/fallback" element={<WorkspaceRedirect path="/grievances/fallback" />} />
           <Route
             path="/communication"
             element={

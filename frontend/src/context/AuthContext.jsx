@@ -219,6 +219,7 @@ export function AuthProvider({ children }) {
       const fallbackBootstrap = {
         user: nextUser,
         unread_notice_count: 0,
+        unread_notification_count: 0,
         branding: { has_logo: false, updated_at: null, filename: null },
         generated_at: new Date().toISOString()
       };

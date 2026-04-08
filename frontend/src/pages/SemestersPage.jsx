@@ -14,14 +14,23 @@ export default function SemestersPage() {
         options.map((item) => ({
           id: item.value,
           name: item.name,
-          code: item.code
+          code: item.code,
+          public_id: item.public_id,
+          display_label: item.display_label,
+          label: item.label
         }))
       )
     );
     return options;
   }
 
-  const batchNameById = useMemo(() => Object.fromEntries(batches.map((batch) => [batch.id, batch.name])), [batches]);
+  const batchNameById = useMemo(
+    () =>
+      Object.fromEntries(
+        batches.map((batch) => [batch.id, batch.display_label || batch.label || `${batch.name} (${batch.public_id || batch.code || 'Batch'})`])
+      ),
+    [batches]
+  );
 
   const filters = useMemo(
     () => [
@@ -61,7 +70,8 @@ export default function SemestersPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'batch_id', label: 'Batch', render: (row) => batchNameById[row.batch_id] || row.batch_id || '-' },
+      { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || '-' },
+      { key: 'batch_id', label: 'Batch', render: (row) => batchNameById[row.batch_id] || '-' },
       { key: 'semester_number', label: 'Semester' },
       { key: 'label', label: 'Label' },
       { key: 'academic_year_label', label: 'Academic Year', render: (row) => row.academic_year_label || '-' },

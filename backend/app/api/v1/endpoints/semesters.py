@@ -13,6 +13,8 @@ from app.schemas.semester_item import SemesterCreate, SemesterOut, SemesterUpdat
 from app.services.academic_batching import build_semester_academic_year
 from app.services.academic_hierarchy import validate_semester_number_for_program
 from app.services.audit import log_destructive_action_event
+from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
+from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.governance import enforce_review_approval
 from app.services.semester_read_models import (
     get_semester_read_model,
@@ -172,6 +174,8 @@ async def update_semester(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
     updated = await db.semesters.find_one({"_id": semester_obj_id})
     updated = await sync_semester_read_model(semester=updated, database=db)
+    await sync_course_offering_read_models_for_query(query={"semester_id": semester_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"semester_id": semester_id}, database=db)
     await sync_section_read_models_for_query(query={"semester_id": semester_id}, database=db)
     return SemesterOut(**semester_public(updated))
 
@@ -212,6 +216,8 @@ async def delete_semester(
     archived = await db.semesters.find_one({"_id": parse_object_id(semester_id)})
     if archived:
         await sync_semester_read_model(semester=archived, database=db)
+    await sync_course_offering_read_models_for_query(query={"semester_id": semester_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"semester_id": semester_id}, database=db)
     await sync_section_read_models_for_query(query={"semester_id": semester_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,

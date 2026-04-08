@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Paperclip, X } from 'lucide-react';
 import Modal from '../ui/Modal';
 import AudienceSelector from './AudienceSelector';
+import { apiClient } from '../../services/apiClient';
+import { formatApiError } from '../../utils/apiError';
 
 const MAX_ATTACHMENTS = 3;
 const MAX_SIZE_BYTES = 10 * 1024 * 1024;
@@ -26,6 +28,8 @@ export default function CreateAnnouncementModal({
   onClose,
   onPublish,
   audienceOptions,
+  initialValues = null,
+  templateOptions = [],
   submitting = false,
   uploadProgress = 0
 }) {
@@ -33,12 +37,19 @@ export default function CreateAnnouncementModal({
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [urgent, setUrgent] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const [audienceKey, setAudienceKey] = useState('');
+  const [templateKey, setTemplateKey] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [autoExpire, setAutoExpire] = useState(false);
   const [expiresAt, setExpiresAt] = useState('');
+  const [scheduleForLater, setScheduleForLater] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attachmentError, setAttachmentError] = useState('');
+  const [audiencePreview, setAudiencePreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
 
   const selectedAudience = useMemo(
     () => audienceOptions.find((item) => item.key === audienceKey) || null,
@@ -65,19 +76,75 @@ export default function CreateAnnouncementModal({
   useEffect(() => {
     if (!open) return;
     setStep(1);
-    setTitle('');
-    setMessage('');
-    setUrgent(false);
-    setAudienceKey('');
+    setTitle(initialValues?.title || '');
+    setMessage(initialValues?.message || '');
+    setUrgent(Boolean(initialValues?.priority === 'urgent'));
+    setPinned(Boolean(initialValues?.is_pinned));
+    setAudienceKey(audienceOptions[0]?.key || '');
+    setTemplateKey(initialValues?.template_key || '');
     setShowAdvanced(false);
     setAutoExpire(false);
     setExpiresAt('');
+    setScheduleForLater(false);
+    setScheduledAt('');
     setAttachments([]);
     setAttachmentError('');
-  }, [open]);
+    setAudiencePreview(null);
+    setPreviewLoading(false);
+    setPreviewError('');
+  }, [audienceOptions, initialValues, open]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadAudiencePreview() {
+      if (!open || !selectedAudience) {
+        if (alive) {
+          setAudiencePreview(null);
+          setPreviewError('');
+        }
+        return;
+      }
+      setPreviewLoading(true);
+      setPreviewError('');
+      try {
+        const response = await apiClient.post('/admin/communication/preview-target', {
+          scope: selectedAudience.scope,
+          scope_ref_id: selectedAudience.scopeRefId
+        });
+        if (!alive) return;
+        setAudiencePreview(response.data || null);
+      } catch (error) {
+        if (!alive) return;
+        setAudiencePreview(null);
+        setPreviewError(formatApiError(error, 'Unable to estimate audience reach right now.'));
+      } finally {
+        if (alive) {
+          setPreviewLoading(false);
+        }
+      }
+    }
+
+    void loadAudiencePreview();
+    return () => {
+      alive = false;
+    };
+  }, [open, selectedAudience]);
+
+  const scheduleError = useMemo(() => {
+    if (!scheduleForLater || !scheduledAt) return '';
+    const scheduledTime = new Date(scheduledAt).getTime();
+    if (Number.isNaN(scheduledTime)) return 'Choose a valid future schedule.';
+    if (scheduledTime <= Date.now()) return 'Scheduled publish time must be in the future.';
+    return '';
+  }, [scheduleForLater, scheduledAt]);
 
   const canProceedStep1 = title.trim().length >= 2 && message.trim().length >= 2 && !attachmentError;
-  const canPublish = canProceedStep1 && selectedAudience && (!autoExpire || Boolean(expiresAt));
+  const canPublish =
+    canProceedStep1 &&
+    selectedAudience &&
+    (!autoExpire || Boolean(expiresAt)) &&
+    (!scheduleForLater || (Boolean(scheduledAt) && !scheduleError));
 
   function onFilesSelected(event) {
     const nextFiles = Array.from(event.target.files || []);
@@ -117,9 +184,12 @@ export default function CreateAnnouncementModal({
       title: title.trim(),
       message: message.trim(),
       priority: urgent ? 'urgent' : 'normal',
+      is_pinned: pinned,
+      template_key: templateKey || null,
       scope: selectedAudience.scope,
       scope_ref_id: selectedAudience.scopeRefId,
       expires_at: autoExpire && expiresAt ? new Date(expiresAt).toISOString() : null,
+      scheduled_at: scheduleForLater && scheduledAt ? new Date(scheduledAt).toISOString() : null,
       attachments,
     });
   }
@@ -163,6 +233,22 @@ export default function CreateAnnouncementModal({
               <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
               Mark as urgent
             </label>
+
+            {templateOptions.length ? (
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Template</span>
+                <select
+                  className="input"
+                  value={templateKey}
+                  onChange={(e) => setTemplateKey(e.target.value)}
+                >
+                  <option value="">Custom</option>
+                  {templateOptions.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <div className="space-y-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
               <div className="flex items-center justify-between">
@@ -210,10 +296,35 @@ export default function CreateAnnouncementModal({
           </div>
         ) : null}
 
-        {step === 2 ? <AudienceSelector options={audienceOptions} value={audienceKey} onChange={(item) => setAudienceKey(item.key)} /> : null}
+        {step === 2 ? (
+          <div className="space-y-3">
+            <AudienceSelector options={audienceOptions} value={audienceKey} onChange={(item) => setAudienceKey(item.key)} />
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60">
+              <p className="font-semibold text-slate-900 dark:text-slate-100">Audience reach preview</p>
+              {previewLoading ? <p className="mt-1 text-slate-500">Estimating recipients...</p> : null}
+              {!previewLoading && previewError ? <p className="mt-1 text-rose-600">{previewError}</p> : null}
+              {!previewLoading && !previewError && audiencePreview ? (
+                <p className="mt-1 text-slate-600 dark:text-slate-300">
+                  Estimated recipients: <span className="font-semibold text-slate-900 dark:text-slate-100">{audiencePreview.estimated_reach ?? audiencePreview.matched_users ?? 0}</span>
+                </p>
+              ) : null}
+              {!previewLoading && !previewError && !audiencePreview ? (
+                <p className="mt-1 text-slate-500">Select an audience to preview recipient reach.</p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {step === 3 ? (
           <div className="space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60">
+              <p className="font-semibold text-slate-900 dark:text-slate-100">Publishing summary</p>
+              <p className="mt-1 text-slate-600 dark:text-slate-300">
+                Audience: <span className="font-medium">{selectedAudience?.label || 'Not selected'}</span>
+                {audiencePreview ? ` | Estimated recipients: ${audiencePreview.estimated_reach ?? audiencePreview.matched_users ?? 0}` : ''}
+              </p>
+            </div>
+
             <button
               type="button"
               className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
@@ -230,10 +341,28 @@ export default function CreateAnnouncementModal({
                   Auto-expire
                 </label>
 
+                <label className="mt-3 inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
+                  Pin announcement to the top
+                </label>
+
+                <label className="mt-3 inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={scheduleForLater} onChange={(e) => setScheduleForLater(e.target.checked)} />
+                  Schedule for later
+                </label>
+
                 {autoExpire ? (
                   <label className="mt-3 block space-y-1">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Expires At</span>
                     <input type="datetime-local" className="input" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+                  </label>
+                ) : null}
+
+                {scheduleForLater ? (
+                  <label className="mt-3 block space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Publish At</span>
+                    <input type="datetime-local" className="input" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+                    {scheduleError ? <span className="text-xs text-rose-600">{scheduleError}</span> : null}
                   </label>
                 ) : null}
               </div>
@@ -270,7 +399,7 @@ export default function CreateAnnouncementModal({
               </button>
             ) : (
               <button className="btn-primary" type="button" onClick={submit} disabled={!canPublish || submitting}>
-                {submitting ? 'Publishing...' : 'Publish'}
+                {submitting ? 'Publishing...' : scheduleForLater ? 'Schedule Announcement' : 'Publish'}
               </button>
             )}
           </div>

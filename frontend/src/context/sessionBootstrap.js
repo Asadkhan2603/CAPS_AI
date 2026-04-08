@@ -49,6 +49,7 @@ function normalizeSessionBootstrapPayload(payload) {
   return {
     user: payload.user,
     unread_notice_count: Number(payload.unread_notice_count) || 0,
+    unread_notification_count: Number(payload.unread_notification_count) || 0,
     branding: normalizeBranding(payload.branding),
     generated_at: payload.generated_at || new Date().toISOString()
   };
@@ -57,7 +58,7 @@ function normalizeSessionBootstrapPayload(payload) {
 async function fetchLegacySessionBootstrap(apiClient) {
   const [userResult, unreadResult, brandingResult] = await Promise.allSettled([
     apiClient.get('/auth/me'),
-    apiClient.get('/notices/unread-count'),
+    apiClient.get('/notifications/unread-count'),
     apiClient.get('/branding/logo/meta')
   ]);
 
@@ -67,7 +68,8 @@ async function fetchLegacySessionBootstrap(apiClient) {
 
   return normalizeSessionBootstrapPayload({
     user: userResult.value?.data || null,
-    unread_notice_count:
+    unread_notice_count: 0,
+    unread_notification_count:
       unreadResult.status === 'fulfilled' ? Number(unreadResult.value?.data?.count) || 0 : 0,
     branding: brandingResult.status === 'fulfilled' ? brandingResult.value?.data : EMPTY_BRANDING,
     generated_at: new Date().toISOString()

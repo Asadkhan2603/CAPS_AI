@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { CSSProperties } from 'react';
 import Toast from '../ui/Toast';
@@ -20,14 +20,20 @@ type AppLayoutProps = {
 };
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
+const TABLET_QUERY = '(min-width: 768px) and (max-width: 1023px)';
 const SIDEBAR_PIN_KEY = 'caps.sidebar.pinned';
 const HEADER_HEIGHT_PX = 68;
+const TABLET_RAIL_WIDTH_PX = 72;
 
 function readPinnedState() {
   if (typeof window === 'undefined') {
-    return false;
+    return true;
   }
-  return window.localStorage.getItem(SIDEBAR_PIN_KEY) === 'true';
+  const storedValue = window.localStorage.getItem(SIDEBAR_PIN_KEY);
+  if (storedValue === null) {
+    return true;
+  }
+  return storedValue === 'true';
 }
 
 export default function AppLayout({
@@ -44,6 +50,14 @@ export default function AppLayout({
   const [isPinned, setIsPinned] = useState<boolean>(readPinnedState);
   const [isHovered, setIsHovered] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const navTriggerRef = useRef<HTMLElement | null>(null);
+  const previousMobileOpenRef = useRef(false);
+  const [isTablet, setIsTablet] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.matchMedia(TABLET_QUERY).matches;
+  });
   const [isDesktop, setIsDesktop] = useState(() => {
     if (typeof window === 'undefined') {
       return true;
@@ -56,14 +70,21 @@ export default function AppLayout({
       return undefined;
     }
     const mediaQuery = window.matchMedia(DESKTOP_QUERY);
+    const tabletQuery = window.matchMedia(TABLET_QUERY);
     const onMediaChange = (event: MediaQueryListEvent) => {
       setIsDesktop(event.matches);
     };
+    const onTabletChange = (event: MediaQueryListEvent) => {
+      setIsTablet(event.matches);
+    };
 
     setIsDesktop(mediaQuery.matches);
+    setIsTablet(tabletQuery.matches);
     mediaQuery.addEventListener('change', onMediaChange);
+    tabletQuery.addEventListener('change', onTabletChange);
     return () => {
       mediaQuery.removeEventListener('change', onMediaChange);
+      tabletQuery.removeEventListener('change', onTabletChange);
     };
   }, []);
 
@@ -83,6 +104,12 @@ export default function AppLayout({
   }, [isDesktop]);
 
   useEffect(() => {
+    if (!isDesktop) {
+      setIsMobileOpen(false);
+    }
+  }, [isDesktop, locationKey]);
+
+  useEffect(() => {
     function onEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setIsMobileOpen(false);
@@ -92,16 +119,36 @@ export default function AppLayout({
     return () => window.removeEventListener('keydown', onEscape);
   }, []);
 
+  useEffect(() => {
+    if (previousMobileOpenRef.current && !isMobileOpen) {
+      const timer = window.setTimeout(() => {
+        navTriggerRef.current?.focus();
+      }, 0);
+      previousMobileOpenRef.current = isMobileOpen;
+      return () => window.clearTimeout(timer);
+    }
+    previousMobileOpenRef.current = isMobileOpen;
+    return undefined;
+  }, [isMobileOpen]);
+
+  function toggleNavigationPanel(trigger?: HTMLElement | null) {
+    if (trigger) {
+      navTriggerRef.current = trigger;
+    }
+    setIsMobileOpen((prev) => !prev);
+  }
+
   const sidebarState: SidebarState = useMemo(() => {
     const isExpanded = isDesktop ? (isPinned || isHovered) : isMobileOpen;
     return {
       isPinned,
       isHovered,
       isMobileOpen,
+      isTablet,
       isDesktop,
       isExpanded
     };
-  }, [isDesktop, isHovered, isMobileOpen, isPinned]);
+  }, [isDesktop, isHovered, isMobileOpen, isPinned, isTablet]);
 
   const desktopContentOffset = sidebarState.isExpanded ? 250 : 64;
   const contentShellStyle: CSSProperties = {
@@ -109,17 +156,22 @@ export default function AppLayout({
   };
   if (isDesktop) {
     contentShellStyle.paddingLeft = desktopContentOffset;
+  } else if (isTablet) {
+    contentShellStyle.paddingLeft = TABLET_RAIL_WIDTH_PX;
   }
 
   return (
     <div className="relative h-screen overflow-hidden bg-[radial-gradient(1200px_500px_at_15%_-10%,rgba(14,165,233,0.18),transparent),radial-gradient(900px_500px_at_90%_0%,rgba(99,102,241,0.18),transparent)] dark:bg-[radial-gradient(1200px_520px_at_12%_-8%,rgba(56,189,248,0.18),transparent),radial-gradient(900px_560px_at_88%_0%,rgba(99,102,241,0.22),transparent),linear-gradient(180deg,rgba(2,6,23,0.96),rgba(8,17,31,0.98))]">
       <Header
         user={user}
-        initialNoticeCount={sessionBootstrap?.unread_notice_count}
+        initialNotificationCount={sessionBootstrap?.unread_notification_count}
         initialLogoVersion={sessionBootstrap?.branding?.updated_at ? String(sessionBootstrap.branding.updated_at) : ''}
         isDark={isDark}
         onToggleTheme={onToggleTheme}
-        onOpenMobile={() => setIsMobileOpen(true)}
+        onToggleMobileNavigation={(trigger) => toggleNavigationPanel(trigger)}
+        isMobileNavigationOpen={isMobileOpen}
+        onToggleDesktopSidebar={() => setIsPinned((prev) => !prev)}
+        isDesktopSidebarExpanded={sidebarState.isExpanded}
         onLogout={onLogout}
         headerHeight={HEADER_HEIGHT_PX}
       />
@@ -129,6 +181,11 @@ export default function AppLayout({
         sidebarState={sidebarState}
         onHoverChange={setIsHovered}
         onTogglePin={() => setIsPinned((prev) => !prev)}
+        onOpenCompactPanel={(trigger) => {
+          if (!isMobileOpen) {
+            toggleNavigationPanel(trigger);
+          }
+        }}
         onCloseMobile={() => setIsMobileOpen(false)}
         onLogout={onLogout}
         headerHeight={HEADER_HEIGHT_PX}
@@ -139,15 +196,6 @@ export default function AppLayout({
           {children}
         </MainContent>
       </div>
-
-      {!isDesktop && isMobileOpen ? (
-        <button
-          type="button"
-          className="fixed inset-0 z-30 bg-slate-950/45"
-          onClick={() => setIsMobileOpen(false)}
-          aria-label="Close navigation drawer"
-        />
-      ) : null}
 
       <Toast toasts={toasts} onDismiss={onDismissToast} />
     </div>

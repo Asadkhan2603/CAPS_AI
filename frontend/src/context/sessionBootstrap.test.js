@@ -15,6 +15,7 @@ describe('fetchSessionBootstrap', () => {
         data: {
           user: { id: 'user-1', email: 'user@example.com' },
           unread_notice_count: 3,
+          unread_notification_count: 5,
           branding: { has_logo: true, updated_at: '2026-04-02T12:00:00Z', filename: 'logo.svg' },
           generated_at: '2026-04-02T12:00:00Z'
         }
@@ -24,6 +25,7 @@ describe('fetchSessionBootstrap', () => {
     await expect(fetchSessionBootstrap(apiClient)).resolves.toEqual({
       user: { id: 'user-1', email: 'user@example.com' },
       unread_notice_count: 3,
+      unread_notification_count: 5,
       branding: { has_logo: true, updated_at: '2026-04-02T12:00:00Z', filename: 'logo.svg' },
       generated_at: '2026-04-02T12:00:00Z'
     });
@@ -43,14 +45,15 @@ describe('fetchSessionBootstrap', () => {
 
     await expect(fetchSessionBootstrap(apiClient)).resolves.toMatchObject({
       user: { id: 'user-2', email: 'legacy@example.com' },
-      unread_notice_count: 7,
+      unread_notice_count: 0,
+      unread_notification_count: 7,
       branding: { has_logo: true, updated_at: '2026-04-02T12:05:00Z', filename: 'logo.png' }
     });
 
     expect(apiClient.get.mock.calls).toEqual([
       ['/session/bootstrap'],
       ['/auth/me'],
-      ['/notices/unread-count'],
+      ['/notifications/unread-count'],
       ['/branding/logo/meta']
     ]);
   });
@@ -80,7 +83,7 @@ describe('fetchSessionBootstrap', () => {
 
     expect(apiClient.get.mock.calls).toEqual([
       ['/auth/me'],
-      ['/notices/unread-count'],
+      ['/notifications/unread-count'],
       ['/branding/logo/meta']
     ]);
   });

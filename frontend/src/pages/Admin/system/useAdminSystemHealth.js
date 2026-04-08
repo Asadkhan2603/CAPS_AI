@@ -15,6 +15,10 @@ export function useAdminSystemHealth({ pushToast }) {
   const [localSnapshots, setLocalSnapshots] = useState(() => loadStoredSnapshots());
 
   const aiMetrics = data?.observability?.ai_metrics || {};
+  const alertRouting = data?.alert_routing || {};
+  const alertRouteHistory = data?.alert_route_history || [];
+  const clubsMetrics = data?.observability?.clubs_metrics || {};
+  const clubsObservabilityRaw = data?.clubs_observability || {};
   const snapshotStore = data?.snapshot_store || {};
 
   const historyData = useMemo(
@@ -41,6 +45,8 @@ export function useAdminSystemHealth({ pushToast }) {
         oldestAgeSeconds: point.oldest_queued_age_seconds ?? 0,
         fallbackRatePct: point.fallback_rate_pct_15m ?? 0,
         similarityCandidates: point.similarity_candidate_count ?? 0,
+        clubRequests: point.club_requests_15m ?? 0,
+        clubP95DurationMs: point.club_p95_duration_ms_15m ?? 0,
         retainedRows: point.retained_rows ?? 0,
         prunedDeletedCount: point.last_pruned_deleted_count ?? 0,
       })),
@@ -57,9 +63,43 @@ export function useAdminSystemHealth({ pushToast }) {
         oldestAgeSeconds: snapshot.oldestAgeSeconds,
         fallbackRatePct: snapshot.fallbackRatePct,
         similarityCandidates: snapshot.similarityCandidates,
+        clubRequests: snapshot.clubRequests,
+        clubP95DurationMs: snapshot.clubP95DurationMs,
       })),
     [localSnapshots]
   );
+
+  const clubsObservability = useMemo(() => {
+    const mapPoint = (point, formatOptions) => ({
+      bucketStart: point.bucket_start,
+      label: point.bucket_start ? new Date(point.bucket_start).toLocaleString([], formatOptions) : '-',
+      clubRequestsAvg: point.club_requests_avg ?? 0,
+      clubRequestsPeak: point.club_requests_peak ?? 0,
+      clubP95Avg: point.club_p95_duration_ms_avg ?? 0,
+      clubP95Peak: point.club_p95_duration_ms_peak ?? 0,
+      clubSlowTotal: point.club_slow_requests_total ?? 0,
+      clubServerErrorsTotal: point.club_server_errors_total ?? 0,
+      pressureLevel: point.pressure_level || 'ok',
+      pressureSignal:
+        point.pressure_level === 'critical'
+          ? 2
+          : point.pressure_level === 'warning'
+            ? 1
+            : 0,
+    });
+    return {
+      summary: clubsObservabilityRaw.summary || {},
+      hourly24h: (clubsObservabilityRaw.hourly_24h || []).map((point) =>
+        mapPoint(point, { hour: '2-digit', minute: '2-digit' })
+      ),
+      daily14d: (clubsObservabilityRaw.daily_14d || []).map((point) =>
+        mapPoint(point, { month: 'short', day: 'numeric' })
+      ),
+      recentPressureWindows: (clubsObservabilityRaw.recent_pressure_windows || []).map((point) =>
+        mapPoint(point, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      ),
+    };
+  }, [clubsObservabilityRaw]);
 
   useEffect(() => {
     void loadHealth({ silent: false });
@@ -132,6 +172,10 @@ export function useAdminSystemHealth({ pushToast }) {
 
   return {
     aiMetrics,
+    alertRouteHistory,
+    alertRouting,
+    clubsObservability,
+    clubsMetrics,
     clearSnapshots,
     data,
     error,
@@ -150,6 +194,7 @@ export function useAdminSystemHealth({ pushToast }) {
 
 function appendSnapshot(existing, payload) {
   const aiMetrics = payload?.observability?.ai_metrics || {};
+  const clubsMetrics = payload?.observability?.clubs_metrics || {};
   const next = [
     ...existing,
     {
@@ -158,6 +203,8 @@ function appendSnapshot(existing, payload) {
       oldestAgeSeconds: aiMetrics.oldest_queued_age_seconds ?? 0,
       fallbackRatePct: aiMetrics.fallback_rate_pct_15m ?? 0,
       similarityCandidates: aiMetrics.last_similarity_candidate_count ?? 0,
+      clubRequests: clubsMetrics.requests_15m ?? 0,
+      clubP95DurationMs: clubsMetrics.p95_duration_ms_15m ?? 0,
     },
   ];
   return next.slice(-MAX_LOCAL_SNAPSHOTS);

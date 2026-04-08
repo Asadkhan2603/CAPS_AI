@@ -41,6 +41,14 @@ python backend/scripts/import_master_hierarchy.py --dry-run
 python backend/scripts/import_master_hierarchy.py --backup-dir exports
 ```
 
+5. If you are rebuilding a fresh local academic hierarchy after a full academic purge, seed the canonical program batches next:
+
+```powershell
+python backend/scripts/seed_program_batches.py
+```
+
+That produces the master hierarchy plus program-level batches and semesters. Sections, groups, subjects, course offerings, and class slots are still created inside CAPS AI after the hierarchy rebuild.
+
 ## Dry Run Behavior
 
 Dry run:

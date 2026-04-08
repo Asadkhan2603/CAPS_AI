@@ -15,6 +15,13 @@ def course_offering_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "group_id": document.get("group_id"),
         "academic_year": document.get("academic_year"),
         "offering_type": document.get("offering_type", "theory"),
+        "subject_name": document.get("subject_name"),
+        "subject_code": document.get("subject_code"),
+        "teacher_name": document.get("teacher_name"),
+        "batch_name": document.get("batch_name"),
+        "section_name": document.get("section_name"),
+        "group_name": document.get("group_name"),
+        "semester_label": document.get("semester_label"),
         "is_active": document.get("is_active", True),
         "created_at": document.get("created_at"),
         "schema_version": normalize_schema_version(

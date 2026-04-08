@@ -129,7 +129,7 @@ class Settings:
         default_factory=lambda: _as_csv_list(
             os.getenv(
                 "RESPONSE_ENVELOPE_SKIP_PATHS",
-                "/api/v1/auth/me,/api/v1/session/bootstrap,/api/v1/analytics/dashboard,/api/v1/analytics/summary,/api/v1/notices/unread-count",
+                "/api/v1/auth/me,/api/v1/session/bootstrap,/api/v1/analytics/dashboard,/api/v1/analytics/summary,/api/v1/notices/unread-count,/api/v1/notifications/unread-count",
             )
         )
     )
@@ -161,6 +161,18 @@ class Settings:
     scheduled_notice_poll_seconds: int = field(
         default_factory=lambda: _as_int(os.getenv("SCHEDULED_NOTICE_POLL_SECONDS", "60"), 60)
     )
+    scheduled_notice_retry_limit: int = field(
+        default_factory=lambda: _as_int(os.getenv("SCHEDULED_NOTICE_RETRY_LIMIT", "3"), 3)
+    )
+    scheduled_notice_retry_backoff_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("SCHEDULED_NOTICE_RETRY_BACKOFF_SECONDS", "120"), 120)
+    )
+    scheduled_notice_dispatch_lease_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("SCHEDULED_NOTICE_DISPATCH_LEASE_SECONDS", "300"), 300)
+    )
+    notification_digest_poll_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("NOTIFICATION_DIGEST_POLL_SECONDS", "300"), 300)
+    )
     ai_job_poll_seconds: int = field(
         default_factory=lambda: _as_int(os.getenv("AI_JOB_POLL_SECONDS", "10"), 10)
     )
@@ -176,6 +188,18 @@ class Settings:
     cloudinary_cloud_name: str = field(default_factory=lambda: os.getenv("CLOUDINARY_CLOUD_NAME", "").strip())
     cloudinary_api_key: str = field(default_factory=lambda: os.getenv("CLOUDINARY_API_KEY", "").strip())
     cloudinary_api_secret: str = field(default_factory=lambda: os.getenv("CLOUDINARY_API_SECRET", "").strip())
+    outbound_email_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("OUTBOUND_EMAIL_ENABLED"), False)
+    )
+    smtp_host: str = field(default_factory=lambda: os.getenv("SMTP_HOST", "").strip())
+    smtp_port: int = field(default_factory=lambda: _as_int(os.getenv("SMTP_PORT", "587"), 587))
+    smtp_username: str = field(default_factory=lambda: os.getenv("SMTP_USERNAME", "").strip())
+    smtp_password: str = field(default_factory=lambda: os.getenv("SMTP_PASSWORD", "").strip())
+    smtp_use_tls: bool = field(default_factory=lambda: _as_bool(os.getenv("SMTP_USE_TLS"), True))
+    smtp_use_ssl: bool = field(default_factory=lambda: _as_bool(os.getenv("SMTP_USE_SSL"), False))
+    outbound_email_from: str = field(default_factory=lambda: os.getenv("OUTBOUND_EMAIL_FROM", "").strip())
+    outbound_email_from_name: str = field(default_factory=lambda: os.getenv("OUTBOUND_EMAIL_FROM_NAME", "").strip())
+    outbound_email_reply_to: str = field(default_factory=lambda: os.getenv("OUTBOUND_EMAIL_REPLY_TO", "").strip())
     cors_origins: List[str] = field(
         default_factory=lambda: _merge_cors_origins(
             os.getenv("CORS_ORIGINS", "http://localhost:5173")
@@ -187,6 +211,8 @@ class Settings:
             raise ValueError("JWT_SECRET must be set for non-development environments")
         if self.auth_registration_policy not in {"single_admin_open", "bootstrap_strict", "open"}:
             self.auth_registration_policy = "single_admin_open"
+        if not self.outbound_email_from_name:
+            self.outbound_email_from_name = self.app_name
 
 
 settings = Settings()

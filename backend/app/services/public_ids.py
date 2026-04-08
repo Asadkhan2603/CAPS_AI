@@ -199,6 +199,9 @@ def build_public_id(
     if kind == "review_ticket":
         tail = _persisted_tail(document.get("_id") or document.get("id"), length=4)
         return f"RVT-{tail}" if tail else None
+    if kind == "grievance":
+        tail = _persisted_tail(document.get("_id") or document.get("id"), length=4)
+        return f"GRV-{tail}" if tail else None
     if kind == "audit_log":
         tail = _persisted_tail(document.get("_id") or document.get("id"), length=4)
         return f"ADT-{tail}" if tail else None

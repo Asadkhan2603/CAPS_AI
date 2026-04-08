@@ -45,5 +45,6 @@ class SessionBootstrapBranding(BaseModel):
 class SessionBootstrapResponse(BaseModel):
     user: UserOut
     unread_notice_count: int = 0
+    unread_notification_count: int = 0
     branding: SessionBootstrapBranding = Field(default_factory=SessionBootstrapBranding)
     generated_at: str

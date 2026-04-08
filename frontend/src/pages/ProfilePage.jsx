@@ -31,6 +31,30 @@ const professionalFields = [
   { name: 'bio', label: 'Bio' }
 ];
 
+const defaultCommunicationPreferences = {
+  announcement_email: true,
+  club_announcement_email: true,
+  notification_email: true
+};
+
+const communicationPreferenceFields = [
+  {
+    key: 'announcement_email',
+    label: 'Announcement Emails',
+    description: 'Receive central college, batch, class, and subject announcements by email.'
+  },
+  {
+    key: 'club_announcement_email',
+    label: 'Club Update Emails',
+    description: 'Receive club-scoped announcement emails when you are part of the club audience.'
+  },
+  {
+    key: 'notification_email',
+    label: 'Notification Emails',
+    description: 'Receive notification emails in addition to in-app alerts.'
+  }
+];
+
 function initialProfileForm(user) {
   const profile = user?.profile || {};
   return {
@@ -53,10 +77,51 @@ function initialProfileForm(user) {
   };
 }
 
+function initialCommunicationPreferences(user) {
+  return {
+    ...defaultCommunicationPreferences,
+    ...(user?.communication_preferences || {})
+  };
+}
+
+function CommunicationPreferencesCard({ preferences, onToggle, saving }) {
+  return (
+    <Card className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold">Communication Preferences</h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          These controls change email delivery behavior. In-app announcements and notifications remain available inside CAPS AI.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {communicationPreferenceFields.map((item) => (
+          <label
+            key={item.key}
+            className="flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-700"
+          >
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.label}</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.description}</p>
+            </div>
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              checked={Boolean(preferences[item.key])}
+              onChange={() => onToggle(item.key)}
+              disabled={saving}
+            />
+          </label>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth();
   const { pushToast } = useToast();
   const [form, setForm] = useState(() => initialProfileForm(user));
+  const [preferences, setPreferences] = useState(() => initialCommunicationPreferences(user));
   const [saving, setSaving] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -77,6 +142,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     setForm(initialProfileForm(user));
+    setPreferences(initialCommunicationPreferences(user));
   }, [user]);
 
   useEffect(() => {
@@ -113,13 +179,20 @@ export default function ProfilePage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
+  function onTogglePreference(key) {
+    setPreferences((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   async function onSave(event) {
     if (event?.preventDefault) {
       event.preventDefault();
     }
     setSaving(true);
     try {
-      await apiClient.patch('/auth/profile', form);
+      await apiClient.patch('/auth/profile', {
+        ...form,
+        communication_preferences: preferences
+      });
       await refreshUser();
       pushToast({ title: 'Profile saved', description: 'Your profile details were updated.', variant: 'success' });
     } catch (err) {
@@ -325,6 +398,8 @@ export default function ProfilePage() {
           </div>
         </Card>
 
+        <CommunicationPreferencesCard preferences={preferences} onToggle={onTogglePreference} saving={saving} />
+
         <Card className="space-y-3">
           <h2 className="text-lg font-semibold">Security</h2>
           <form className="grid gap-3 sm:grid-cols-3" onSubmit={onChangePassword}>
@@ -430,6 +505,8 @@ export default function ProfilePage() {
             </button>
           </div>
         </Card>
+
+        <CommunicationPreferencesCard preferences={preferences} onToggle={onTogglePreference} saving={saving} />
 
         <Card className="space-y-3">
           <h2 className="text-lg font-semibold">Security</h2>

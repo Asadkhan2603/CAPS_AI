@@ -20,6 +20,7 @@ from app.models.users import user_public
 from app.schemas.auth import BootstrapStatus, DevBootstrapAdminRequest, Token
 from app.schemas.user import UserCreate, UserLogin, UserOut
 from app.services.audit import log_audit_event
+from app.services.student_profiles import ensure_student_profile_for_user
 
 from .repository import AuthRepository
 
@@ -150,6 +151,11 @@ class AuthService:
             raise
 
         created_user = await self.repository.find_user_by_id(result.inserted_id)
+        try:
+            await ensure_student_profile_for_user(created_user)
+        except Exception:
+            await self.repository.delete_user(result.inserted_id)
+            raise
         return UserOut(**user_public(created_user))
 
     async def get_bootstrap_status(self) -> BootstrapStatus:

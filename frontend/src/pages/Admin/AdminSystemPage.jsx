@@ -1,6 +1,8 @@
 import Card from '../../components/ui/Card';
 import AdminDomainNav from '../../components/admin/AdminDomainNav';
 import { useToast } from '../../hooks/useToast';
+import AlertRoutingHistorySection from './system/AlertRoutingHistorySection';
+import ClubObservabilityTrendSection from './system/ClubObservabilityTrendSection';
 import SystemHealthHistoryCharts from './system/SystemHealthHistoryCharts';
 import { AUTO_REFRESH_MS, useAdminSystemHealth } from './system/useAdminSystemHealth';
 import {
@@ -18,6 +20,10 @@ export default function AdminSystemPage() {
   const { pushToast } = useToast();
   const {
     aiMetrics,
+    alertRouteHistory,
+    alertRouting,
+    clubsObservability,
+    clubsMetrics,
     clearSnapshots,
     data,
     error,
@@ -127,6 +133,7 @@ export default function AdminSystemPage() {
           <p className="text-sm text-emerald-600 dark:text-emerald-400">No active operational alerts.</p>
         )}
       </Card>
+      <AlertRoutingHistorySection alertRouting={alertRouting} alertRouteHistory={alertRouteHistory} />
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Requests (15m)" value={data?.observability?.request_metrics?.requests_15m ?? 0} />
         <Metric label="5xx Rate (15m)" value={formatPercent(data?.observability?.request_metrics?.server_error_rate_pct_15m)} />
@@ -134,10 +141,23 @@ export default function AdminSystemPage() {
         <Metric label="Slow Requests (15m)" value={data?.observability?.request_metrics?.slow_requests_15m ?? 0} />
       </div>
       <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Club Requests (15m)" value={clubsMetrics.requests_15m ?? 0} />
+        <Metric label="Club P95 (15m)" value={formatDuration(clubsMetrics.p95_duration_ms_15m)} />
+        <Metric label="Club Slow (15m)" value={clubsMetrics.slow_requests_15m ?? 0} />
+        <Metric label="Club 5xx (15m)" value={clubsMetrics.server_errors_15m ?? 0} />
+      </div>
+      <ClubObservabilityTrendSection clubsObservability={clubsObservability} />
+      <div className="grid gap-3 md:grid-cols-4">
         <Metric label="AI Queued Jobs" value={aiMetrics.queued_jobs ?? 0} />
         <Metric label="Oldest AI Job Age" value={formatSeconds(aiMetrics.oldest_queued_age_seconds)} />
         <Metric label="AI Fallback Rate (15m)" value={formatPercent(aiMetrics.fallback_rate_pct_15m)} />
         <Metric label="Similarity Candidates" value={aiMetrics.last_similarity_candidate_count ?? 0} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Scheduled Notices Pending" value={data?.scheduled_notice_dispatch?.pending_total ?? 0} />
+        <Metric label="Scheduled Notices Due" value={data?.scheduled_notice_dispatch?.due_now_total ?? 0} />
+        <Metric label="Scheduled Notice Retries" value={data?.scheduled_notice_dispatch?.retry_pending_total ?? 0} />
+        <Metric label="Oldest Scheduled Delay" value={formatSeconds(data?.scheduled_notice_dispatch?.oldest_due_age_seconds)} />
       </div>
       <Card className="space-y-3">
         <p className="text-sm font-medium text-slate-600 dark:text-slate-300">AI Capacity Status</p>
@@ -186,6 +206,7 @@ export default function AdminSystemPage() {
             {
               scheduler: data?.scheduler || {},
               scheduler_lock: data?.scheduler_lock || {},
+              scheduled_notice_dispatch: data?.scheduled_notice_dispatch || {},
               scheduler_metrics: data?.observability?.scheduler_metrics || {},
             },
             null,

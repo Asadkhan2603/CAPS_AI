@@ -34,6 +34,62 @@ function postedByLabel(notice) {
   return 'SYSTEM';
 }
 
+function formatAbsoluteTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString();
+}
+
+function deliverySummary(notice) {
+  const summary = notice.delivery_summary || {};
+  const totalRecipients = Number(summary.total_recipients || notice.fanout_count || 0);
+  const scheduledTime = notice.scheduled_at ? new Date(notice.scheduled_at).getTime() : null;
+  if (scheduledTime && scheduledTime > Date.now()) {
+    return {
+      tone: 'sky',
+      label: `Scheduled for ${formatAbsoluteTime(notice.scheduled_at)}`,
+      totalRecipients,
+      readCount: Number(summary.read_count || 0),
+      email: summary.email || {}
+    };
+  }
+  if (notice.fanout_status === 'failed') {
+    return {
+      tone: 'rose',
+      label: notice.fanout_error ? `Delivery failed: ${notice.fanout_error}` : 'Delivery failed',
+      totalRecipients,
+      readCount: Number(summary.read_count || 0),
+      email: summary.email || {}
+    };
+  }
+  if (notice.fanout_status === 'dispatched') {
+    return {
+      tone: 'emerald',
+      label: `Delivered to ${totalRecipients} recipient${totalRecipients === 1 ? '' : 's'}`,
+      totalRecipients,
+      readCount: Number(summary.read_count || 0),
+      email: summary.email || {}
+    };
+  }
+  if (notice.fanout_status === 'scheduled') {
+    return {
+      tone: 'sky',
+      label: 'Delivery scheduled',
+      totalRecipients,
+      readCount: Number(summary.read_count || 0),
+      email: summary.email || {}
+    };
+  }
+  return {
+    tone: 'amber',
+    label: 'Delivery queued',
+    totalRecipients,
+    readCount: Number(summary.read_count || 0),
+    email: summary.email || {}
+  };
+}
+
 function normalizeFiles(notice) {
   const raw = notice.images || notice.attachments || [];
   if (!Array.isArray(raw)) return [];
@@ -50,13 +106,22 @@ function normalizeFiles(notice) {
     .filter((item) => Boolean(item.url));
 }
 
-function AnnouncementCard({ notice, audienceText, isRead = false, onMarkRead }) {
+function AnnouncementCard({
+  notice,
+  audienceText,
+  isRead = false,
+  onMarkRead,
+  onViewDelivery,
+  canInspectDelivery = false,
+  highlighted = false
+}) {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
 
   const isExpired = notice.expires_at ? new Date(notice.expires_at).getTime() <= Date.now() : false;
   const files = useMemo(() => normalizeFiles(notice), [notice]);
+  const delivery = useMemo(() => deliverySummary(notice), [notice]);
 
   const imageFiles = useMemo(
     () =>
@@ -72,12 +137,15 @@ function AnnouncementCard({ notice, audienceText, isRead = false, onMarkRead }) 
   const messageText = String(notice.message || '');
   const shouldTruncate = messageText.length > 220;
   const previewText = shouldTruncate && !expanded ? `${messageText.slice(0, 220).trim()}...` : messageText;
+  const emailSentCount = Number(delivery.email?.sent_count || 0);
+  const emailFailedCount = Number(delivery.email?.failed_count || 0);
+  const emailSkippedCount = Number(delivery.email?.skipped_count || 0);
 
   return (
     <article
       className={`rounded-2xl border bg-white p-4 transition hover:border-slate-300 dark:bg-slate-900 ${
         isExpired ? 'border-slate-200/70 opacity-75 dark:border-slate-800' : 'border-slate-200 dark:border-slate-800'
-      }`}
+      } ${highlighted ? 'ring-2 ring-brand-400 ring-offset-2 ring-offset-white dark:ring-brand-500 dark:ring-offset-slate-950' : ''}`}
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -98,6 +166,16 @@ function AnnouncementCard({ notice, audienceText, isRead = false, onMarkRead }) 
               >
                 {isRead ? 'Read' : 'Unread'}
               </span>
+              {notice.is_pinned ? (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                  Pinned
+                </span>
+              ) : null}
+              {notice.template_key ? (
+                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                  {String(notice.template_key).replaceAll('_', ' ')}
+                </span>
+              ) : null}
               <PriorityBadge priority={notice.priority} />
             </div>
           </div>
@@ -159,6 +237,40 @@ function AnnouncementCard({ notice, audienceText, isRead = false, onMarkRead }) 
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
         <span className="rounded-md border border-slate-200 px-2 py-1 dark:border-slate-700">{scopeLabel(notice)}</span>
         <span className="rounded-md border border-slate-200 px-2 py-1 dark:border-slate-700">{audienceText}</span>
+        <span
+          className={`rounded-md px-2 py-1 ${
+            delivery.tone === 'emerald'
+              ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300'
+              : delivery.tone === 'rose'
+                ? 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300'
+                : delivery.tone === 'sky'
+                  ? 'border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-900/20 dark:text-sky-300'
+                  : 'border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300'
+          }`}
+          title={notice.fanout_dispatched_at ? `Last dispatch: ${formatAbsoluteTime(notice.fanout_dispatched_at)}` : undefined}
+        >
+          {delivery.label}
+        </span>
+        {delivery.totalRecipients > 0 ? (
+          <span className="rounded-md border border-slate-200 px-2 py-1 dark:border-slate-700">
+            Read {delivery.readCount}/{delivery.totalRecipients}
+          </span>
+        ) : null}
+        {emailSentCount > 0 ? (
+          <span className="rounded-md border border-slate-200 px-2 py-1 dark:border-slate-700">
+            Email sent {emailSentCount}
+          </span>
+        ) : null}
+        {emailFailedCount > 0 ? (
+          <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300">
+            Email failed {emailFailedCount}
+          </span>
+        ) : null}
+        {emailSkippedCount > 0 ? (
+          <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300">
+            Email skipped {emailSkippedCount}
+          </span>
+        ) : null}
         <ExpiryIndicator expiresAt={notice.expires_at} />
         <span className="inline-flex items-center gap-1">
           <Megaphone size={12} />
@@ -171,6 +283,15 @@ function AnnouncementCard({ notice, audienceText, isRead = false, onMarkRead }) 
             onClick={() => onMarkRead(notice.id)}
           >
             Mark read
+          </button>
+        ) : null}
+        {canInspectDelivery && onViewDelivery ? (
+          <button
+            type="button"
+            className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            onClick={() => onViewDelivery(notice)}
+          >
+            View delivery
           </button>
         ) : null}
       </div>

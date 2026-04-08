@@ -1,5 +1,13 @@
 export const FEATURE_ACCESS = {
   adminDashboard: { allowedRoles: ['admin'] },
+  adminOnboarding: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin']
+  },
+  adminRbac: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin']
+  },
   adminGovernance: { allowedRoles: ['admin'] },
   adminAcademicStructure: { allowedRoles: ['admin'] },
   adminOperations: { allowedRoles: ['admin'] },
@@ -15,6 +23,25 @@ export const FEATURE_ACCESS = {
   history: { allowedRoles: ['admin', 'teacher', 'student'] },
   timetable: { allowedRoles: ['admin', 'teacher', 'student'] },
   profile: { allowedRoles: ['admin', 'teacher', 'student'] },
+  helpSupport: { allowedRoles: ['admin', 'teacher', 'student'] },
+  grievancesStudent: { allowedRoles: ['student'] },
+  grievancesCoordinator: {
+    allowedRoles: ['teacher'],
+    requiredTeacherExtensions: ['class_coordinator']
+  },
+  grievancesHod: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['hod']
+  },
+  grievancesDean: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['dean']
+  },
+  grievancesAssigned: { allowedRoles: ['admin', 'teacher'] },
+  grievancesFallback: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['academic_admin', 'super_admin']
+  },
   academicStructure: { allowedRoles: ['admin', 'teacher', 'student'] },
   students: { allowedRoles: ['admin', 'teacher'] },
   groups: { allowedRoles: ['admin', 'teacher'] },
@@ -36,11 +63,25 @@ export const FEATURE_ACCESS = {
   communicationMessages: { allowedRoles: ['admin', 'teacher', 'student'] },
   notices: { allowedRoles: ['admin', 'teacher', 'student'] },
   notifications: { allowedRoles: ['admin', 'teacher', 'student'] },
+  studentBulkImport: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin']
+  },
+  coordinatorStudentMapping: {
+    allowedRoles: ['teacher'],
+    requiredTeacherExtensions: ['class_coordinator']
+  },
   clubs: { allowedRoles: ['admin', 'teacher', 'student'] },
-  clubEvents: { allowedRoles: ['admin', 'teacher', 'student'] },
+  clubEvents: { allowedRoles: ['admin', 'teacher'] },
   eventRegistrations: { allowedRoles: ['admin', 'teacher', 'student'] },
-  auditLogs: { allowedRoles: ['admin', 'teacher'] },
-  developerPanel: { allowedRoles: ['admin'] },
+  auditLogs: {
+    allowedRoles: ['admin', 'teacher'],
+    requiredAdminTypes: ['super_admin', 'admin', 'compliance_admin']
+  },
+  developerPanel: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin']
+  },
   users: {
     allowedRoles: ['admin'],
     requiredAdminTypes: ['super_admin', 'admin']
@@ -92,5 +133,20 @@ export const FEATURE_ACCESS = {
         { name: 'replacement_section', label: 'Replacement Section', placeholder: 'Optional replacement section or migration target' }
       ]
     }
+  },
+  adminSections: {
+    allowedRoles: ['admin'],
+    requiredAdminTypes: ['super_admin', 'admin', 'academic_admin', 'department_admin'],
+    deleteGovernance: {
+      enabled: true,
+      promptDescription: 'Section deletes require governance approval before the archive can proceed.',
+      metadataFields: [
+        { name: 'reason', label: 'Delete Reason', placeholder: 'Why is this section being archived?' },
+        { name: 'replacement_section', label: 'Replacement Section', placeholder: 'Optional replacement section or migration target' }
+      ]
+    }
+  },
+  teacherSections: {
+    allowedRoles: ['teacher']
   }
 };

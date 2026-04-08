@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { CirclePlus, Funnel, Settings } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import CommunicationTabs from '../components/communication/CommunicationTabs';
+import CommunicationDeliveryModal from '../components/communication/CommunicationDeliveryModal';
+import { useSearchParams } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
+import SafeResponsiveContainer from '../components/charts/SafeResponsiveContainer';
 import FormInput from '../components/ui/FormInput';
 import { apiClient } from '../services/apiClient';
 import { useToast } from '../hooks/useToast';
@@ -21,6 +27,151 @@ const SCOPE_OPTIONS = [
   { value: 'system', label: 'System' }
 ];
 
+const NOTIFICATION_SCOPE_FIELDS = [
+  { key: 'global_scope', label: 'Global', description: 'Default rule for notifications without a more specific override.' },
+  { key: 'notice', label: 'Notice', description: 'Announcement-linked alerts and notice fanout updates.' },
+  { key: 'similarity', label: 'Similarity', description: 'Similarity detections and review pipeline events.' },
+  { key: 'ai', label: 'AI', description: 'AI evaluation, queue, and assistive workflow events.' },
+  { key: 'system', label: 'System', description: 'Operational, policy, and account-level alerts.' }
+];
+
+const NOTIFICATION_EMAIL_MODE_OPTIONS = [
+  { value: 'off', label: 'Off' },
+  { value: 'instant', label: 'Instant' },
+  { value: 'daily_digest', label: 'Daily Digest' },
+  { value: 'weekly_digest', label: 'Weekly Digest' }
+];
+
+const SCOPE_EMAIL_MODE_OPTIONS = [
+  { value: 'inherit', label: 'Inherit Base Rule' },
+  ...NOTIFICATION_EMAIL_MODE_OPTIONS
+];
+
+const SCOPE_IN_APP_OPTIONS = [
+  { value: 'inherit', label: 'Inherit Base Rule' },
+  { value: 'enabled', label: 'Force Enabled' },
+  { value: 'disabled', label: 'Force Disabled' }
+];
+
+const DIGEST_DAY_OPTIONS = [
+  { value: 0, label: 'Monday' },
+  { value: 1, label: 'Tuesday' },
+  { value: 2, label: 'Wednesday' },
+  { value: 3, label: 'Thursday' },
+  { value: 4, label: 'Friday' },
+  { value: 5, label: 'Saturday' },
+  { value: 6, label: 'Sunday' }
+];
+
+const DIGEST_HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  value: hour,
+  label: `${String(hour).padStart(2, '0')}:00 UTC`
+}));
+
+const DEFAULT_NOTIFICATION_SCOPE_PREFERENCES = {
+  global_scope: { in_app: null, email_mode: 'inherit' },
+  notice: { in_app: null, email_mode: 'inherit' },
+  similarity: { in_app: null, email_mode: 'inherit' },
+  ai: { in_app: null, email_mode: 'inherit' },
+  system: { in_app: null, email_mode: 'inherit' }
+};
+
+const DEFAULT_DIGEST_PREFERENCES = {
+  daily_digest_hour_utc: 8,
+  weekly_digest_day_of_week: 0
+};
+
+const DEFAULT_COMMUNICATION_PREFERENCES = {
+  announcement_email: true,
+  club_announcement_email: true,
+  notification_email: true,
+  notification_in_app: true,
+  notification_email_mode: 'instant',
+  notification_scope_preferences: DEFAULT_NOTIFICATION_SCOPE_PREFERENCES,
+  digest_preferences: DEFAULT_DIGEST_PREFERENCES
+};
+
+const BASIC_EMAIL_PREFERENCE_FIELDS = [
+  {
+    key: 'announcement_email',
+    label: 'Announcement Emails',
+    description: 'Receive central college, batch, class, and subject announcement emails.'
+  },
+  {
+    key: 'club_announcement_email',
+    label: 'Club Update Emails',
+    description: 'Receive club announcement emails when you are part of the club audience.'
+  },
+  {
+    key: 'notification_in_app',
+    label: 'In-App Notifications',
+    description: 'Show notification-center items inside CAPS AI by default.'
+  }
+];
+
+const REPORT_STATUS_OPTIONS = [
+  { value: '', label: 'All Statuses' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'sent', label: 'Sent' },
+  { value: 'read', label: 'Read' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'skipped', label: 'Skipped' }
+];
+
+const REPORT_EXPORT_VIEW_OPTIONS = [
+  { value: 'rows', label: 'Detailed Rows' },
+  { value: 'creator_summary', label: 'Creator Summary' },
+  { value: 'scope_summary', label: 'Scope Summary' },
+  { value: 'email_health', label: 'Email Health' }
+];
+
+const NOTIFICATION_PRESET_OPTIONS = [
+  {
+    key: 'student',
+    label: 'Student',
+    description: 'Keep email quiet by batching most alerts while leaving urgent system notices instant.',
+  },
+  {
+    key: 'faculty',
+    label: 'Faculty',
+    description: 'Stay responsive to teaching and review activity with more instant delivery.',
+  },
+  {
+    key: 'admin',
+    label: 'Admin Ops',
+    description: 'Favor immediate delivery across operational scopes for tighter oversight.',
+  }
+];
+
+const REPORT_VIEW_STORAGE_PREFIX = 'caps_ai_notification_report_views_v1';
+
+const REPORT_VIEW_STARTERS = [
+  {
+    key: 'starter:all',
+    label: 'All Activity',
+    description: 'Default operational view across all notification delivery activity.',
+    days: 7,
+    filters: { scope: '', status: '', created_by: '' },
+    readonly: true
+  },
+  {
+    key: 'starter:failed',
+    label: 'Failed Deliveries',
+    description: 'Focus on failed notification deliveries that may need follow-up.',
+    days: 14,
+    filters: { scope: '', status: 'failed', created_by: '' },
+    readonly: true
+  },
+  {
+    key: 'starter:system',
+    label: 'System Alerts',
+    description: 'Review operational notifications coming from system scope.',
+    days: 7,
+    filters: { scope: 'system', status: '', created_by: '' },
+    readonly: true
+  }
+];
+
 function formatTimestamp(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -34,16 +185,286 @@ function priorityVariant(priority) {
   return 'default';
 }
 
+function deliveryBreakdown(item) {
+  const summary = item?.delivery_summary || {};
+  const totalRecipients = Number(summary.total_recipients || 0);
+  const readCount = Number(summary.read_count || 0);
+  const email = summary.email || {};
+  const sentCount = Number(email.sent_count || 0);
+  const failedCount = Number(email.failed_count || 0);
+  const skippedCount = Number(email.skipped_count || 0);
+  return {
+    totalRecipients,
+    readCount,
+    unreadCount: Math.max(totalRecipients - readCount, 0),
+    sentCount,
+    failedCount,
+    skippedCount
+  };
+}
+
+function notifyNotificationBadgeRefresh() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('caps-ai:notifications-changed'));
+  }
+}
+
+function normalizeScopePreference(scopePreference) {
+  return {
+    in_app: scopePreference?.in_app ?? null,
+    email_mode: scopePreference?.email_mode || 'inherit'
+  };
+}
+
+function normalizeCommunicationPreferences(preferences) {
+  const raw = preferences || {};
+  return {
+    ...DEFAULT_COMMUNICATION_PREFERENCES,
+    ...raw,
+    notification_scope_preferences: {
+      ...DEFAULT_NOTIFICATION_SCOPE_PREFERENCES,
+      ...(raw.notification_scope_preferences || {}),
+      global_scope: normalizeScopePreference(raw.notification_scope_preferences?.global_scope),
+      notice: normalizeScopePreference(raw.notification_scope_preferences?.notice),
+      similarity: normalizeScopePreference(raw.notification_scope_preferences?.similarity),
+      ai: normalizeScopePreference(raw.notification_scope_preferences?.ai),
+      system: normalizeScopePreference(raw.notification_scope_preferences?.system)
+    },
+    digest_preferences: {
+      ...DEFAULT_DIGEST_PREFERENCES,
+      ...(raw.digest_preferences || {})
+    }
+  };
+}
+
+function formatScopeInAppValue(value) {
+  if (value === true) return 'enabled';
+  if (value === false) return 'disabled';
+  return 'inherit';
+}
+
+function parseScopeInAppValue(value) {
+  if (value === 'enabled') return true;
+  if (value === 'disabled') return false;
+  return null;
+}
+
+function parseContentDispositionFilename(headerValue, fallback) {
+  if (!headerValue) return fallback;
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(headerValue);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1]);
+  }
+  const quotedMatch = /filename="([^"]+)"/i.exec(headerValue);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+  return fallback;
+}
+
+function reportViewStorageKey(userId) {
+  return `${REPORT_VIEW_STORAGE_PREFIX}:${userId || 'anonymous'}`;
+}
+
+function normalizeReportFilters(filters) {
+  return {
+    scope: String(filters?.scope || ''),
+    status: String(filters?.status || ''),
+    created_by: String(filters?.created_by || '')
+  };
+}
+
+function buildReportViewSignature(days, filters) {
+  return JSON.stringify({
+    days: Number(days || 7),
+    filters: normalizeReportFilters(filters)
+  });
+}
+
+function readSavedReportViews(userId) {
+  try {
+    const raw = globalThis.localStorage?.getItem(reportViewStorageKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item === 'object' && item.key && item.label)
+      .map((item) => ({
+        key: String(item.key),
+        label: String(item.label),
+        description: String(item.description || 'Saved report view'),
+        days: Number(item.days || 7),
+        filters: normalizeReportFilters(item.filters),
+        readonly: false
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedReportViews(userId, views) {
+  try {
+    globalThis.localStorage?.setItem(reportViewStorageKey(userId), JSON.stringify(views));
+  } catch {
+    // Ignore local storage failures for saved report views.
+  }
+}
+
+function slugifyReportViewLabel(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+function buildNotificationPreset(presetKey) {
+  const base = normalizeCommunicationPreferences(DEFAULT_COMMUNICATION_PREFERENCES);
+  if (presetKey === 'student') {
+    return normalizeCommunicationPreferences({
+      ...base,
+      announcement_email: true,
+      club_announcement_email: true,
+      notification_in_app: true,
+      notification_email: true,
+      notification_email_mode: 'daily_digest',
+      digest_preferences: {
+        daily_digest_hour_utc: 18,
+        weekly_digest_day_of_week: 5
+      },
+      notification_scope_preferences: {
+        ...base.notification_scope_preferences,
+        notice: { in_app: true, email_mode: 'daily_digest' },
+        similarity: { in_app: true, email_mode: 'off' },
+        ai: { in_app: true, email_mode: 'daily_digest' },
+        system: { in_app: true, email_mode: 'instant' }
+      }
+    });
+  }
+  if (presetKey === 'faculty') {
+    return normalizeCommunicationPreferences({
+      ...base,
+      announcement_email: true,
+      club_announcement_email: true,
+      notification_in_app: true,
+      notification_email: true,
+      notification_email_mode: 'instant',
+      digest_preferences: {
+        daily_digest_hour_utc: 16,
+        weekly_digest_day_of_week: 4
+      },
+      notification_scope_preferences: {
+        ...base.notification_scope_preferences,
+        notice: { in_app: true, email_mode: 'instant' },
+        similarity: { in_app: true, email_mode: 'instant' },
+        ai: { in_app: true, email_mode: 'instant' },
+        system: { in_app: true, email_mode: 'instant' }
+      }
+    });
+  }
+  if (presetKey === 'admin') {
+    return normalizeCommunicationPreferences({
+      ...base,
+      announcement_email: true,
+      club_announcement_email: true,
+      notification_in_app: true,
+      notification_email: true,
+      notification_email_mode: 'instant',
+      digest_preferences: {
+        daily_digest_hour_utc: 9,
+        weekly_digest_day_of_week: 0
+      },
+      notification_scope_preferences: {
+        ...base.notification_scope_preferences,
+        global_scope: { in_app: true, email_mode: 'instant' },
+        notice: { in_app: true, email_mode: 'instant' },
+        similarity: { in_app: true, email_mode: 'instant' },
+        ai: { in_app: true, email_mode: 'instant' },
+        system: { in_app: true, email_mode: 'instant' }
+      }
+    });
+  }
+  return base;
+}
+
+function nextDigestRun(kind, digestPreferences) {
+  const now = new Date();
+  const dailyHour = Number(digestPreferences?.daily_digest_hour_utc ?? 8);
+  const weeklyDay = Number(digestPreferences?.weekly_digest_day_of_week ?? 0);
+  if (kind === 'weekly') {
+    const next = new Date(now);
+    next.setUTCHours(dailyHour, 0, 0, 0);
+    const currentWeekday = (next.getUTCDay() + 6) % 7;
+    const daysAhead = (weeklyDay - currentWeekday + 7) % 7;
+    next.setUTCDate(next.getUTCDate() + daysAhead);
+    if (next <= now) {
+      next.setUTCDate(next.getUTCDate() + 7);
+    }
+    return next;
+  }
+  const next = new Date(now);
+  next.setUTCHours(dailyHour, 0, 0, 0);
+  if (next <= now) {
+    next.setUTCDate(next.getUTCDate() + 1);
+  }
+  return next;
+}
+
+function formatDigestPreview(timestamp) {
+  if (!(timestamp instanceof Date) || Number.isNaN(timestamp.getTime())) return '-';
+  return timestamp.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function formatPercent(value) {
+  const numeric = Number(value || 0);
+  return `${numeric.toFixed(numeric % 1 === 0 ? 0 : 1)}%`;
+}
+
 export default function NotificationsPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { pushToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canCreate = ['admin', 'teacher'].includes(user?.role || '');
+  const highlightedNotificationId = searchParams.get('highlight') || '';
 
   const [rows, setRows] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [deliveryError, setDeliveryError] = useState('');
+  const [deliveryNotificationId, setDeliveryNotificationId] = useState('');
+  const [deliveryDetails, setDeliveryDetails] = useState(null);
+  const [retryingDeliveryTarget, setRetryingDeliveryTarget] = useState('');
+  const [preferences, setPreferences] = useState(() => normalizeCommunicationPreferences(user?.communication_preferences));
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [deliveryReport, setDeliveryReport] = useState(null);
+  const [reportDays, setReportDays] = useState(7);
+  const [reportFilters, setReportFilters] = useState({
+    scope: '',
+    status: '',
+    created_by: ''
+  });
+  const [savedReportViews, setSavedReportViews] = useState([]);
+  const [reportViewName, setReportViewName] = useState('');
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [deliveryTrends, setDeliveryTrends] = useState([]);
+  const [loadingTrends, setLoadingTrends] = useState(false);
+  const [deliveryAnomalies, setDeliveryAnomalies] = useState([]);
+  const [loadingAnomalies, setLoadingAnomalies] = useState(false);
+  const [processingDigests, setProcessingDigests] = useState(false);
+  const [exportingDelivery, setExportingDelivery] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
+  const [reportExportView, setReportExportView] = useState('rows');
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(20);
   const [filters, setFilters] = useState({
@@ -57,6 +478,25 @@ export default function NotificationsPage() {
     scope: 'global',
     target_user_id: ''
   });
+
+  useEffect(() => {
+    setPreferences(normalizeCommunicationPreferences(user?.communication_preferences));
+  }, [user?.communication_preferences]);
+
+  useEffect(() => {
+    setSavedReportViews(readSavedReportViews(user?.id));
+  }, [user?.id]);
+
+  useEffect(() => {
+    writeSavedReportViews(user?.id, savedReportViews);
+  }, [savedReportViews, user?.id]);
+
+  useEffect(() => {
+    if (!canCreate) return;
+    loadDeliveryReport(reportDays, reportFilters);
+    loadDeliveryTrends(reportDays, reportFilters);
+    loadDeliveryAnomalies(reportDays, reportFilters);
+  }, [canCreate, reportDays, reportFilters]);
 
   async function loadNotifications(nextSkip = skip, nextLimit = limit, nextFilters = filters) {
     setLoading(true);
@@ -102,6 +542,15 @@ export default function NotificationsPage() {
     loadUsers();
   }, [canCreate]);
 
+  useEffect(() => {
+    if (!highlightedNotificationId || loading || rows.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(`notification-card-${highlightedNotificationId}`);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [highlightedNotificationId, loading, rows.length]);
+
   const scopeOptions = useMemo(() => {
     const discovered = Array.from(new Set(rows.map((item) => item.scope).filter(Boolean)));
     const base = [...SCOPE_OPTIONS];
@@ -139,6 +588,73 @@ export default function NotificationsPage() {
     };
   }, [rows]);
 
+  const preferenceDirty = useMemo(() => {
+    const baseline = normalizeCommunicationPreferences(user?.communication_preferences);
+    return JSON.stringify(preferences) !== JSON.stringify(baseline);
+  }, [preferences, user?.communication_preferences]);
+
+  const digestPreview = useMemo(
+    () => ({
+      daily: nextDigestRun('daily', preferences.digest_preferences),
+      weekly: nextDigestRun('weekly', preferences.digest_preferences)
+    }),
+    [preferences.digest_preferences]
+  );
+
+  const creatorComparisonRows = useMemo(() => deliveryReport?.creator_rows || [], [deliveryReport?.creator_rows]);
+  const scopeComparisonRows = useMemo(() => deliveryReport?.scope_rows || [], [deliveryReport?.scope_rows]);
+  const emailHealth = useMemo(
+    () =>
+      deliveryReport?.email_health || {
+        total_rows: 0,
+        sent_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        pending_count: 0,
+        read_count: 0,
+        delivered_rate_pct: 0,
+        attention_rate_pct: 0,
+        retry_candidate_count: 0,
+        top_errors: []
+      },
+    [deliveryReport?.email_health]
+  );
+
+  const availableReportViews = useMemo(() => {
+    const starterViews = REPORT_VIEW_STARTERS.map((view) =>
+      view.key === 'starter:system' && user?.id
+        ? {
+            ...view,
+            description:
+              user.role === 'admin'
+                ? 'Review operational notifications coming from system scope.'
+                : view.description
+          }
+        : view
+    );
+    const creatorStarter = user?.id
+      ? [
+          {
+            key: 'starter:mine',
+            label: 'My Created',
+            description: 'Show delivery rows for notifications created by you.',
+            days: 14,
+            filters: { scope: '', status: '', created_by: user.id },
+            readonly: true
+          }
+        ]
+      : [];
+    return [...starterViews, ...creatorStarter, ...savedReportViews];
+  }, [savedReportViews, user?.id, user?.role]);
+
+  const activeReportViewKey = useMemo(() => {
+    const currentSignature = buildReportViewSignature(reportDays, reportFilters);
+    const matchedView = availableReportViews.find(
+      (view) => buildReportViewSignature(view.days, view.filters) === currentSignature
+    );
+    return matchedView?.key || '';
+  }, [availableReportViews, reportDays, reportFilters]);
+
   async function onApplyFilters(event) {
     event.preventDefault();
     setSkip(0);
@@ -151,6 +667,7 @@ export default function NotificationsPage() {
       setRows((prev) =>
         prev.map((item) => (item.id === notificationId ? { ...item, is_read: true } : item))
       );
+      notifyNotificationBadgeRefresh();
       pushToast({ title: 'Marked as read', description: 'Notification state updated.', variant: 'success' });
     } catch (err) {
       pushToast({
@@ -178,7 +695,15 @@ export default function NotificationsPage() {
       });
       pushToast({ title: 'Created', description: 'Notification created successfully.', variant: 'success' });
       await loadNotifications(0, limit, filters);
+      if (canCreate) {
+        await Promise.all([
+          loadDeliveryReport(reportDays, reportFilters),
+          loadDeliveryTrends(reportDays, reportFilters),
+          loadDeliveryAnomalies(reportDays, reportFilters)
+        ]);
+      }
       setSkip(0);
+      notifyNotificationBadgeRefresh();
     } catch (err) {
       pushToast({
         title: 'Create failed',
@@ -190,14 +715,1185 @@ export default function NotificationsPage() {
     }
   }
 
+  async function onMarkVisibleRead() {
+    const unreadRows = rows.filter((item) => !item.is_read);
+    if (!unreadRows.length) {
+      pushToast({ title: 'Up to date', description: 'Visible notifications are already read.', variant: 'info' });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await Promise.all(unreadRows.map((item) => apiClient.patch(`/notifications/${item.id}/read`)));
+      setRows((prev) => prev.map((item) => ({ ...item, is_read: true })));
+      notifyNotificationBadgeRefresh();
+      pushToast({ title: 'Updated', description: 'Visible notifications marked as read.', variant: 'success' });
+    } catch (err) {
+      pushToast({
+        title: 'Bulk update failed',
+        description: formatApiError(err, 'Unable to mark visible notifications as read'),
+        variant: 'error'
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function loadDeliveryDetails(notificationId, { openModal = false } = {}) {
+    if (!notificationId) return;
+    if (openModal) {
+      setDeliveryOpen(true);
+      setDeliveryDetails(null);
+      setDeliveryError('');
+    }
+    setDeliveryNotificationId(notificationId);
+    setDeliveryLoading(true);
+    try {
+      const response = await apiClient.get(`/admin/communication/delivery/notifications/${notificationId}`);
+      setDeliveryDetails(response.data || null);
+      setDeliveryError('');
+    } catch (err) {
+      const message = formatApiError(err, 'Unable to load delivery details');
+      setDeliveryDetails(null);
+      setDeliveryError(message);
+      pushToast({ title: 'Load failed', description: message, variant: 'error' });
+    } finally {
+      setDeliveryLoading(false);
+    }
+  }
+
+  async function retryDeliveryEmail(target = null) {
+    if (!deliveryNotificationId) return;
+    const payload = target
+      ? {
+          target_user_ids: target.target_user_id ? [target.target_user_id] : [],
+          target_emails: !target.target_user_id && target.target_email ? [target.target_email] : [],
+          include_skipped: true
+        }
+      : { include_skipped: true };
+    const retryKey = target ? `${target.target_user_id || ''}::${target.target_email || ''}` : '*';
+    setRetryingDeliveryTarget(retryKey);
+    try {
+      const response = await apiClient.post(
+        `/admin/communication/delivery/notifications/${deliveryNotificationId}/retry-email`,
+        payload
+      );
+      const retriedCount = Number(response.data?.retried_count || 0);
+      setDeliveryDetails(response.data?.details || null);
+      await Promise.all([
+        loadNotifications(skip, limit, filters),
+        loadDeliveryReport(reportDays, reportFilters),
+        loadDeliveryTrends(reportDays, reportFilters),
+        loadDeliveryAnomalies(reportDays, reportFilters)
+      ]);
+      pushToast({
+        title: retriedCount > 0 ? 'Email retry queued' : 'Nothing to retry',
+        description:
+          retriedCount > 0
+            ? `${retriedCount} recipient${retriedCount === 1 ? '' : 's'} reprocessed for email delivery.`
+            : 'No failed or skipped email rows matched this retry action.',
+        variant: retriedCount > 0 ? 'success' : 'info'
+      });
+    } catch (err) {
+      pushToast({
+        title: 'Retry failed',
+        description: formatApiError(err, 'Unable to retry email delivery'),
+        variant: 'error'
+      });
+    } finally {
+      setRetryingDeliveryTarget('');
+    }
+  }
+
+  async function loadDeliveryReport(days = reportDays, nextReportFilters = reportFilters) {
+    if (!canCreate) return;
+    setLoadingReport(true);
+    try {
+      const response = await apiClient.get('/admin/communication/delivery/report', {
+        params: {
+          days,
+          source_kind: 'notification',
+          scope: nextReportFilters.scope || undefined,
+          status: nextReportFilters.status || undefined,
+          created_by: nextReportFilters.created_by || undefined
+        }
+      });
+      setDeliveryReport(response.data || null);
+    } catch (err) {
+      pushToast({
+        title: 'Report unavailable',
+        description: formatApiError(err, 'Unable to load notification delivery report'),
+        variant: 'error'
+      });
+    } finally {
+      setLoadingReport(false);
+    }
+  }
+
+  async function loadDeliveryTrends(days = reportDays, nextReportFilters = reportFilters) {
+    if (!canCreate) return;
+    setLoadingTrends(true);
+    try {
+      const response = await apiClient.get('/admin/communication/delivery/report/trends', {
+        params: {
+          days,
+          source_kind: 'notification',
+          scope: nextReportFilters.scope || undefined,
+          status: nextReportFilters.status || undefined,
+          created_by: nextReportFilters.created_by || undefined
+        }
+      });
+      setDeliveryTrends(Array.isArray(response.data?.points) ? response.data.points : []);
+    } catch (err) {
+      pushToast({
+        title: 'Trend load failed',
+        description: formatApiError(err, 'Unable to load notification delivery trends'),
+        variant: 'error'
+      });
+    } finally {
+      setLoadingTrends(false);
+    }
+  }
+
+  async function loadDeliveryAnomalies(days = reportDays, nextReportFilters = reportFilters) {
+    if (!canCreate) return;
+    setLoadingAnomalies(true);
+    try {
+      const response = await apiClient.get('/admin/communication/delivery/report/anomalies', {
+        params: {
+          days,
+          source_kind: 'notification',
+          scope: nextReportFilters.scope || undefined,
+          status: nextReportFilters.status || undefined,
+          created_by: nextReportFilters.created_by || undefined
+        }
+      });
+      setDeliveryAnomalies(Array.isArray(response.data?.alerts) ? response.data.alerts : []);
+    } catch (err) {
+      pushToast({
+        title: 'Alert load failed',
+        description: formatApiError(err, 'Unable to evaluate delivery anomalies'),
+        variant: 'error'
+      });
+    } finally {
+      setLoadingAnomalies(false);
+    }
+  }
+
+  async function downloadCsv(url, fallbackFilename, onStateChange = null) {
+    try {
+      onStateChange?.(true);
+      const response = await apiClient.get(url, { responseType: 'blob' });
+      const filename = parseContentDispositionFilename(response.headers?.['content-disposition'], fallbackFilename);
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(objectUrl);
+      return true;
+    } catch (err) {
+      pushToast({
+        title: 'Export failed',
+        description: formatApiError(err, 'Unable to export CSV'),
+        variant: 'error'
+      });
+      return false;
+    } finally {
+      onStateChange?.(false);
+    }
+  }
+
+  async function exportCurrentDeliveryCsv() {
+    if (!deliveryNotificationId) return;
+    const ok = await downloadCsv(
+      `/admin/communication/delivery/notifications/${deliveryNotificationId}/export`,
+      `notification-delivery-${deliveryNotificationId}.csv`,
+      setExportingDelivery
+    );
+    if (ok) {
+      pushToast({ title: 'Export ready', description: 'Notification delivery CSV downloaded.', variant: 'success' });
+    }
+  }
+
+  async function exportDeliveryReportCsv() {
+    const query = new URLSearchParams({
+      days: String(reportDays),
+      source_kind: 'notification',
+      view: reportExportView
+    });
+    if (reportFilters.scope) {
+      query.set('scope', reportFilters.scope);
+    }
+    if (reportFilters.status) {
+      query.set('status', reportFilters.status);
+    }
+    if (reportFilters.created_by) {
+      query.set('created_by', reportFilters.created_by);
+    }
+    const ok = await downloadCsv(
+      `/admin/communication/delivery/report/export?${query.toString()}`,
+      `notification-delivery-${reportExportView}-${reportDays}d.csv`,
+      setExportingReport
+    );
+    if (ok) {
+      const exportLabel = REPORT_EXPORT_VIEW_OPTIONS.find((item) => item.value === reportExportView)?.label || 'Report';
+      pushToast({ title: 'Export ready', description: `${exportLabel} download is ready.`, variant: 'success' });
+    }
+  }
+
+  async function processDueDigests() {
+    setProcessingDigests(true);
+    try {
+      const response = await apiClient.post('/admin/communication/digests/process?limit=200');
+      const processedCount = Number(response.data?.processed_count || 0);
+      await Promise.all([
+        loadDeliveryReport(reportDays, reportFilters),
+        loadDeliveryTrends(reportDays, reportFilters),
+        loadDeliveryAnomalies(reportDays, reportFilters),
+        loadNotifications(skip, limit, filters)
+      ]);
+      pushToast({
+        title: processedCount > 0 ? 'Digests processed' : 'No due digests',
+        description:
+          processedCount > 0
+            ? `${processedCount} queued digest entr${processedCount === 1 ? 'y was' : 'ies were'} processed.`
+            : 'There were no queued digests ready to send right now.',
+        variant: processedCount > 0 ? 'success' : 'info'
+      });
+    } catch (err) {
+      pushToast({
+        title: 'Digest processing failed',
+        description: formatApiError(err, 'Unable to process due digests'),
+        variant: 'error'
+      });
+    } finally {
+      setProcessingDigests(false);
+    }
+  }
+
+  function applyReportView(view) {
+    setReportDays(Number(view.days || 7));
+    setReportFilters(normalizeReportFilters(view.filters));
+  }
+
+  function clearReportViewFilters() {
+    setReportFilters({ scope: '', status: '', created_by: '' });
+    setReportDays(7);
+  }
+
+  function saveCurrentReportView() {
+    const trimmedName = reportViewName.trim();
+    if (!trimmedName) {
+      pushToast({
+        title: 'Name required',
+        description: 'Give this report view a short name before saving it.',
+        variant: 'info'
+      });
+      return;
+    }
+
+    const nextView = {
+      key: `custom:${slugifyReportViewLabel(trimmedName) || Date.now()}`,
+      label: trimmedName,
+      description: 'Saved from the notification reporting panel.',
+      days: reportDays,
+      filters: normalizeReportFilters(reportFilters),
+      readonly: false
+    };
+
+    setSavedReportViews((prev) => {
+      const existingIndex = prev.findIndex((item) => item.key === nextView.key || item.label.toLowerCase() === trimmedName.toLowerCase());
+      if (existingIndex === -1) {
+        return [...prev, nextView];
+      }
+      const updated = [...prev];
+      updated[existingIndex] = { ...updated[existingIndex], ...nextView, key: updated[existingIndex].key };
+      return updated;
+    });
+    setReportViewName('');
+    pushToast({
+      title: 'View saved',
+      description: `"${trimmedName}" is now available in saved report views.`,
+      variant: 'success'
+    });
+  }
+
+  function deleteSavedReportView(viewKey) {
+    const target = savedReportViews.find((item) => item.key === viewKey);
+    if (!target) return;
+    setSavedReportViews((prev) => prev.filter((item) => item.key !== viewKey));
+    pushToast({
+      title: 'View removed',
+      description: `"${target.label}" was removed from saved report views.`,
+      variant: 'success'
+    });
+  }
+
+  function onTogglePreference(key) {
+    setPreferences((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function applyPreset(presetKey) {
+    setPreferences(buildNotificationPreset(presetKey));
+  }
+
+  function onNotificationEmailModeChange(value) {
+    setPreferences((prev) => ({
+      ...prev,
+      notification_email: value !== 'off',
+      notification_email_mode: value
+    }));
+  }
+
+  function onScopeInAppChange(scopeKey, value) {
+    setPreferences((prev) => ({
+      ...prev,
+      notification_scope_preferences: {
+        ...prev.notification_scope_preferences,
+        [scopeKey]: {
+          ...prev.notification_scope_preferences[scopeKey],
+          in_app: parseScopeInAppValue(value)
+        }
+      }
+    }));
+  }
+
+  function onScopeEmailModeChange(scopeKey, value) {
+    setPreferences((prev) => ({
+      ...prev,
+      notification_scope_preferences: {
+        ...prev.notification_scope_preferences,
+        [scopeKey]: {
+          ...prev.notification_scope_preferences[scopeKey],
+          email_mode: value
+        }
+      }
+    }));
+  }
+
+  function onDigestPreferenceChange(key, value) {
+    setPreferences((prev) => ({
+      ...prev,
+      digest_preferences: {
+        ...prev.digest_preferences,
+        [key]: Number(value)
+      }
+    }));
+  }
+
+  async function onSavePreferences() {
+    setSavingPreferences(true);
+    try {
+      await apiClient.patch('/auth/communication-preferences', preferences);
+      await refreshUser();
+      pushToast({
+        title: 'Preferences saved',
+        description: 'Notification delivery preferences updated successfully.',
+        variant: 'success'
+      });
+    } catch (err) {
+      pushToast({
+        title: 'Save failed',
+        description: formatApiError(err, 'Unable to update communication preferences'),
+        variant: 'error'
+      });
+    } finally {
+      setSavingPreferences(false);
+    }
+  }
+
+  function onBannerActionClick(actionKey) {
+    if (actionKey === 'settings') {
+      pushToast({
+        title: 'Notification settings',
+        description: 'Notification settings button is clickable. The full action will be connected next.',
+        variant: 'info'
+      });
+      return;
+    }
+
+    if (actionKey === 'filter') {
+      pushToast({
+        title: 'FILTER',
+        description: 'Filter button is clickable. The banner shortcut will be connected next.',
+        variant: 'info'
+      });
+      return;
+    }
+
+    pushToast({
+      title: 'CREATE',
+      description: 'Create button is clickable. The quick-create shortcut will be connected next.',
+      variant: 'info'
+    });
+  }
+
   return (
     <div className="space-y-4 page-fade">
+      <CommunicationTabs />
+
       <Card className="space-y-2">
-        <h1 className="text-2xl font-semibold">Notifications</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Review unread alerts, filter by scope, and acknowledge notifications directly.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold">Notifications</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Review unread alerts, filter by scope, and acknowledge notifications directly.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-start gap-1 sm:gap-2">
+            <button
+              type="button"
+              aria-label="Notification settings"
+              title="Notification settings"
+              className="flex w-[84px] flex-col items-center gap-1 rounded-xl px-2 py-1 text-center text-[11px] leading-tight text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-slate-200 dark:hover:bg-slate-800"
+              onClick={() => onBannerActionClick('settings')}
+            >
+              <Settings size={24} strokeWidth={1.9} />
+              <span>Notification settings</span>
+            </button>
+            <button
+              type="button"
+              aria-label="FILTER"
+              title="FILTER"
+              className="flex w-[62px] flex-col items-center gap-1 rounded-xl px-2 py-1 text-center text-[11px] font-medium leading-tight text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-slate-200 dark:hover:bg-slate-800"
+              onClick={() => onBannerActionClick('filter')}
+            >
+              <Funnel size={24} strokeWidth={1.9} />
+              <span>FILTER</span>
+            </button>
+            {canCreate ? (
+              <button
+                type="button"
+                aria-label="CREATE"
+                title="CREATE"
+                className="flex w-[62px] flex-col items-center gap-1 rounded-xl px-2 py-1 text-center text-[11px] font-medium leading-tight text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-slate-200 dark:hover:bg-slate-800"
+                onClick={() => onBannerActionClick('create')}
+              >
+                <CirclePlus size={24} strokeWidth={1.9} />
+                <span>CREATE</span>
+              </button>
+            ) : null}
+          </div>
+        </div>
       </Card>
+
+      <Card className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Notification Preferences</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Control channels by scope, choose digest behavior, and keep routine updates out of the way without losing important alerts.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={onSavePreferences}
+            disabled={savingPreferences || !preferenceDirty}
+          >
+            {savingPreferences ? 'Saving...' : preferenceDirty ? 'Save Preferences' : 'Saved'}
+          </button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-3">
+          {BASIC_EMAIL_PREFERENCE_FIELDS.map((item) => (
+            <label
+              key={item.key}
+              className="flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
+            >
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.label}</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.description}</p>
+              </div>
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                checked={Boolean(preferences[item.key])}
+                onChange={() => onTogglePreference(item.key)}
+                disabled={savingPreferences}
+              />
+            </label>
+          ))}
+        </div>
+
+        <div className="grid gap-3 xl:grid-cols-3">
+          {NOTIFICATION_PRESET_OPTIONS.map((preset) => (
+            <button
+              key={preset.key}
+              type="button"
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/60 dark:border-slate-800 dark:bg-slate-900/60 dark:hover:border-brand-700 dark:hover:bg-brand-900/10"
+              onClick={() => applyPreset(preset.key)}
+              disabled={savingPreferences}
+            >
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{preset.label} Preset</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{preset.description}</p>
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notification Email Mode</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Choose whether email notifications send immediately or wait for a digest run.
+            </p>
+            <select
+              className="input mt-3"
+              value={preferences.notification_email_mode}
+              onChange={(event) => onNotificationEmailModeChange(event.target.value)}
+              disabled={savingPreferences}
+            >
+              {NOTIFICATION_EMAIL_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Daily Digest Hour</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Used whenever any scope routes notification email into the daily digest queue.
+            </p>
+            <select
+              className="input mt-3"
+              value={preferences.digest_preferences.daily_digest_hour_utc}
+              onChange={(event) => onDigestPreferenceChange('daily_digest_hour_utc', event.target.value)}
+              disabled={savingPreferences}
+            >
+              {DIGEST_HOUR_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Weekly Digest Day</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Used whenever a scope is set to weekly digest delivery.
+            </p>
+            <select
+              className="input mt-3"
+              value={preferences.digest_preferences.weekly_digest_day_of_week}
+              onChange={(event) => onDigestPreferenceChange('weekly_digest_day_of_week', event.target.value)}
+              disabled={savingPreferences}
+            >
+              {DIGEST_DAY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Next Daily Digest</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {formatDigestPreview(digestPreview.daily)}
+            </p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Daily digests use {String(preferences.digest_preferences.daily_digest_hour_utc).padStart(2, '0')}:00 UTC.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Next Weekly Digest</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {formatDigestPreview(digestPreview.weekly)}
+            </p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Weekly digests use {DIGEST_DAY_OPTIONS.find((item) => item.value === preferences.digest_preferences.weekly_digest_day_of_week)?.label || 'Monday'} at {String(preferences.digest_preferences.daily_digest_hour_utc).padStart(2, '0')}:00 UTC.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Scope Rules</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Override the base rules only where needed. Inherit keeps the global notification defaults.
+            </p>
+          </div>
+          <div className="grid gap-3 xl:grid-cols-2">
+            {NOTIFICATION_SCOPE_FIELDS.map((scope) => (
+              <div
+                key={scope.key}
+                className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
+              >
+                <div className="mb-3">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{scope.label}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{scope.description}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-sm text-slate-600 dark:text-slate-300">
+                    <span className="mb-1 block font-medium">In-App Delivery</span>
+                    <select
+                      className="input"
+                      value={formatScopeInAppValue(preferences.notification_scope_preferences[scope.key]?.in_app)}
+                      onChange={(event) => onScopeInAppChange(scope.key, event.target.value)}
+                      disabled={savingPreferences}
+                    >
+                      {SCOPE_IN_APP_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-slate-600 dark:text-slate-300">
+                    <span className="mb-1 block font-medium">Email Delivery</span>
+                    <select
+                      className="input"
+                      value={preferences.notification_scope_preferences[scope.key]?.email_mode || 'inherit'}
+                      onChange={(event) => onScopeEmailModeChange(scope.key, event.target.value)}
+                      disabled={savingPreferences}
+                    >
+                      {SCOPE_EMAIL_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {canCreate ? (
+        <Card className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Delivery Reporting</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Reconcile notification delivery outcomes, digest backlog, and exportable recipient rows for ops follow-up.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="input w-36"
+                value={reportDays}
+                onChange={(event) => setReportDays(Number(event.target.value))}
+              >
+                {[1, 7, 14, 30, 90].map((days) => (
+                  <option key={days} value={days}>
+                    Last {days} day{days === 1 ? '' : 's'}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="input min-w-[180px]"
+                value={reportExportView}
+                onChange={(event) => setReportExportView(event.target.value)}
+              >
+                {REPORT_EXPORT_VIEW_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  void Promise.all([
+                    loadDeliveryReport(reportDays, reportFilters),
+                    loadDeliveryTrends(reportDays, reportFilters),
+                    loadDeliveryAnomalies(reportDays, reportFilters)
+                  ]);
+                }}
+                disabled={loadingReport || loadingTrends || loadingAnomalies}
+              >
+                {loadingReport || loadingTrends || loadingAnomalies ? 'Refreshing...' : 'Refresh'}
+              </button>
+              <button type="button" className="btn-secondary" onClick={exportDeliveryReportCsv} disabled={exportingReport}>
+                {exportingReport ? 'Exporting...' : 'Export CSV'}
+              </button>
+              <button type="button" className="btn-primary" onClick={processDueDigests} disabled={processingDigests}>
+                {processingDigests ? 'Processing...' : 'Process Due Digests'}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <label className="text-sm text-slate-600 dark:text-slate-300">
+              <span className="mb-1 block font-medium">Scope Filter</span>
+              <select
+                className="input"
+                value={reportFilters.scope}
+                onChange={(event) => setReportFilters((prev) => ({ ...prev, scope: event.target.value }))}
+              >
+                <option value="">All Scopes</option>
+                {SCOPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-slate-600 dark:text-slate-300">
+              <span className="mb-1 block font-medium">Status Filter</span>
+              <select
+                className="input"
+                value={reportFilters.status}
+                onChange={(event) => setReportFilters((prev) => ({ ...prev, status: event.target.value }))}
+              >
+                {REPORT_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value || 'all'} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-slate-600 dark:text-slate-300">
+              <span className="mb-1 block font-medium">Creator Filter</span>
+              <select
+                className="input"
+                value={reportFilters.created_by}
+                onChange={(event) => setReportFilters((prev) => ({ ...prev, created_by: event.target.value }))}
+              >
+                <option value="">All Creators</option>
+                {userOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-end gap-2">
+              <button type="button" className="btn-secondary w-full" onClick={clearReportViewFilters}>
+                Reset View
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Saved Report Views</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Reuse common operational filters without rebuilding the same report every time.
+                </p>
+              </div>
+              <div className="flex min-w-[280px] flex-1 flex-wrap items-end gap-2">
+                <label className="min-w-[180px] flex-1 text-sm text-slate-600 dark:text-slate-300">
+                  <span className="mb-1 block font-medium">Save Current Filters</span>
+                  <input
+                    className="input"
+                    placeholder="Example: Failed deliveries this week"
+                    value={reportViewName}
+                    onChange={(event) => setReportViewName(event.target.value)}
+                  />
+                </label>
+                <button type="button" className="btn-primary" onClick={saveCurrentReportView}>
+                  Save View
+                </button>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {availableReportViews.map((view) => {
+                const isActive = activeReportViewKey === view.key;
+                return (
+                  <div
+                    key={view.key}
+                    className={`rounded-2xl border p-4 ${
+                      isActive
+                        ? 'border-brand-300 bg-brand-50/50 dark:border-brand-700 dark:bg-brand-900/10'
+                        : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{view.label}</p>
+                          {view.readonly ? <Badge variant="default">Starter</Badge> : <Badge variant="info">Saved</Badge>}
+                          {isActive ? <Badge variant="success">Active</Badge> : null}
+                        </div>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{view.description}</p>
+                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                          {view.days}d | Scope {view.filters.scope || 'all'} | Status {view.filters.status || 'all'} | Creator {view.filters.created_by || 'all'}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className="btn-secondary" onClick={() => applyReportView(view)}>
+                          Apply
+                        </button>
+                        {!view.readonly ? (
+                          <button type="button" className="btn-secondary" onClick={() => deleteSavedReportView(view.key)}>
+                            Delete
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Anomaly Watch</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Rule-based warnings for the active saved view, focused on failure spikes and pending backlog buildup.
+                </p>
+              </div>
+              <Badge variant={deliveryAnomalies.length ? 'warning' : 'success'}>
+                {loadingAnomalies ? 'Checking...' : deliveryAnomalies.length ? `${deliveryAnomalies.length} Active` : 'Stable'}
+              </Badge>
+            </div>
+            <div className="mt-4 space-y-3">
+              {loadingAnomalies ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">Evaluating delivery anomalies...</p>
+              ) : deliveryAnomalies.length ? (
+                deliveryAnomalies.map((alert) => (
+                  <div
+                    key={alert.code}
+                    className={`rounded-2xl border px-4 py-3 text-sm ${
+                      alert.level === 'critical'
+                        ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-200'
+                        : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-200'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold uppercase tracking-wide">{alert.level}</span>
+                      <span className="text-xs opacity-80">{alert.code}</span>
+                    </div>
+                    <p className="mt-1">{alert.message}</p>
+                    <p className="mt-2 text-xs opacity-80">
+                      Metric {alert.metric} | Current {alert.current_value}
+                      {alert.baseline_value !== null && alert.baseline_value !== undefined ? ` | Baseline ${alert.baseline_value}` : ''}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-emerald-600 dark:text-emerald-400">
+                  No active delivery anomalies for the current report view.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Comparative Analytics</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Compare delivery quality by creator and scope for the active operational view.
+                  </p>
+                </div>
+                <Badge variant="info">{activeReportViewKey ? 'Tracked View' : 'Current Filters'}</Badge>
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">By Creator</p>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Top volume first</span>
+                  </div>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        <tr>
+                          <th className="pb-2 pr-3 font-medium">Creator</th>
+                          <th className="pb-2 pr-3 font-medium">Rows</th>
+                          <th className="pb-2 pr-3 font-medium">Failed</th>
+                          <th className="pb-2 pr-3 font-medium">Pending</th>
+                          <th className="pb-2 font-medium">Read</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-slate-700 dark:text-slate-200">
+                        {creatorComparisonRows.length ? (
+                          creatorComparisonRows.map((row) => (
+                            <tr key={row.key} className="border-t border-slate-200 dark:border-slate-800">
+                              <td className="py-2 pr-3">
+                                <div className="font-medium">{row.label || row.key}</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">{row.key}</div>
+                              </td>
+                              <td className="py-2 pr-3">{row.total_count}</td>
+                              <td className="py-2 pr-3">{row.failed_count} ({formatPercent(row.failed_rate_pct)})</td>
+                              <td className="py-2 pr-3">{row.pending_count} ({formatPercent(row.pending_rate_pct)})</td>
+                              <td className="py-2">{row.read_count} ({formatPercent(row.read_rate_pct)})</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td className="py-3 text-slate-500 dark:text-slate-400" colSpan="5">
+                              No creator comparison rows for this view.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">By Scope</p>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Delivery quality slice</span>
+                  </div>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        <tr>
+                          <th className="pb-2 pr-3 font-medium">Scope</th>
+                          <th className="pb-2 pr-3 font-medium">Rows</th>
+                          <th className="pb-2 pr-3 font-medium">Failed</th>
+                          <th className="pb-2 pr-3 font-medium">Pending</th>
+                          <th className="pb-2 font-medium">Read</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-slate-700 dark:text-slate-200">
+                        {scopeComparisonRows.length ? (
+                          scopeComparisonRows.map((row) => (
+                            <tr key={row.key} className="border-t border-slate-200 dark:border-slate-800">
+                              <td className="py-2 pr-3">
+                                <div className="font-medium">{row.label || row.key}</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">{row.key}</div>
+                              </td>
+                              <td className="py-2 pr-3">{row.total_count}</td>
+                              <td className="py-2 pr-3">{row.failed_count} ({formatPercent(row.failed_rate_pct)})</td>
+                              <td className="py-2 pr-3">{row.pending_count} ({formatPercent(row.pending_rate_pct)})</td>
+                              <td className="py-2">{row.read_count} ({formatPercent(row.read_rate_pct)})</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td className="py-3 text-slate-500 dark:text-slate-400" colSpan="5">
+                              No scope comparison rows for this view.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Email Ops Monitor</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Track SMTP-facing delivery health, retry load, and the most common failure reasons.
+                  </p>
+                </div>
+                <Badge variant={emailHealth.attention_rate_pct >= 25 ? 'warning' : 'success'}>
+                  Attention {formatPercent(emailHealth.attention_rate_pct)}
+                </Badge>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/40">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Email Rows</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">{emailHealth.total_rows || 0}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Delivered {formatPercent(emailHealth.delivered_rate_pct)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/40">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Retry Candidates</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">{emailHealth.retry_candidate_count || 0}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Failed {emailHealth.failed_count || 0} | Skipped {emailHealth.skipped_count || 0}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/40">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Pending Email</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">{emailHealth.pending_count || 0}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Read {emailHealth.read_count || 0} | Sent {emailHealth.sent_count || 0}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/40">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Digest Queue</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.digest?.queued_total || 0}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Failed {deliveryReport?.digest?.failed_total || 0} | Sent {deliveryReport?.digest?.sent_total || 0}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Top Email Errors</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                  {emailHealth.top_errors?.length ? (
+                    emailHealth.top_errors.map((item) => (
+                      <div key={item.error} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                        <span className="min-w-0 flex-1 break-words">{item.error}</span>
+                        <span className="shrink-0 font-semibold">{item.count}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-emerald-600 dark:text-emerald-400">
+                      No email error strings recorded for the current report view.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Delivery Health Trend</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Failed, skipped, pending, and sent rows over time for the active report view.
+                  </p>
+                </div>
+                <Badge variant="default">{reportDays}d</Badge>
+              </div>
+              <div className="mt-4 h-64">
+                {loadingTrends ? (
+                  <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+                    Loading trend data...
+                  </div>
+                ) : deliveryTrends.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+                    No trend data for the current report view.
+                  </div>
+                ) : (
+                  <SafeResponsiveContainer>
+                    <AreaChart data={deliveryTrends}>
+                      <CartesianGrid stroke="#cbd5e1" strokeDasharray="3 3" />
+                      <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#64748b' }} />
+                      <YAxis tick={{ fontSize: 12, fill: '#64748b' }} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: '1rem', borderColor: '#cbd5e1' }}
+                        labelStyle={{ fontWeight: 600 }}
+                      />
+                      <Area type="monotone" dataKey="failed_count" stroke="#e11d48" fill="#ffe4e6" fillOpacity={0.7} strokeWidth={2} />
+                      <Area type="monotone" dataKey="skipped_count" stroke="#d97706" fill="#fef3c7" fillOpacity={0.6} strokeWidth={2} />
+                      <Area type="monotone" dataKey="pending_count" stroke="#2563eb" fill="#dbeafe" fillOpacity={0.45} strokeWidth={2} />
+                      <Area type="monotone" dataKey="sent_count" stroke="#059669" fill="#d1fae5" fillOpacity={0.3} strokeWidth={2} />
+                    </AreaChart>
+                  </SafeResponsiveContainer>
+                )}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Engagement Trend</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Compare total delivery volume against read activity for the same saved view.
+                  </p>
+                </div>
+                <Badge variant="info">{activeReportViewKey ? 'Saved View' : 'Custom View'}</Badge>
+              </div>
+              <div className="mt-4 h-64">
+                {loadingTrends ? (
+                  <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+                    Loading trend data...
+                  </div>
+                ) : deliveryTrends.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+                    No trend data for the current report view.
+                  </div>
+                ) : (
+                  <SafeResponsiveContainer>
+                    <AreaChart data={deliveryTrends}>
+                      <CartesianGrid stroke="#cbd5e1" strokeDasharray="3 3" />
+                      <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#64748b' }} />
+                      <YAxis tick={{ fontSize: 12, fill: '#64748b' }} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: '1rem', borderColor: '#cbd5e1' }}
+                        labelStyle={{ fontWeight: 600 }}
+                      />
+                      <Area type="monotone" dataKey="total_count" stroke="#7c3aed" fill="#ede9fe" fillOpacity={0.45} strokeWidth={2} />
+                      <Area type="monotone" dataKey="read_count" stroke="#0f766e" fill="#ccfbf1" fillOpacity={0.45} strokeWidth={2} />
+                    </AreaChart>
+                  </SafeResponsiveContainer>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Rows</p>
+              <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.total_rows || 0}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Sources {deliveryReport?.total_sources || 0}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Sent</p>
+              <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.sent_count || 0}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Failed {deliveryReport?.failed_count || 0} | Pending {deliveryReport?.pending_count || 0}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Skipped</p>
+              <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.skipped_count || 0}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Read rows {deliveryReport?.read_count || 0}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Digest Queue</p>
+              <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.digest?.queued_total || 0}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Sent {deliveryReport?.digest?.sent_total || 0} | Failed {deliveryReport?.digest?.failed_total || 0}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">By Status</p>
+              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                {Object.entries(deliveryReport?.by_status || {}).length ? (
+                  Object.entries(deliveryReport?.by_status || {}).map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between">
+                      <span className="capitalize">{key.replaceAll('_', ' ')}</span>
+                      <span className="font-semibold">{value}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-slate-500 dark:text-slate-400">No delivery rows in this window.</p>
+                )}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">By Channel</p>
+              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                {Object.entries(deliveryReport?.by_channel || {}).length ? (
+                  Object.entries(deliveryReport?.by_channel || {}).map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between">
+                      <span className="capitalize">{key.replaceAll('_', ' ')}</span>
+                      <span className="font-semibold">{value}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-slate-500 dark:text-slate-400">No channel data recorded yet.</p>
+                )}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">By Scope</p>
+              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                {Object.entries(deliveryReport?.by_scope || {}).length ? (
+                  Object.entries(deliveryReport?.by_scope || {}).map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between">
+                      <span className="capitalize">{key.replaceAll('_', ' ')}</span>
+                      <span className="font-semibold">{value}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-slate-500 dark:text-slate-400">No scope breakdown recorded yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="!p-4">
@@ -257,6 +1953,38 @@ export default function NotificationsPage() {
             </button>
           </div>
         </form>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              const nextFilters = { ...filters, is_read: 'false' };
+              setFilters(nextFilters);
+              setSkip(0);
+              loadNotifications(0, limit, nextFilters);
+            }}
+          >
+            Unread Only
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              const nextFilters = { ...filters, scope: 'notice' };
+              setFilters(nextFilters);
+              setSkip(0);
+              loadNotifications(0, limit, nextFilters);
+            }}
+          >
+            Announcement Deliveries
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => loadNotifications(skip, limit, filters)}>
+            Refresh
+          </button>
+          <button type="button" className="btn-secondary" onClick={onMarkVisibleRead} disabled={submitting}>
+            {submitting ? 'Updating...' : `Mark Visible Read (${stats.unread})`}
+          </button>
+        </div>
       </Card>
 
       {canCreate ? (
@@ -330,6 +2058,18 @@ export default function NotificationsPage() {
             <button className="btn-secondary" disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - limit))}>
               Prev
             </button>
+            {highlightedNotificationId ? (
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('highlight');
+                  setSearchParams(next, { replace: true });
+                }}
+              >
+                Clear Highlight
+              </button>
+            ) : null}
             <span className="text-xs text-slate-500">skip: {skip}</span>
             <button className="btn-secondary" onClick={() => setSkip(skip + limit)}>
               Next
@@ -345,7 +2085,14 @@ export default function NotificationsPage() {
         </div>
 
         {loading ? <p className="text-sm text-slate-500">Loading notifications...</p> : null}
-        {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+        {error ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm text-rose-600">{error}</p>
+            <button type="button" className="btn-secondary" onClick={() => loadNotifications(skip, limit, filters)}>
+              Retry
+            </button>
+          </div>
+        ) : null}
 
         <div className="space-y-3">
           {rows.length === 0 && !loading ? (
@@ -354,40 +2101,90 @@ export default function NotificationsPage() {
             </div>
           ) : null}
 
-          {rows.map((item) => (
-            <div
-              key={item.id}
-              className={`rounded-2xl border p-4 ${
-                item.is_read
-                  ? 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'
-                  : 'border-brand-200 bg-brand-50/40 dark:border-brand-700/60 dark:bg-brand-900/10'
-              }`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{item.title}</h3>
-                    {item.public_id ? <Badge variant="default">{item.public_id}</Badge> : null}
-                    <Badge variant={priorityVariant(item.priority)}>{item.priority || 'normal'}</Badge>
-                    <Badge variant={item.is_read ? 'default' : 'info'}>{item.is_read ? 'Read' : 'Unread'}</Badge>
-                    <Badge>{item.scope || 'general'}</Badge>
+          {rows.map((item) => {
+            const delivery = deliveryBreakdown(item);
+            return (
+              <div
+                key={item.id}
+                id={`notification-card-${item.id}`}
+                className={`rounded-2xl border p-4 ${
+                  item.is_read
+                    ? 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'
+                    : 'border-brand-200 bg-brand-50/40 dark:border-brand-700/60 dark:bg-brand-900/10'
+                } ${highlightedNotificationId === item.id ? 'ring-2 ring-brand-400 ring-offset-2 ring-offset-white dark:ring-brand-500 dark:ring-offset-slate-950' : ''}`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{item.title}</h3>
+                      {item.public_id ? <Badge variant="default">{item.public_id}</Badge> : null}
+                      <Badge variant={priorityVariant(item.priority)}>{item.priority || 'normal'}</Badge>
+                      <Badge variant={item.is_read ? 'default' : 'info'}>{item.is_read ? 'Read' : 'Unread'}</Badge>
+                      <Badge>{item.scope || 'general'}</Badge>
+                    </div>
+                    <p className="text-sm text-slate-700 dark:text-slate-200">{item.message}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Created {formatTimestamp(item.created_at)}
+                      {item.target_user_id ? ` | Target: ${item.target_user_label || userLabelById[item.target_user_id] || item.target_user_id}` : ' | Target: Global'}
+                    </p>
+                    {delivery.totalRecipients > 0 || delivery.sentCount > 0 || delivery.failedCount > 0 || delivery.skippedCount > 0 ? (
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        {delivery.totalRecipients > 0 ? (
+                          <span className="rounded-md border border-slate-200 px-2 py-1 dark:border-slate-700">
+                            Read {delivery.readCount}/{delivery.totalRecipients}
+                          </span>
+                        ) : null}
+                        {delivery.sentCount > 0 ? (
+                          <span className="rounded-md border border-slate-200 px-2 py-1 dark:border-slate-700">
+                            Email sent {delivery.sentCount}
+                          </span>
+                        ) : null}
+                        {delivery.failedCount > 0 ? (
+                          <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300">
+                            Email failed {delivery.failedCount}
+                          </span>
+                        ) : null}
+                        {delivery.skippedCount > 0 ? (
+                          <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300">
+                            Email skipped {delivery.skippedCount}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                  <p className="text-sm text-slate-700 dark:text-slate-200">{item.message}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Created {formatTimestamp(item.created_at)}
-                    {item.target_user_id ? ` | Target: ${item.target_user_label || userLabelById[item.target_user_id] || item.target_user_id}` : ' | Target: Global'}
-                  </p>
+                  {!item.is_read ? (
+                    <button className="btn-secondary" onClick={() => onMarkRead(item.id)}>
+                      Mark Read
+                    </button>
+                  ) : null}
+                  {canCreate ? (
+                    <button className="btn-secondary" onClick={() => loadDeliveryDetails(item.id, { openModal: true })}>
+                      View delivery
+                    </button>
+                  ) : null}
                 </div>
-                {!item.is_read ? (
-                  <button className="btn-secondary" onClick={() => onMarkRead(item.id)}>
-                    Mark Read
-                  </button>
-                ) : null}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
+      <CommunicationDeliveryModal
+        open={deliveryOpen}
+        onClose={() => {
+          setDeliveryOpen(false);
+          setDeliveryError('');
+          setRetryingDeliveryTarget('');
+        }}
+        onRefresh={() => loadDeliveryDetails(deliveryNotificationId)}
+        onExport={exportCurrentDeliveryCsv}
+        onRetryAllEmail={() => retryDeliveryEmail()}
+        onRetryRecipientEmail={(item) => retryDeliveryEmail(item)}
+        loading={deliveryLoading || exportingDelivery}
+        retryingTarget={retryingDeliveryTarget}
+        error={deliveryError}
+        details={deliveryDetails}
+        title="Notification Delivery"
+      />
     </div>
   );
 }

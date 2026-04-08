@@ -412,7 +412,7 @@ async def replace_scope_assignments(
     *,
     database: Any | None = None,
 ) -> list[dict[str, Any]]:
-    active_db = database or core_db
+    active_db = database if database is not None else core_db
     scopes_collection = get_collection(active_db, "scopes")
     if scopes_collection is None:
         return []
@@ -745,7 +745,7 @@ async def has_rbac_permission(
     *,
     database: Any | None = None,
 ) -> bool:
-    active_db = database or core_db
+    active_db = database if database is not None else core_db
     permissions = set(await get_effective_permission_keys(user, active_db))
     if not permissions:
         return False
@@ -762,7 +762,7 @@ async def build_user_scope_filter(
     year_field: str | None = "year_id",
     database: Any | None = None,
 ) -> dict[str, Any]:
-    active_db = database or core_db
+    active_db = database if database is not None else core_db
     role_doc = await resolve_admin_role_document(user, active_db)
     if role_doc is None or role_doc.get("code") == "SUPER_ADMIN":
         return {}
@@ -859,7 +859,7 @@ async def is_document_in_scope(
 ) -> bool:
     if not document:
         return False
-    active_db = database or core_db
+    active_db = database if database is not None else core_db
     scope_filter = await build_user_scope_filter(
         user,
         department_field=department_field,
@@ -899,7 +899,7 @@ async def build_scoped_section_ids_filter(
     batch_field: str = "batch_id",
     database: Any | None = None,
 ) -> dict[str, Any]:
-    active_db = database or core_db
+    active_db = database if database is not None else core_db
     role_doc = await resolve_admin_role_document(user, active_db)
     if role_doc is None or role_doc.get("code") == "SUPER_ADMIN":
         return {}
@@ -972,7 +972,7 @@ async def admin_role_requires_scope(
     *,
     database: Any | None = None,
 ) -> bool:
-    role_doc = await resolve_admin_role_document(user, database or core_db)
+    role_doc = await resolve_admin_role_document(user, database if database is not None else core_db)
     if role_doc is None:
         return False
     return bool(role_doc.get("scope_required"))
@@ -1043,7 +1043,7 @@ async def check_admin_role(
     *,
     database: Any | None = None,
 ) -> bool:
-    role_doc = await resolve_admin_role_document(user, database or core_db)
+    role_doc = await resolve_admin_role_document(user, database if database is not None else core_db)
     if role_doc is None:
         return False
     return role_doc.get("code") in {code.strip().upper() for code in allowed_role_codes}

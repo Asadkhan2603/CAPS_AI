@@ -22,3 +22,11 @@ export async function getSectionPage(params = {}, pageSize = 100) {
 export async function getTeacherSectionsAnalytics() {
   return await apiClient.get('/analytics/teacher/sections');
 }
+
+export async function lockSectionMapping(sectionId, reason = '') {
+  return await apiClient.post(`/sections/${sectionId}/lock`, { reason });
+}
+
+export async function unlockSectionMapping(sectionId, reason = '') {
+  return await apiClient.post(`/sections/${sectionId}/unlock`, { reason });
+}

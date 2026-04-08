@@ -25,6 +25,11 @@ _REQUEST_WINDOW_MINUTES = 15
 _MAX_REQUEST_EVENTS = 5000
 _MAX_AI_HISTORY_POINTS = 720
 _MAX_ALERTS = 10
+_CLUB_PATH_PREFIXES = (
+    "/api/v1/clubs",
+    "/api/v1/club-events",
+    "/api/v1/event-registrations",
+)
 
 
 def _utc_now_iso() -> str:
@@ -65,6 +70,20 @@ def _percentile(values: list[int], percentile: float) -> int | None:
     ordered = sorted(values)
     index = max(0, min(len(ordered) - 1, math.ceil(len(ordered) * percentile) - 1))
     return ordered[index]
+
+
+def _is_club_workspace_path(path: str) -> bool:
+    return any(path.startswith(prefix) for prefix in _CLUB_PATH_PREFIXES)
+
+
+def _club_workspace_group(path: str) -> str:
+    if path.startswith("/api/v1/clubs"):
+        return "clubs"
+    if path.startswith("/api/v1/club-events"):
+        return "club_events"
+    if path.startswith("/api/v1/event-registrations"):
+        return "event_registrations"
+    return "other"
 
 
 class ObservabilityState:
@@ -305,6 +324,61 @@ class ObservabilityState:
                 )
             top_paths.sort(key=lambda item: (-item["requests"], -item["avg_duration_ms"], item["path"]))
 
+            club_recent = [event for event in recent if _is_club_workspace_path(str(event["path"]))]
+            club_durations = [int(event["duration_ms"]) for event in club_recent]
+            club_slow_requests = [
+                event for event in club_recent if int(event["duration_ms"]) >= slow_threshold_ms
+            ]
+            club_server_errors = [
+                event for event in club_recent if int(event["status_code"]) >= 500
+            ]
+            club_by_path: dict[str, dict[str, Any]] = {}
+            club_by_group = {
+                "clubs_requests_15m": 0,
+                "club_events_requests_15m": 0,
+                "event_registrations_requests_15m": 0,
+            }
+            for event in club_recent:
+                path = str(event["path"])
+                item = club_by_path.setdefault(
+                    path,
+                    {
+                        "path": path,
+                        "requests": 0,
+                        "server_errors": 0,
+                        "slow_requests": 0,
+                        "_durations": [],
+                    },
+                )
+                item["requests"] += 1
+                if int(event["status_code"]) >= 500:
+                    item["server_errors"] += 1
+                if int(event["duration_ms"]) >= slow_threshold_ms:
+                    item["slow_requests"] += 1
+                item["_durations"].append(int(event["duration_ms"]))
+
+                group = _club_workspace_group(path)
+                if group == "clubs":
+                    club_by_group["clubs_requests_15m"] += 1
+                elif group == "club_events":
+                    club_by_group["club_events_requests_15m"] += 1
+                elif group == "event_registrations":
+                    club_by_group["event_registrations_requests_15m"] += 1
+
+            club_top_paths = []
+            for item in club_by_path.values():
+                club_top_paths.append(
+                    {
+                        "path": item["path"],
+                        "requests": item["requests"],
+                        "server_errors": item["server_errors"],
+                        "slow_requests": item["slow_requests"],
+                        "avg_duration_ms": int(sum(item["_durations"]) / len(item["_durations"])),
+                        "p95_duration_ms": _percentile(item["_durations"], 0.95),
+                    }
+                )
+            club_top_paths.sort(key=lambda item: (-item["requests"], -item["avg_duration_ms"], item["path"]))
+
             scheduler_jobs = {}
             for job_name, job in self._scheduler_jobs.items():
                 last_run_at = job["last_run_at"]
@@ -338,6 +412,16 @@ class ObservabilityState:
                 "avg_duration_ms_15m": int(sum(durations) / len(durations)) if durations else None,
                 "p95_duration_ms_15m": _percentile(durations, 0.95),
                 "top_paths_15m": top_paths[:5],
+            }
+            clubs_metrics = {
+                "window_minutes": _REQUEST_WINDOW_MINUTES,
+                "requests_15m": len(club_recent),
+                "server_errors_15m": len(club_server_errors),
+                "slow_requests_15m": len(club_slow_requests),
+                "avg_duration_ms_15m": int(sum(club_durations) / len(club_durations)) if club_durations else None,
+                "p95_duration_ms_15m": _percentile(club_durations, 0.95),
+                "top_paths_15m": club_top_paths[:6],
+                **club_by_group,
             }
             scheduler_metrics = {
                 "leader_acquired_total": self._leader_acquired_total,
@@ -411,6 +495,7 @@ class ObservabilityState:
             }
         return {
             "request_metrics": request_metrics,
+            "clubs_metrics": clubs_metrics,
             "scheduler_metrics": scheduler_metrics,
             "ai_metrics": ai_metrics,
         }
@@ -426,6 +511,7 @@ def build_operational_alerts(
     alerts: list[dict[str, Any]] = []
     now = datetime.now(timezone.utc)
     request_metrics = snapshot.get("request_metrics") or {}
+    clubs_metrics = snapshot.get("clubs_metrics") or {}
     scheduler_metrics = snapshot.get("scheduler_metrics") or {}
     ai_metrics = snapshot.get("ai_metrics") or {}
 
@@ -453,6 +539,7 @@ def build_operational_alerts(
         )
 
     slow_requests_15m = int(request_metrics.get("slow_requests_15m") or 0)
+    slow_threshold_ms = int(request_metrics.get("slow_request_threshold_ms") or settings.observability_slow_request_ms)
     if slow_requests_15m >= settings.observability_slow_request_count_alert_threshold:
         alerts.append(
             {
@@ -460,8 +547,27 @@ def build_operational_alerts(
                 "code": "http.slow_requests",
                 "message": (
                     f"{slow_requests_15m} requests exceeded "
-                    f"{request_metrics.get('slow_request_threshold_ms') or settings.observability_slow_request_ms} ms "
+                    f"{slow_threshold_ms} ms "
                     f"in the last {request_metrics.get('window_minutes') or _REQUEST_WINDOW_MINUTES} minutes."
+                ),
+            }
+        )
+
+    club_requests_15m = int(clubs_metrics.get("requests_15m") or 0)
+    club_p95_duration_ms = clubs_metrics.get("p95_duration_ms_15m")
+    club_slow_requests_15m = int(clubs_metrics.get("slow_requests_15m") or 0)
+    if club_requests_15m >= 5 and (
+        (isinstance(club_p95_duration_ms, int) and club_p95_duration_ms >= slow_threshold_ms * 2)
+        or club_slow_requests_15m >= max(3, settings.observability_slow_request_count_alert_threshold // 2)
+    ):
+        alerts.append(
+            {
+                "level": "medium",
+                "code": "clubs.workspace_pressure",
+                "message": (
+                    f"Club workspace traffic shows {club_slow_requests_15m} slow requests with a "
+                    f"P95 of {club_p95_duration_ms or '-'} ms in the last "
+                    f"{clubs_metrics.get('window_minutes') or _REQUEST_WINDOW_MINUTES} minutes."
                 ),
             }
         )

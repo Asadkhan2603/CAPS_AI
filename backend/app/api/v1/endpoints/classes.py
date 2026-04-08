@@ -12,6 +12,8 @@ from app.models.classes import class_public
 from app.schemas.class_item import ClassCreate, ClassOut, ClassUpdate
 from app.services.academic_hierarchy import validate_batch_specialization_scope
 from app.services.audit import log_destructive_action_event
+from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
+from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.governance import enforce_review_approval
 from app.services.public_ids import persist_public_id, persist_public_id_update
 from app.services.section_read_models import (
@@ -222,6 +224,8 @@ async def update_class(
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Class not found')
     updated = await sync_section_read_model(section=updated, database=db)
+    await sync_course_offering_read_models_for_query(query={"section_id": class_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"section_id": class_id}, database=db)
     return ClassOut(**class_public(updated))
 
 
@@ -261,6 +265,8 @@ async def delete_class(
     archived = await db.classes.find_one({'_id': parse_object_id(class_id)})
     if archived:
         await sync_section_read_model(section=archived, database=db)
+    await sync_course_offering_read_models_for_query(query={"section_id": class_id}, database=db)
+    await sync_class_slot_read_models_for_offering_query(offering_query={"section_id": class_id}, database=db)
     await log_destructive_action_event(
         actor_user_id=actor_user_id,
         action="classes.delete",

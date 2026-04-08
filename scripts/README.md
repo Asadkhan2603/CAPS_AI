@@ -20,6 +20,10 @@ Utility scripts for local setup, safety checks, and canonical academic data seed
   - Seeds faculty, department, and legacy branch-style compatibility data.
   - Public runtime uses `faculties`, `departments`, and `specializations`.
 
+- `python backend/scripts/seed_program_batches.py`
+  - Auto-generates canonical program-level batches and semesters for every active program.
+  - Use this after importing `exports/Master_copy.xlsx` when rebuilding a fresh academic hierarchy.
+
 - `powershell -ExecutionPolicy Bypass -File scripts/seed_minimum_stack.ps1`
   - Creates a runnable local dataset for smoke testing.
   - Includes admin, teacher, student, section, subject, enrollment, and timetable baseline data.
@@ -246,6 +250,20 @@ Utility scripts for local setup, safety checks, and canonical academic data seed
 - Run Python scripts from the repository root so relative imports and paths resolve correctly.
 - Prefer the backend virtualenv interpreter for repeatable results.
 - Treat seeding scripts as local/admin utilities, not production migration substitutes.
+
+## Academic Rebuild
+
+For a clean academic hierarchy rebuild after a local purge:
+
+1. `python backend/scripts/import_master_hierarchy.py --backup-dir exports`
+2. `python backend/scripts/seed_program_batches.py`
+
+That restores the canonical master hierarchy plus program-level batches and semesters. Delivery data such as sections, groups, subjects, course offerings, and class slots remains empty until it is created in CAPS AI.
+
+Current local verification snapshot on April 2, 2026:
+- master hierarchy import restored `1` university, `8` faculties, `23` departments, `44` programs, and `35` specializations
+- program batch seeding restored `220` batches and `1290` semesters
+- non-academic stale-reference audit returned `0` findings across the remaining collections
 
 ## Phase 3 Follow-Up
 

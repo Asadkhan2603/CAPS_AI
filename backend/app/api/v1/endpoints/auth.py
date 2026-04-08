@@ -18,7 +18,8 @@ from app.domains.auth.repository import AuthRepository
 from app.domains.auth.service import AuthService
 from app.api.v1.endpoints.branding import get_logo_meta_payload
 from app.api.v1.endpoints.notices import get_unread_notice_count_payload
-from app.models.users import user_public
+from app.api.v1.endpoints.notifications import get_unread_notification_count_payload
+from app.models.users import normalize_communication_preferences, user_public
 from app.schemas.auth import (
     BootstrapStatus,
     ChangePasswordRequest,
@@ -28,6 +29,7 @@ from app.schemas.auth import (
     Token,
 )
 from app.schemas.user import UserCreate, UserLogin, UserOut, UserProfileUpdate
+from app.schemas.user import CommunicationPreferences, CommunicationPreferencesUpdate
 
 router = APIRouter()
 session_router = APIRouter()
@@ -36,6 +38,37 @@ MAX_AVATAR_SIZE = 3 * 1024 * 1024
 ALLOWED_AVATAR_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 auth_service = AuthService(AuthRepository(lambda: db))
+
+
+def _merge_communication_preferences(
+    existing: dict | None,
+    updates: dict | None,
+) -> dict:
+    merged = normalize_communication_preferences(existing)
+    for key, value in (updates or {}).items():
+        if value is None:
+            continue
+        if key == "notification_scope_preferences" and isinstance(value, dict):
+            current_scope_preferences = dict(merged.get("notification_scope_preferences") or {})
+            for scope_key, scope_value in value.items():
+                if not isinstance(scope_value, dict):
+                    continue
+                current_scope = dict(current_scope_preferences.get(scope_key) or {})
+                for nested_key, nested_value in scope_value.items():
+                    if nested_value is not None:
+                        current_scope[nested_key] = nested_value
+                current_scope_preferences[scope_key] = current_scope
+            merged[key] = current_scope_preferences
+            continue
+        if key == "digest_preferences" and isinstance(value, dict):
+            current_digest_preferences = dict(merged.get("digest_preferences") or {})
+            for nested_key, nested_value in value.items():
+                if nested_value is not None:
+                    current_digest_preferences[nested_key] = nested_value
+            merged[key] = current_digest_preferences
+            continue
+        merged[key] = value
+    return normalize_communication_preferences(merged)
 
 
 def _is_loopback_request(request: Request) -> bool:
@@ -108,9 +141,11 @@ async def get_session_bootstrap(
 ) -> SessionBootstrapResponse:
     branding = await get_logo_meta_payload()
     unread_notice_count = await get_unread_notice_count_payload(current_user)
+    unread_notification_count = await get_unread_notification_count_payload(current_user)
     return SessionBootstrapResponse(
         user=UserOut(**user_public(current_user)),
         unread_notice_count=int(unread_notice_count.get("count") or 0),
+        unread_notification_count=int(unread_notification_count.get("count") or 0),
         branding=branding,
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -159,10 +194,17 @@ async def update_profile(
         set_data["full_name"] = full_name.strip()
 
     profile_updates = {key: value for key, value in update_data.items()}
+    communication_preferences_update = profile_updates.pop("communication_preferences", None)
     if profile_updates:
         existing_profile = dict(current_user.get("profile", {}) or {})
         existing_profile.update(profile_updates)
         set_data["profile"] = existing_profile
+
+    if communication_preferences_update:
+        set_data["communication_preferences"] = _merge_communication_preferences(
+            current_user.get("communication_preferences"),
+            communication_preferences_update,
+        )
 
     if not set_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No profile fields provided")
@@ -171,6 +213,36 @@ async def update_profile(
     await db.users.update_one({"_id": current_user["_id"]}, {"$set": set_data})
     updated = await db.users.find_one({"_id": current_user["_id"]})
     return UserOut(**user_public(updated))
+
+
+@router.get("/communication-preferences", response_model=CommunicationPreferences)
+async def get_communication_preferences(
+    current_user=Depends(get_current_user),
+) -> CommunicationPreferences:
+    return CommunicationPreferences(**normalize_communication_preferences(current_user.get("communication_preferences")))
+
+
+@router.patch("/communication-preferences", response_model=CommunicationPreferences)
+async def update_communication_preferences(
+    payload: CommunicationPreferencesUpdate,
+    current_user=Depends(get_current_user),
+) -> CommunicationPreferences:
+    updates = payload.model_dump(exclude_unset=True)
+    if not any(value is not None for value in updates.values()):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No communication preference fields provided")
+
+    preferences = _merge_communication_preferences(current_user.get("communication_preferences"), updates)
+
+    await db.users.update_one(
+        {"_id": current_user["_id"]},
+        {
+            "$set": {
+                "communication_preferences": preferences,
+                "schema_version": USER_SCHEMA_VERSION,
+            }
+        },
+    )
+    return CommunicationPreferences(**preferences)
 
 
 @router.post("/profile/avatar", response_model=UserOut)

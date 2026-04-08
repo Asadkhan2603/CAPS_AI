@@ -12,6 +12,7 @@ from app.core.redis_store import redis_store
 from app.core.security import require_roles
 from app.models.notices import notice_public
 from app.api.v1.endpoints.notices import _filter_visible_notices, _notice_is_expired
+from app.services.analytics_snapshot import compute_platform_snapshot, get_latest_snapshot
 
 router = APIRouter()
 
@@ -20,6 +21,23 @@ ANALYTICS_MAX_PAGE_SIZE = 500
 ANALYTICS_SMALL_SCAN_CAP = 5_000
 ANALYTICS_MEDIUM_SCAN_CAP = 25_000
 ANALYTICS_LARGE_SCAN_CAP = 100_000
+ACTIVE_CLUB_STATUSES = ('active', 'registration_closed')
+ADMIN_SNAPSHOT_SUMMARY_FIELDS = (
+    'users_total',
+    'students_total',
+    'programs_total',
+    'batches_total',
+    'semesters_total',
+    'classes_total',
+    'subjects_total',
+    'assignments_total',
+    'submissions_total',
+    'evaluations_total',
+    'similarity_flags_total',
+    'notices_total',
+    'clubs_total',
+    'club_events_total',
+)
 
 
 def _bounded_cap(*, minimum: int, estimate: int, maximum: int) -> int:
@@ -120,6 +138,41 @@ async def _student_profiles_and_class_ids(current_user: dict) -> tuple[list[dict
     return student_profiles, class_ids
 
 
+def _snapshot_supports_admin_dashboard(snapshot: dict[str, Any] | None) -> bool:
+    if not snapshot:
+        return False
+    return all(field in snapshot for field in ADMIN_SNAPSHOT_SUMMARY_FIELDS)
+
+
+async def _get_admin_platform_snapshot() -> tuple[dict[str, Any], str, int]:
+    snapshot, snapshot_age_hours = await get_latest_snapshot(
+        max_age_hours=max(1, int(settings.analytics_snapshot_freshness_hours))
+    )
+    if not _snapshot_supports_admin_dashboard(snapshot):
+        snapshot = await compute_platform_snapshot()
+        return snapshot, 'live', 0
+    return snapshot, 'snapshot', int(snapshot_age_hours or 0)
+
+
+def _admin_summary_from_snapshot(snapshot: dict[str, Any]) -> dict[str, int]:
+    return {
+        'users': int(snapshot.get('users_total') or 0),
+        'programs': int(snapshot.get('programs_total') or 0),
+        'batches': int(snapshot.get('batches_total') or 0),
+        'semesters': int(snapshot.get('semesters_total') or 0),
+        'classes': int(snapshot.get('classes_total') or 0),
+        'subjects': int(snapshot.get('subjects_total') or 0),
+        'students': int(snapshot.get('students_total') or snapshot.get('active_students') or 0),
+        'assignments': int(snapshot.get('assignments_total') or 0),
+        'submissions': int(snapshot.get('submissions_total') or 0),
+        'evaluations': int(snapshot.get('evaluations_total') or 0),
+        'similarity_flags': int(snapshot.get('similarity_flags_total') or 0),
+        'notices': int(snapshot.get('notices_total') or 0),
+        'clubs': int(snapshot.get('clubs_total') or snapshot.get('active_clubs') or 0),
+        'club_events': int(snapshot.get('club_events_total') or 0),
+    }
+
+
 async def _build_summary_payload(current_user: dict) -> dict[str, Any]:
     role = current_user.get('role')
     user_id = str(current_user.get('_id'))
@@ -167,7 +220,7 @@ async def _build_summary_payload(current_user: dict) -> dict[str, Any]:
         'evaluations': await db.evaluations.count_documents({}),
         'similarity_flags': await db.similarity_logs.count_documents({'is_flagged': True}),
         'notices': await db.notices.count_documents({'is_active': True}),
-        'clubs': await db.clubs.count_documents({'is_active': True}),
+        'clubs': await db.clubs.count_documents({'status': {'$in': list(ACTIVE_CLUB_STATUSES)}}),
         'club_events': await db.club_events.count_documents({}),
     }
 
@@ -418,6 +471,15 @@ async def analytics_summary(
 ) -> dict:
     role = current_user.get('role')
     user_id = str(current_user.get('_id'))
+    if role == 'admin':
+        snapshot, snapshot_served_from, snapshot_age_hours = await _get_admin_platform_snapshot()
+        return {
+            'role': role,
+            'summary': _admin_summary_from_snapshot(snapshot),
+            'snapshot_served_from': snapshot_served_from,
+            'snapshot_age_hours': snapshot_age_hours,
+        }
+
     cache_key = f'analytics:summary:{role}:{user_id}'
     cached = await _get_cached_json(cache_key)
     if cached:
@@ -437,6 +499,23 @@ async def analytics_dashboard(
 ) -> dict:
     role = current_user.get('role')
     user_id = str(current_user.get('_id'))
+    if role == 'admin':
+        snapshot, snapshot_served_from, snapshot_age_hours = await _get_admin_platform_snapshot()
+        return {
+            'role': role,
+            'summary': _admin_summary_from_snapshot(snapshot),
+            'urgent_notices': await _build_urgent_notices_payload(current_user, limit=3),
+            'teacher_sections': [],
+            'student_dashboard': {
+                'deadlines': [],
+                'timetable': [],
+                'internship_status': None,
+            },
+            'generated_at': snapshot.get('updated_at') or datetime.now(timezone.utc),
+            'snapshot_served_from': snapshot_served_from,
+            'snapshot_age_hours': snapshot_age_hours,
+        }
+
     cache_key = f'analytics:dashboard:{role}:{user_id}'
     cached = await _get_cached_json(cache_key)
     if cached:

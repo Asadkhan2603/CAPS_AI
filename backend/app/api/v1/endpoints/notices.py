@@ -9,8 +9,15 @@ from app.core.mongo import parse_object_id
 from app.core.schema_versions import NOTICE_SCHEMA_VERSION
 from app.core.security import require_roles
 from app.models.notices import notice_public
-from app.schemas.notice import NoticeCreate, NoticeOut, NoticeReadBatchRequest
+from app.schemas.notice import NoticeCreate, NoticeOut, NoticeReadBatchRequest, NoticeUpdate
 from app.services.audit import log_audit_event
+from app.services.communication_deliveries import (
+    default_delivery_summary,
+    get_delivery_read_map,
+    get_delivery_summaries,
+    mark_delivery_read,
+)
+from app.services.club_permissions import can_manage_club
 from app.services.cloudinary_uploads import (
     ALLOWED_NOTICE_MIME_TYPES,
     MAX_NOTICE_FILE_BYTES,
@@ -18,9 +25,27 @@ from app.services.cloudinary_uploads import (
     delete_cloudinary_asset,
     upload_notice_file,
 )
-from app.services.background_jobs import fanout_notice_notifications
+from app.services.background_jobs import dispatch_scheduled_notice_notifications, fanout_notice_notifications
 
 router = APIRouter()
+
+
+async def _attach_notice_delivery_context(items: list[dict], *, current_user_id: str) -> list[dict]:
+    notice_ids = [str(item.get('_id')) for item in items if item.get('_id')]
+    summaries = await get_delivery_summaries(source_kind='notice', source_ids=notice_ids)
+    read_map = await get_delivery_read_map(
+        source_kind='notice',
+        source_ids=notice_ids,
+        target_user_id=current_user_id,
+    )
+    hydrated: list[dict] = []
+    for item in items:
+        source_id = str(item.get('_id') or '')
+        payload = dict(item)
+        payload['delivery_summary'] = summaries.get(source_id, default_delivery_summary())
+        payload['current_user_delivery_read'] = read_map.get(source_id, False)
+        hydrated.append(payload)
+    return hydrated
 
 
 async def _distinct_values(collection: Any, field: str, query: dict, *, fallback_length: int) -> list[Any]:
@@ -43,6 +68,8 @@ def _can_publish_scope(current_user: dict, scope: str) -> bool:
     normalized_scope = 'class' if scope == 'section' else scope
     if current_user.get('role') == 'admin':
         return True
+    if current_user.get('role') == 'student':
+        return normalized_scope == 'club'
     if current_user.get('role') != 'teacher':
         return False
     extensions = current_user.get('extended_roles', [])
@@ -52,6 +79,8 @@ def _can_publish_scope(current_user: dict, scope: str) -> bool:
         return 'year_head' in extensions
     if normalized_scope == 'class':
         return 'class_coordinator' in extensions
+    if normalized_scope == 'club':
+        return True
     if normalized_scope == 'subject':
         return True
     return False
@@ -87,10 +116,20 @@ async def _validate_scope_ref_access(current_user: dict, scope: str, scope_ref_i
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Subject not found for provided scope_ref_id')
         return scope_ref_id
 
+    if normalized_scope == 'club':
+        club = await db.clubs.find_one({'_id': parse_object_id(scope_ref_id)})
+        if not club:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Club not found for provided scope_ref_id')
+        if current_user.get('role') == 'teacher' and not can_manage_club(current_user, club):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to publish for this club')
+        if current_user.get('role') == 'student' and club.get('president_user_id') != str(current_user['_id']):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Only the club president can publish club announcements')
+        return scope_ref_id
+
     return scope_ref_id
 
 
-async def _student_scope_visibility_ids(current_user: dict) -> tuple[set[str], set[str], set[str]]:
+async def _student_scope_visibility_ids(current_user: dict) -> tuple[set[str], set[str], set[str], set[str]]:
     user_id = str(current_user['_id'])
     user_email = (current_user.get('email') or '').strip().lower()
 
@@ -146,7 +185,31 @@ async def _student_scope_visibility_ids(current_user: dict) -> tuple[set[str], s
             if isinstance(value, str) and value
         }
 
-    return class_ids, batch_ids, subject_ids
+    club_ids = {
+        value
+        for value in await _distinct_values(
+            db.club_members,
+            'club_id',
+            {'student_user_id': user_id, 'status': 'active'},
+            fallback_length=2000,
+        )
+        if isinstance(value, str) and value
+    }
+    club_ids.update(
+        {
+            value
+            for value in await _distinct_values(
+                db.clubs,
+                '_id',
+                {'president_user_id': user_id},
+                fallback_length=200,
+            )
+            if value
+        }
+    )
+    normalized_club_ids = {str(value) for value in club_ids if value}
+
+    return class_ids, batch_ids, subject_ids, normalized_club_ids
 
 
 def _notice_is_expired(item: dict, now: datetime) -> bool:
@@ -160,6 +223,7 @@ def _student_can_view_notice(
     class_ids: set[str],
     batch_ids: set[str],
     subject_ids: set[str],
+    club_ids: set[str],
 ) -> bool:
     item_scope = item.get('scope')
     scope_ref_id = item.get('scope_ref_id')
@@ -171,6 +235,8 @@ def _student_can_view_notice(
         return True
     if item_scope == 'subject' and scope_ref_id and scope_ref_id in subject_ids:
         return True
+    if item_scope == 'club' and scope_ref_id and scope_ref_id in club_ids:
+        return True
     return False
 
 
@@ -178,7 +244,7 @@ async def _filter_visible_notices(items: list[dict], current_user: dict) -> list
     if current_user.get('role') != 'student':
         return items
 
-    class_ids, batch_ids, subject_ids = await _student_scope_visibility_ids(current_user)
+    class_ids, batch_ids, subject_ids, club_ids = await _student_scope_visibility_ids(current_user)
     return [
         item
         for item in items
@@ -187,6 +253,7 @@ async def _filter_visible_notices(items: list[dict], current_user: dict) -> list
             class_ids=class_ids,
             batch_ids=batch_ids,
             subject_ids=subject_ids,
+            club_ids=club_ids,
         )
     ]
 
@@ -226,6 +293,11 @@ async def _mark_notice_read_for_user(notice: dict, current_user: dict) -> dict:
             },
         )
         notice = await db.notices.find_one({'_id': notice['_id']})
+    await mark_delivery_read(
+        source_kind='notice',
+        source_id=str(notice['_id']),
+        target_user_id=current_user_id,
+    )
     return notice
 
 
@@ -284,6 +356,8 @@ async def _extract_payload_and_files(request: Request) -> tuple[NoticeCreate, li
             scope=str(form.get('scope') or 'college'),
             scope_ref_id=(str(form.get('scope_ref_id')).strip() if form.get('scope_ref_id') else None),
             expires_at=_parse_datetime(str(form.get('expires_at')) if form.get('expires_at') else None),
+            is_pinned=str(form.get('is_pinned') or '').strip().lower() in {'1', 'true', 'yes', 'on'},
+            template_key=(str(form.get('template_key')).strip() if form.get('template_key') else None),
         )
         scheduled_at = _parse_datetime(str(form.get('scheduled_at')) if form.get('scheduled_at') else None)
         return payload, files, scheduled_at
@@ -297,8 +371,10 @@ async def _extract_payload_and_files(request: Request) -> tuple[NoticeCreate, li
 @router.get('/', response_model=List[NoticeOut])
 async def list_notices(
     scope: str | None = Query(default=None),
+    scope_ref_id: str | None = Query(default=None),
     priority: str | None = Query(default=None),
     include_expired: bool = Query(default=False),
+    include_scheduled: bool = Query(default=False),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
@@ -306,19 +382,45 @@ async def list_notices(
     query = {'is_active': True}
     if scope:
         query['scope'] = 'class' if scope == 'section' else scope
+    if scope_ref_id:
+        query['scope_ref_id'] = scope_ref_id
     if priority:
         query['priority'] = priority
 
     now = datetime.now(timezone.utc)
-    query['$or'] = [{'scheduled_at': None}, {'scheduled_at': {'$lte': now}}]
     items = await db.notices.find(query).skip(skip).limit(limit).to_list(length=limit)
-    items = sorted(items, key=lambda item: item.get('created_at') or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    if include_scheduled and current_user.get('role') in {'admin', 'teacher'}:
+        current_user_id = str(current_user['_id'])
+        items = [
+            item
+            for item in items
+            if (
+                (_to_aware_utc(item.get('scheduled_at')) or now) <= now
+                or current_user.get('role') == 'admin'
+                or item.get('created_by') == current_user_id
+            )
+        ]
+    else:
+        items = [
+            item
+            for item in items
+            if (_to_aware_utc(item.get('scheduled_at')) or now) <= now
+        ]
+    items = sorted(
+        items,
+        key=lambda item: (
+            1 if item.get('is_pinned') else 0,
+            item.get('created_at') or datetime.min.replace(tzinfo=timezone.utc),
+        ),
+        reverse=True,
+    )
     if not include_expired:
         items = [item for item in items if not _notice_is_expired(item, now)]
 
     items = await _filter_visible_notices(items, current_user)
 
-    return [NoticeOut(**notice_public(item, current_user_id=str(current_user['_id']))) for item in items]
+    hydrated = await _attach_notice_delivery_context(items, current_user_id=str(current_user['_id']))
+    return [NoticeOut(**notice_public(item, current_user_id=str(current_user['_id']))) for item in hydrated]
 
 
 @router.get('/unread-count')
@@ -343,11 +445,8 @@ async def get_unread_notice_count_payload(
     items = [item for item in items if not _notice_is_expired(item, now)]
     items = await _filter_visible_notices(items, current_user)
     current_user_id = str(current_user['_id'])
-    count = sum(
-        1
-        for item in items
-        if current_user_id not in {str(value) for value in (item.get('seen_by') or []) if value}
-    )
+    hydrated = await _attach_notice_delivery_context(items, current_user_id=current_user_id)
+    count = sum(1 for item in hydrated if not notice_public(item, current_user_id=current_user_id).get('is_read'))
     return {'count': count}
 
 
@@ -363,7 +462,7 @@ async def create_notice(
     request: Request,
     background_tasks: BackgroundTasks,
     images: list[UploadFile] | None = File(default=None),
-    current_user=Depends(require_roles(['admin', 'teacher'])),
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
 ) -> NoticeOut:
     payload, uploaded_files, scheduled_at = await _extract_payload_and_files(request)
 
@@ -387,10 +486,21 @@ async def create_notice(
             'scope_ref_id': scope_ref_id,
             'expires_at': payload.expires_at,
             'images': images,
-            'is_pinned': False,
+            'is_pinned': bool(payload.is_pinned),
+            'template_key': payload.template_key,
             'scheduled_at': scheduled_at,
             'read_count': 0,
             'seen_by': [],
+            'fanout_status': 'scheduled' if scheduled_at and _to_aware_utc(scheduled_at) > datetime.now(timezone.utc) else 'queued',
+            'fanout_attempts': 0,
+            'fanout_last_attempt_at': None,
+            'fanout_next_retry_at': None,
+            'fanout_count': 0,
+            'fanout_dispatched_at': None,
+            'fanout_failed_at': None,
+            'fanout_error': None,
+            'fanout_processing_started_at': None,
+            'fanout_processing_expires_at': None,
             'created_by': str(current_user['_id']),
             'is_active': True,
             'created_at': datetime.now(timezone.utc),
@@ -408,7 +518,8 @@ async def create_notice(
         )
         if not scheduled_at or _to_aware_utc(scheduled_at) <= datetime.now(timezone.utc):
             background_tasks.add_task(fanout_notice_notifications, str(result.inserted_id))
-        return NoticeOut(**notice_public(created, current_user_id=str(current_user['_id'])))
+        hydrated = await _attach_notice_delivery_context([created], current_user_id=str(current_user['_id']))
+        return NoticeOut(**notice_public(hydrated[0], current_user_id=str(current_user['_id'])))
     except HTTPException:
         for image in images:
             resource_type = 'image' if (image.get('mime_type') or '').startswith('image/') else 'raw'
@@ -421,10 +532,54 @@ async def create_notice(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Failed to create notice') from exc
 
 
+@router.patch('/{notice_id}', response_model=NoticeOut)
+async def update_notice(
+    notice_id: str,
+    payload: NoticeUpdate,
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
+) -> NoticeOut:
+    notice_obj_id = parse_object_id(notice_id)
+    current = await db.notices.find_one({'_id': notice_obj_id, 'is_active': True})
+    if not current:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Notice not found')
+
+    if current_user.get('role') == 'teacher' and current.get('created_by') != str(current_user['_id']):
+        if current.get('scope') != 'club':
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to update this notice')
+        club = await db.clubs.find_one({'_id': parse_object_id(current.get('scope_ref_id'))})
+        if not club or not can_manage_club(current_user, club):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to update this notice')
+    if current_user.get('role') == 'student':
+        if current.get('scope') != 'club':
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to update this notice')
+        club = await db.clubs.find_one({'_id': parse_object_id(current.get('scope_ref_id'))})
+        if not club or club.get('president_user_id') != str(current_user['_id']):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to update this notice')
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No fields to update')
+
+    update_data['schema_version'] = NOTICE_SCHEMA_VERSION
+    await db.notices.update_one({'_id': notice_obj_id}, {'$set': update_data})
+    updated = await db.notices.find_one({'_id': notice_obj_id})
+    await log_audit_event(
+        actor_user_id=str(current_user['_id']),
+        action='update',
+        entity_type='notice',
+        entity_id=notice_id,
+        detail='Updated notice settings',
+        old_value={'is_pinned': current.get('is_pinned', False)},
+        new_value={'is_pinned': update_data.get('is_pinned', current.get('is_pinned', False))},
+    )
+    hydrated = await _attach_notice_delivery_context([updated], current_user_id=str(current_user['_id']))
+    return NoticeOut(**notice_public(hydrated[0], current_user_id=str(current_user['_id'])))
+
+
 @router.delete('/{notice_id}')
 async def delete_notice(
     notice_id: str,
-    current_user=Depends(require_roles(['admin', 'teacher'])),
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
 ) -> dict:
     notice_obj_id = parse_object_id(notice_id)
     current = await db.notices.find_one({'_id': notice_obj_id, 'is_active': True})
@@ -432,7 +587,17 @@ async def delete_notice(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Notice not found')
 
     if current_user.get('role') == 'teacher' and current.get('created_by') != str(current_user['_id']):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to delete this notice')
+        if current.get('scope') != 'club':
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to delete this notice')
+        club = await db.clubs.find_one({'_id': parse_object_id(current.get('scope_ref_id'))})
+        if not club or not can_manage_club(current_user, club):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to delete this notice')
+    if current_user.get('role') == 'student':
+        if current.get('scope') != 'club':
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to delete this notice')
+        club = await db.clubs.find_one({'_id': parse_object_id(current.get('scope_ref_id'))})
+        if not club or club.get('president_user_id') != str(current_user['_id']):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to delete this notice')
 
     for file_item in current.get('images', []) or []:
         mime = str(file_item.get('mime_type') or '').lower()
@@ -463,27 +628,16 @@ async def delete_notice(
 
 @router.post('/process-scheduled')
 async def process_scheduled_notices(
-    background_tasks: BackgroundTasks,
     current_user=Depends(require_roles(['admin', 'teacher'])),
 ) -> dict:
-    now = datetime.now(timezone.utc)
-    notices = await db.notices.find(
-        {
-            'is_active': True,
-            'scheduled_at': {'$ne': None, '$lte': now},
-            '$or': [{'fanout_dispatched_at': None}, {'fanout_dispatched_at': {'$exists': False}}],
-        },
-        {'_id': 1},
-    ).limit(200).to_list(length=200)
-    for notice in notices:
-        background_tasks.add_task(fanout_notice_notifications, str(notice.get('_id')))
+    dispatched = await dispatch_scheduled_notice_notifications(limit=200)
     await log_audit_event(
         actor_user_id=str(current_user['_id']),
         action='process_scheduled_notices',
         entity_type='notice',
-        detail=f'Queued {len(notices)} scheduled notices for dispatch',
+        detail=f'Dispatched {dispatched} scheduled notices',
     )
-    return {'success': True, 'queued': len(notices)}
+    return {'success': True, 'dispatched': dispatched}
 
 
 @router.post('/{notice_id}/read', response_model=NoticeOut)
@@ -493,7 +647,8 @@ async def mark_notice_read(
 ) -> NoticeOut:
     notice = await _get_visible_notice_or_404(current_user, notice_id)
     updated = await _mark_notice_read_for_user(notice, current_user)
-    return NoticeOut(**notice_public(updated, current_user_id=str(current_user['_id'])))
+    hydrated = await _attach_notice_delivery_context([updated], current_user_id=str(current_user['_id']))
+    return NoticeOut(**notice_public(hydrated[0], current_user_id=str(current_user['_id'])))
 
 
 @router.post('/read')
@@ -509,10 +664,11 @@ async def mark_notices_read(
             continue
         updated_notices.append(await _mark_notice_read_for_user(notice, current_user))
 
+    hydrated = await _attach_notice_delivery_context(updated_notices, current_user_id=str(current_user['_id']))
     return {
         'marked_count': len(updated_notices),
         'items': [
             notice_public(item, current_user_id=str(current_user['_id']))
-            for item in updated_notices
+            for item in hydrated
         ],
     }

@@ -5,11 +5,17 @@ function flattenPaths(groups) {
   return groups.flatMap((group) => group.items.map((item) => item.to));
 }
 
+function mapGroupsByKey(groups) {
+  return Object.fromEntries(groups.map((group) => [group.key, group]));
+}
+
 describe('admin navigation visibility', () => {
   it('shows the full admin control cluster for super admins', () => {
     const user = { role: 'admin', admin_type: 'super_admin' };
     const groups = getVisibleNavigationGroups(user);
     const paths = flattenPaths(groups);
+    const keys = groups.map((group) => group.key);
+    const groupsByKey = mapGroupsByKey(groups);
 
     expect(paths).toContain('/admin/dashboard');
     expect(paths).toContain('/admin/onboarding');
@@ -22,14 +28,27 @@ describe('admin navigation visibility', () => {
     expect(paths).toContain('/audit-logs');
     expect(paths).toContain('/developer-panel');
     expect(paths).toContain('/students/bulk-import');
+    expect(paths).toContain('/sections');
+    expect(paths).toContain('/grievances/fallback');
+    expect(paths).toContain('/grievances/assigned');
+    expect(paths).toContain('/help');
     expect(paths).not.toContain('/dashboard');
     expect(paths).not.toContain('/analytics');
+    expect(keys).toEqual(['adminPanel', 'academics', 'communication', 'clubs', 'administration', 'system', 'profile']);
+    expect(groupsByKey.adminPanel.label).toBe('Control Center');
+    expect(groupsByKey.academics.label).toBe('Students & Academics');
+    expect(groupsByKey.administration.label).toBe('Administration');
+    expect(groupsByKey.system.label).toBe('System & Compliance');
+    expect(keys).not.toContain('operations');
+    expect(keys).not.toContain('setup');
     expect(getWorkspaceHomeItemPath(user)).toBe('/workspace/adminPanel/admin/dashboard');
   });
 
   it('hides developer tools from regular admins while keeping governance surfaces', () => {
     const user = { role: 'admin', admin_type: 'admin' };
-    const paths = flattenPaths(getVisibleNavigationGroups(user));
+    const groups = getVisibleNavigationGroups(user);
+    const paths = flattenPaths(groups);
+    const keys = groups.map((group) => group.key);
 
     expect(paths).toContain('/admin/dashboard');
     expect(paths).toContain('/admin/onboarding');
@@ -39,14 +58,21 @@ describe('admin navigation visibility', () => {
     expect(paths).toContain('/admin/system');
     expect(paths).toContain('/admin/recovery');
     expect(paths).toContain('/audit-logs');
+    expect(paths).toContain('/help');
     expect(paths).not.toContain('/admin/developer');
     expect(paths).not.toContain('/developer-panel');
+    expect(keys).toContain('administration');
+    expect(keys).toContain('system');
+    expect(keys).not.toContain('operations');
+    expect(keys).not.toContain('setup');
     expect(getWorkspaceHomeItemPath(user)).toBe('/workspace/adminPanel/admin/dashboard');
   });
 
   it('limits academic admins to academic admin surfaces and setup workflows', () => {
     const user = { role: 'admin', admin_type: 'academic_admin' };
-    const paths = flattenPaths(getVisibleNavigationGroups(user));
+    const groups = getVisibleNavigationGroups(user);
+    const paths = flattenPaths(groups);
+    const keys = groups.map((group) => group.key);
 
     expect(paths).toContain('/admin/dashboard');
     expect(paths).toContain('/admin/onboarding');
@@ -60,23 +86,32 @@ describe('admin navigation visibility', () => {
     expect(paths).toContain('/batches');
     expect(paths).toContain('/semesters');
     expect(paths).toContain('/sections');
+    expect(paths).toContain('/grievances/fallback');
+    expect(paths).toContain('/grievances/assigned');
+    expect(paths).toContain('/help');
     expect(paths).not.toContain('/admin/governance');
     expect(paths).not.toContain('/admin/system');
     expect(paths).not.toContain('/admin/recovery');
     expect(paths).not.toContain('/admin/developer');
     expect(paths).not.toContain('/audit-logs');
     expect(paths).not.toContain('/developer-panel');
+    expect(keys).toContain('academics');
+    expect(keys).toContain('administration');
+    expect(keys).not.toContain('system');
     expect(getWorkspaceHomeItemPath(user)).toBe('/workspace/adminPanel/admin/dashboard');
   });
 
   it('limits compliance admins to compliance-facing admin pages', () => {
     const user = { role: 'admin', admin_type: 'compliance_admin' };
-    const paths = flattenPaths(getVisibleNavigationGroups(user));
+    const groups = getVisibleNavigationGroups(user);
+    const paths = flattenPaths(groups);
+    const keys = groups.map((group) => group.key);
 
     expect(paths).toContain('/admin/dashboard');
     expect(paths).toContain('/admin/analytics');
     expect(paths).toContain('/admin/system');
     expect(paths).toContain('/audit-logs');
+    expect(paths).toContain('/help');
     expect(paths).not.toContain('/admin/onboarding');
     expect(paths).not.toContain('/admin/governance');
     expect(paths).not.toContain('/admin/recovery');
@@ -85,6 +120,8 @@ describe('admin navigation visibility', () => {
     expect(paths).not.toContain('/universities');
     expect(paths).not.toContain('/faculties');
     expect(paths).not.toContain('/developer-panel');
+    expect(keys).toContain('system');
+    expect(keys).not.toContain('administration');
     expect(getWorkspaceHomeItemPath(user)).toBe('/workspace/adminPanel/admin/dashboard');
   });
 });
@@ -101,7 +138,10 @@ describe('teacher navigation visibility', () => {
     expect(keys).not.toContain('setup');
     expect(academicPaths).toContain('/sections');
     expect(academicPaths).not.toContain('/students/section-mapping');
+    expect(academicPaths).toContain('/grievances/assigned');
+    expect(academicPaths).not.toContain('/grievances/coordinator');
     expect(academicPaths).not.toContain('/enrollments');
+    expect(flattenPaths(groups)).toContain('/help');
   });
 
   it('surfaces coordinator-only tools only for class coordinators', () => {
@@ -109,6 +149,8 @@ describe('teacher navigation visibility', () => {
     const paths = flattenPaths(getVisibleNavigationGroups(user));
 
     expect(paths).toContain('/sections');
+    expect(paths).toContain('/grievances/coordinator');
+    expect(paths).toContain('/grievances/assigned');
     expect(paths).toContain('/enrollments');
     expect(paths).not.toContain('/students/bulk-import');
   });
@@ -118,7 +160,16 @@ describe('teacher navigation visibility', () => {
     const paths = flattenPaths(getVisibleNavigationGroups(user));
 
     expect(paths).toContain('/sections');
+    expect(paths).toContain('/grievances/assigned');
+    expect(paths).not.toContain('/grievances/coordinator');
     expect(paths).toContain('/enrollments');
     expect(paths).not.toContain('/students/section-mapping');
+  });
+
+  it('shows student grievance tracking in the student profile group', () => {
+    const user = { role: 'student' };
+    const paths = flattenPaths(getVisibleNavigationGroups(user));
+
+    expect(paths).toContain('/grievances');
   });
 });

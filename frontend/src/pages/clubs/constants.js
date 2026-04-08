@@ -1,5 +1,5 @@
 export const tabs = [
-  { key: 'overview', label: 'Overview' },
+  { key: 'overview', label: 'Summary' },
   { key: 'members', label: 'Members' },
   { key: 'events', label: 'Events' },
   { key: 'announcements', label: 'Announcements' },
@@ -19,6 +19,11 @@ export const initialCreateForm = {
   membership_type: 'approval_required',
   max_members: '',
   coordinator_user_id: '',
+  tagline: '',
+  achievement_highlights: '',
+  recruitment_headline: '',
+  recruitment_cta_label: '',
+  public_contact_url: '',
   status: 'draft'
 };
 

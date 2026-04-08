@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { ArrowRight, GraduationCap, Lock, Mail, Sparkles } from 'lucide-react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import Card from '../components/ui/Card';
@@ -29,8 +29,7 @@ function resolveGoogleAuthUrl() {
 }
 
 export default function LoginPage() {
-  const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, isAuthenticated, checking } = useAuth();
   const { pushToast } = useToast();
   const googleAuthUrl = resolveGoogleAuthUrl();
   const [form, setForm] = useState({ email: '', password: '' });
@@ -60,6 +59,12 @@ export default function LoginPage() {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [mouseX, mouseY]);
 
+  useEffect(() => {
+    if (!checking && isAuthenticated) {
+      globalThis.location.replace('/dashboard');
+    }
+  }, [checking, isAuthenticated]);
+
   function onChange(event) {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -72,7 +77,7 @@ export default function LoginPage() {
     try {
       await login(form.email, form.password);
       pushToast({ title: 'Welcome back', description: 'Login successful.', variant: 'success' });
-      navigate('/dashboard', { replace: true });
+      globalThis.location.replace('/dashboard');
     } catch (err) {
       setError(formatApiError(err, 'Login failed'));
       pushApiErrorToast(pushToast, err, 'Login failed');

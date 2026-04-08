@@ -4,6 +4,8 @@ from datetime import datetime
 import re
 from typing import Any, Callable
 
+from pymongo.errors import DuplicateKeyError
+
 from app.core.database import db as core_db
 from app.core.redis_store import redis_store
 from app.core.schema_versions import USER_SCHEMA_VERSION, USER_SESSION_SCHEMA_VERSION
@@ -47,6 +49,9 @@ class AuthRepository:
             {"$set": {**set_data, "schema_version": USER_SCHEMA_VERSION}},
         )
 
+    async def delete_user(self, user_obj_id) -> None:
+        await self._db.users.delete_one({"_id": user_obj_id})
+
     async def is_any_admin_registered(self) -> bool:
         existing_admin = await self._db.users.find_one({"role": "admin"})
         return bool(existing_admin)
@@ -71,7 +76,11 @@ class AuthRepository:
             return
         existing = await collection.find_one({"jti": document["jti"]})
         if not existing:
-            await collection.insert_one(document)
+            try:
+                await collection.insert_one(document)
+            except DuplicateKeyError:
+                # Concurrent refresh/logout requests may blacklist the same JTI at the same time.
+                return
 
     async def clear_login_failures(self, user_obj_id) -> None:
         await self.update_user(

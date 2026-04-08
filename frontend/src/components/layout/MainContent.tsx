@@ -1,17 +1,30 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import type { ReactNode } from 'react';
+import { cn } from '../../utils/cn';
 
 type MainContentProps = {
   routeKey: string;
   headerHeight: number;
+  interactionLocked?: boolean;
   children: ReactNode;
 };
 
-export default function MainContent({ routeKey, headerHeight, children }: MainContentProps) {
+export default function MainContent({
+  routeKey,
+  headerHeight,
+  interactionLocked = false,
+  children
+}: MainContentProps) {
   const prefersReducedMotion = useReducedMotion();
 
   return (
-    <main className="overflow-y-auto overflow-x-hidden" style={{ height: `calc(100vh - ${headerHeight}px)` }}>
+    <main
+      className={cn(
+        'overflow-x-hidden',
+        interactionLocked ? 'overflow-hidden touch-none overscroll-none' : 'overflow-y-auto'
+      )}
+      style={{ height: `calc(100vh - ${headerHeight}px)` }}
+    >
       <motion.div
         key={routeKey}
         initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}

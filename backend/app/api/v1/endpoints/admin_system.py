@@ -7,9 +7,14 @@ from app.core.database import db
 from app.core.observability import build_operational_alerts, observability_state
 from app.core.security import require_permission
 from app.services.ai_jobs import sample_ai_queue_metrics
-from app.services.operational_alert_routing import route_operational_alert_notifications
+from app.services.background_jobs import get_scheduled_notice_dispatch_health
+from app.services.operational_alert_routing import (
+    list_operational_alert_route_history,
+    route_operational_alert_notifications,
+)
 from app.services.scheduler import app_scheduler
 from app.services.system_health_snapshots import (
+    get_clubs_observability_history,
     get_system_health_snapshot_history,
     get_latest_system_health_snapshot_payload,
     get_system_health_snapshot_store_status,
@@ -55,6 +60,7 @@ async def admin_system_health(
                 **(cached_payload.get("alert_routing") or {}),
                 "notifications_created": 0,
             }
+            cached_payload["alert_route_history"] = cached_payload.get("alert_route_history") or []
             return cached_payload
 
     now = datetime.now(timezone.utc)
@@ -134,6 +140,7 @@ async def admin_system_health(
     ]
     await sample_ai_queue_metrics(database=db)
     observability = observability_state.snapshot()
+    scheduled_notice_dispatch = await get_scheduled_notice_dispatch_health()
     alerts = build_operational_alerts(
         db_status=db_status,
         scheduler_status=scheduler_status,
@@ -146,6 +153,7 @@ async def admin_system_health(
         'db_status': db_status,
         'scheduler': scheduler_status,
         'scheduler_lock': scheduler_lock,
+        'scheduled_notice_dispatch': scheduled_notice_dispatch,
         'observability': observability,
         'alerts': alerts,
         'alert_count': len(alerts),
@@ -161,8 +169,10 @@ async def admin_system_health(
         database=db,
         now=now,
     )
+    payload["alert_route_history"] = await list_operational_alert_route_history(database=db)
     snapshot_state = await persist_system_health_snapshot(payload=payload, database=db)
     payload['snapshot_history'] = await get_system_health_snapshot_history(database=db)
+    payload['clubs_observability'] = await get_clubs_observability_history(database=db)
     payload['snapshot_store'] = await get_system_health_snapshot_store_status(database=db)
     if not payload['snapshot_store']['is_within_retention_bound']:
         payload['alerts'].append(
