@@ -48,7 +48,7 @@ on:
       - "new_docs/**"
       - "**/*.md"
 
-# Cancel older runs on the same branch/PR to minimize wasted minutes.
+# Cancel older runs on the same branch/PR to minimize wasted GitHub Actions minutes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
