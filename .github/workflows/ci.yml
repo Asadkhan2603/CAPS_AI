@@ -18,12 +18,6 @@ on:
       - "frontend/package-lock.json"
       - "docker-compose.yml"
       - "k8s-*.yaml"
-    # Skip doc-only changes to save GitHub Actions minutes.
-    paths-ignore:
-      - "README.md"
-      - "docs/**"
-      - "new_docs/**"
-      - "**/*.md"
   pull_request:
     branches:
       - main
@@ -41,12 +35,6 @@ on:
       - "frontend/package-lock.json"
       - "docker-compose.yml"
       - "k8s-*.yaml"
-    # Skip doc-only changes to save GitHub Actions minutes.
-    paths-ignore:
-      - "README.md"
-      - "docs/**"
-      - "new_docs/**"
-      - "**/*.md"
 
 # Cancel older runs on the same branch/PR to minimize wasted GitHub Actions minutes.
 concurrency:
