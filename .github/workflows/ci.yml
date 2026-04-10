@@ -69,11 +69,13 @@ jobs:
           filters: |
             frontend:
               - 'frontend/**'
+              - '.github/workflows/ci.yml'
               - '.nvmrc'
               - 'package-lock.json'
               - 'frontend/package-lock.json'
             backend:
               - 'backend/**'
+              - '.github/workflows/ci.yml'
               - 'scripts/**'
               - '.flake8'
               - 'mypy.ini'
