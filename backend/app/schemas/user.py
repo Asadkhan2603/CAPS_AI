@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -122,6 +122,14 @@ class UserOut(BaseModel):
     avatar_url: str | None = None
     avatar_updated_at: datetime | None = None
     created_at: datetime | None = None
+    rbac_role_code: str | None = None
+    admin_role: dict[str, Any] | None = None
+    permissions: list[str] = Field(default_factory=list)
+    permission_overrides: dict[str, Any] = Field(default_factory=lambda: {"allow_permission_keys": [], "deny_permission_keys": []})
+    scopes: list[dict[str, Any]] = Field(default_factory=list)
+    status: str | None = None
+    updated_at: datetime | None = None
+    deleted_at: datetime | None = None
     schema_version: int = 1
 
 

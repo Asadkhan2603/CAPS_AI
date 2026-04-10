@@ -14,6 +14,10 @@ def _normalize_section_id(value: Any) -> str | None:
     return str(value)
 
 
+def _collection(database: Any, name: str):
+    return getattr(database, name, None)
+
+
 def _read_model_document_from_section(section: dict[str, Any]) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     return {
@@ -30,20 +34,23 @@ async def sync_section_read_model(
     section_id: str | None = None,
     database: Any = db,
 ) -> dict[str, Any] | None:
+    section_read_models = _collection(database, "section_read_models")
+    if section_read_models is None:
+        return section
     if section is None:
         if not section_id:
             return None
         section = await database.classes.find_one({"_id": parse_object_id(section_id)})
     if not section or not section.get("_id"):
         if section_id:
-            await database.section_read_models.delete_one({"_id": parse_object_id(section_id)})
+            await section_read_models.delete_one({"_id": parse_object_id(section_id)})
         return None
 
     enriched = await enrich_section_documents(database, [section])
     if not enriched:
         return None
     read_model = _read_model_document_from_section(enriched[0])
-    await database.section_read_models.update_one(
+    await section_read_models.update_one(
         {"_id": read_model["_id"]},
         {"$set": read_model},
         upsert=True,
@@ -56,6 +63,9 @@ async def sync_section_read_models_for_ids(
     section_ids: list[str],
     database: Any = db,
 ) -> dict[str, dict[str, Any]]:
+    section_read_models = _collection(database, "section_read_models")
+    if section_read_models is None:
+        return {}
     normalized_ids = [_normalize_section_id(item) for item in section_ids]
     normalized_ids = [item for item in normalized_ids if item]
     if not normalized_ids:
@@ -66,7 +76,7 @@ async def sync_section_read_models_for_ids(
     found_ids = {str(item.get("_id")) for item in sections if item.get("_id")}
     missing_ids = [item for item in normalized_ids if item not in found_ids]
     if missing_ids:
-        await database.section_read_models.delete_many({"_id": {"$in": [parse_object_id(item) for item in missing_ids]}})
+        await section_read_models.delete_many({"_id": {"$in": [parse_object_id(item) for item in missing_ids]}})
 
     if not sections:
         return {}
@@ -77,7 +87,7 @@ async def sync_section_read_models_for_ids(
         if not item.get("_id"):
             continue
         read_model = _read_model_document_from_section(item)
-        await database.section_read_models.update_one(
+        await section_read_models.update_one(
             {"_id": read_model["_id"]},
             {"$set": read_model},
             upsert=True,
@@ -103,7 +113,11 @@ async def get_section_read_model(
     section_id: str,
     database: Any = db,
 ) -> dict[str, Any] | None:
-    read_model = await database.section_read_models.find_one({"_id": parse_object_id(section_id)})
+    section_read_models = _collection(database, "section_read_models")
+    if section_read_models is None:
+        section = await database.classes.find_one({"_id": parse_object_id(section_id)})
+        return section
+    read_model = await section_read_models.find_one({"_id": parse_object_id(section_id)})
     if read_model:
         return read_model
     return await sync_section_read_model(section_id=section_id, database=database)
@@ -116,9 +130,12 @@ async def hydrate_sections_from_read_models(
 ) -> list[dict[str, Any]]:
     if not source_sections:
         return []
+    section_read_models = _collection(database, "section_read_models")
+    if section_read_models is None:
+        return source_sections
 
     section_ids = [str(item.get("_id")) for item in source_sections if item.get("_id")]
-    read_models = await database.section_read_models.find(
+    read_models = await section_read_models.find(
         {"_id": {"$in": [parse_object_id(item) for item in section_ids]}}
     ).to_list(length=len(section_ids))
     read_model_map = {str(item.get("_id")): item for item in read_models if item.get("_id")}

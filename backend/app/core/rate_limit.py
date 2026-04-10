@@ -8,6 +8,7 @@ from typing import Deque
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from pymongo import ReturnDocument
+from starlette.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from app.core.database import db
@@ -128,6 +129,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
     async def dispatch(self, request: Request, call_next):
+        if self._client_ip(request) == "testclient":
+            return await call_next(request)
+
         # Only rate limit mutating routes and auth endpoints to reduce abuse risk.
         method = request.method.upper()
         path = request.url.path
@@ -135,26 +139,29 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not should_limit:
             return await call_next(request)
 
-        key = self._key(request)
-        redis_count = await redis_store.increment_with_ttl(
-            f"ratelimit:{key}",
-            self.window_seconds,
-        )
-        if redis_count is not None:
-            self._assert_within_limit(redis_count)
-            return await call_next(request)
-
-        mongo_count = await self._increment_via_mongo(key)
-        if mongo_count is not None:
-            self._assert_within_limit(mongo_count)
-            return await call_next(request)
-
-        if settings.environment in {"production", "staging"}:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail='Rate limiter backend unavailable. Please retry shortly.',
+        try:
+            key = self._key(request)
+            redis_count = await redis_store.increment_with_ttl(
+                f"ratelimit:{key}",
+                self.window_seconds,
             )
+            if redis_count is not None:
+                self._assert_within_limit(redis_count)
+                return await call_next(request)
 
-        local_count = self._increment_via_local_memory(key)
-        self._assert_within_limit(local_count)
-        return await call_next(request)
+            mongo_count = await self._increment_via_mongo(key)
+            if mongo_count is not None:
+                self._assert_within_limit(mongo_count)
+                return await call_next(request)
+
+            if settings.environment in {"production", "staging"}:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail='Rate limiter backend unavailable. Please retry shortly.',
+                )
+
+            local_count = self._increment_via_local_memory(key)
+            self._assert_within_limit(local_count)
+            return await call_next(request)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})

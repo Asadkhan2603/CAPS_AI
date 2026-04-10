@@ -30,6 +30,7 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserCreate, UserLogin, UserOut, UserProfileUpdate
 from app.schemas.user import CommunicationPreferences, CommunicationPreferencesUpdate
+from app.services.rbac import serialize_admin_user
 
 router = APIRouter()
 session_router = APIRouter()
@@ -38,6 +39,12 @@ MAX_AVATAR_SIZE = 3 * 1024 * 1024
 ALLOWED_AVATAR_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 auth_service = AuthService(AuthRepository(lambda: db))
+
+
+async def _serialize_user_response(user: dict) -> UserOut:
+    if user.get("role") == "admin":
+        return UserOut(**(await serialize_admin_user(user, database=db)))
+    return UserOut(**user_public(user))
 
 
 def _merge_communication_preferences(
@@ -132,7 +139,7 @@ async def logout_user(
 
 @router.get("/me", response_model=UserOut)
 async def get_me(current_user=Depends(get_current_user)) -> UserOut:
-    return UserOut(**user_public(current_user))
+    return await _serialize_user_response(current_user)
 
 
 @session_router.get("/bootstrap", response_model=SessionBootstrapResponse)
@@ -143,7 +150,7 @@ async def get_session_bootstrap(
     unread_notice_count = await get_unread_notice_count_payload(current_user)
     unread_notification_count = await get_unread_notification_count_payload(current_user)
     return SessionBootstrapResponse(
-        user=UserOut(**user_public(current_user)),
+        user=await _serialize_user_response(current_user),
         unread_notice_count=int(unread_notice_count.get("count") or 0),
         unread_notification_count=int(unread_notification_count.get("count") or 0),
         branding=branding,
@@ -178,7 +185,7 @@ async def change_password(
         },
     )
     updated = await db.users.find_one({"_id": current_user["_id"]})
-    return UserOut(**user_public(updated))
+    return await _serialize_user_response(updated)
 
 
 @router.patch("/profile", response_model=UserOut)
@@ -212,7 +219,7 @@ async def update_profile(
     set_data["schema_version"] = USER_SCHEMA_VERSION
     await db.users.update_one({"_id": current_user["_id"]}, {"$set": set_data})
     updated = await db.users.find_one({"_id": current_user["_id"]})
-    return UserOut(**user_public(updated))
+    return await _serialize_user_response(updated)
 
 
 @router.get("/communication-preferences", response_model=CommunicationPreferences)
@@ -283,7 +290,7 @@ async def upload_profile_avatar(
         },
     )
     updated = await db.users.find_one({"_id": current_user["_id"]})
-    return UserOut(**user_public(updated))
+    return await _serialize_user_response(updated)
 
 
 @router.get("/profile/avatar/{user_id}")

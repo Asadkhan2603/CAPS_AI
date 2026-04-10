@@ -68,20 +68,23 @@ async def sync_course_offering_read_model(
     offering_id: str | None = None,
     database: Any = db,
 ) -> dict[str, Any] | None:
+    course_offering_read_models = getattr(database, "course_offering_read_models", None)
+    if course_offering_read_models is None:
+        return offering
     if offering is None:
         if not offering_id:
             return None
         offering = await database.course_offerings.find_one({"_id": parse_object_id(offering_id)})
     if not offering or not offering.get("_id"):
         if offering_id:
-            await database.course_offering_read_models.delete_one({"_id": parse_object_id(offering_id)})
+            await course_offering_read_models.delete_one({"_id": parse_object_id(offering_id)})
         return None
 
     enriched = await _enrich_course_offerings(database, [offering])
     if not enriched:
         return None
     read_model = _read_model_document_from_offering(enriched[0])
-    await database.course_offering_read_models.update_one(
+    await course_offering_read_models.update_one(
         {"_id": read_model["_id"]},
         {"$set": read_model},
         upsert=True,
@@ -94,6 +97,9 @@ async def sync_course_offering_read_models_for_ids(
     offering_ids: list[str],
     database: Any = db,
 ) -> dict[str, dict[str, Any]]:
+    course_offering_read_models = getattr(database, "course_offering_read_models", None)
+    if course_offering_read_models is None:
+        return {}
     normalized_ids = [str(item) for item in offering_ids if item]
     if not normalized_ids:
         return {}
@@ -103,7 +109,7 @@ async def sync_course_offering_read_models_for_ids(
     found_ids = {str(item.get("_id")) for item in offerings if item.get("_id")}
     missing_ids = [item for item in normalized_ids if item not in found_ids]
     if missing_ids:
-        await database.course_offering_read_models.delete_many({"_id": {"$in": [parse_object_id(item) for item in missing_ids]}})
+        await course_offering_read_models.delete_many({"_id": {"$in": [parse_object_id(item) for item in missing_ids]}})
 
     if not offerings:
         return {}
@@ -114,7 +120,7 @@ async def sync_course_offering_read_models_for_ids(
         if not item.get("_id"):
             continue
         read_model = _read_model_document_from_offering(item)
-        await database.course_offering_read_models.update_one(
+        await course_offering_read_models.update_one(
             {"_id": read_model["_id"]},
             {"$set": read_model},
             upsert=True,
@@ -142,9 +148,12 @@ async def hydrate_course_offerings_from_read_models(
 ) -> list[dict[str, Any]]:
     if not source_offerings:
         return []
+    course_offering_read_models = getattr(database, "course_offering_read_models", None)
+    if course_offering_read_models is None:
+        return source_offerings
 
     offering_ids = [str(item.get("_id")) for item in source_offerings if item.get("_id")]
-    read_models = await database.course_offering_read_models.find(
+    read_models = await course_offering_read_models.find(
         {"_id": {"$in": [parse_object_id(item) for item in offering_ids]}}
     ).to_list(length=len(offering_ids))
     read_model_map = {str(item.get("_id")): item for item in read_models if item.get("_id")}

@@ -19,6 +19,7 @@ from app.core.security import (
 from app.models.users import user_public
 from app.schemas.auth import BootstrapStatus, DevBootstrapAdminRequest, Token
 from app.schemas.user import UserCreate, UserLogin, UserOut
+from app.services.rbac import serialize_admin_user
 from app.services.audit import log_audit_event
 from app.services.student_profiles import ensure_student_profile_for_user
 
@@ -80,6 +81,11 @@ class AuthService:
         new_device = fingerprint not in prior_fingerprints
         new_network = self._is_different_ip_network(ip_address, latest.get("last_seen_ip"))
         return {"new_device": new_device, "new_network": new_network}
+
+    async def _serialize_user_out(self, user: dict[str, Any]) -> UserOut:
+        if user.get("role") == "admin":
+            return UserOut(**(await serialize_admin_user(user, database=self.repository._db)))
+        return UserOut(**user_public(user))
 
     async def register(self, payload: UserCreate) -> UserOut:
         email = payload.email.lower().strip()
@@ -156,7 +162,7 @@ class AuthService:
         except Exception:
             await self.repository.delete_user(result.inserted_id)
             raise
-        return UserOut(**user_public(created_user))
+        return await self._serialize_user_out(created_user)
 
     async def get_bootstrap_status(self) -> BootstrapStatus:
         has_admin = await self.repository.is_any_admin_registered()
@@ -200,7 +206,7 @@ class AuthService:
         if existing_user:
             await self.repository.update_user(existing_user["_id"], base_updates)
             updated_user = await self.repository.find_user_by_id(existing_user["_id"])
-            return UserOut(**user_public(updated_user))
+            return await self._serialize_user_out(updated_user)
 
         document = {
             **base_updates,
@@ -208,7 +214,7 @@ class AuthService:
         }
         result = await self.repository.insert_user(document)
         created_user = await self.repository.find_user_by_id(result.inserted_id)
-        return UserOut(**user_public(created_user))
+        return await self._serialize_user_out(created_user)
 
     async def login(
         self,
@@ -311,7 +317,7 @@ class AuthService:
         return Token(
             access_token=access_token,
             refresh_token=refresh_token,
-            user=UserOut(**user_public(user)),
+            user=await self._serialize_user_out(user),
         )
 
     async def refresh(
@@ -380,7 +386,7 @@ class AuthService:
         return Token(
             access_token=access_token,
             refresh_token=next_refresh_token,
-            user=UserOut(**user_public(user)),
+            user=await self._serialize_user_out(user),
         )
 
     async def logout(

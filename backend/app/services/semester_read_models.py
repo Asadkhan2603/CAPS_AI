@@ -14,6 +14,10 @@ def _normalize_semester_id(value: Any) -> str | None:
     return str(value)
 
 
+def _collection(database: Any, name: str):
+    return getattr(database, name, None)
+
+
 def _read_model_document_from_semester(semester: dict[str, Any]) -> dict[str, Any]:
     return {
         **semester,
@@ -29,20 +33,23 @@ async def sync_semester_read_model(
     semester_id: str | None = None,
     database: Any = db,
 ) -> dict[str, Any] | None:
+    semester_read_models = _collection(database, "semester_read_models")
+    if semester_read_models is None:
+        return semester
     if semester is None:
         if not semester_id:
             return None
         semester = await database.semesters.find_one({"_id": parse_object_id(semester_id)})
     if not semester or not semester.get("_id"):
         if semester_id:
-            await database.semester_read_models.delete_one({"_id": parse_object_id(semester_id)})
+            await semester_read_models.delete_one({"_id": parse_object_id(semester_id)})
         return None
 
     enriched = await enrich_semester_documents(database, [semester])
     if not enriched:
         return None
     read_model = _read_model_document_from_semester(enriched[0])
-    await database.semester_read_models.update_one(
+    await semester_read_models.update_one(
         {"_id": read_model["_id"]},
         {"$set": read_model},
         upsert=True,
@@ -55,6 +62,9 @@ async def sync_semester_read_models_for_ids(
     semester_ids: list[str],
     database: Any = db,
 ) -> dict[str, dict[str, Any]]:
+    semester_read_models = _collection(database, "semester_read_models")
+    if semester_read_models is None:
+        return {}
     normalized_ids = [_normalize_semester_id(item) for item in semester_ids]
     normalized_ids = [item for item in normalized_ids if item]
     if not normalized_ids:
@@ -65,7 +75,7 @@ async def sync_semester_read_models_for_ids(
     found_ids = {str(item.get("_id")) for item in semesters if item.get("_id")}
     missing_ids = [item for item in normalized_ids if item not in found_ids]
     if missing_ids:
-        await database.semester_read_models.delete_many({"_id": {"$in": [parse_object_id(item) for item in missing_ids]}})
+        await semester_read_models.delete_many({"_id": {"$in": [parse_object_id(item) for item in missing_ids]}})
 
     if not semesters:
         return {}
@@ -76,7 +86,7 @@ async def sync_semester_read_models_for_ids(
         if not item.get("_id"):
             continue
         read_model = _read_model_document_from_semester(item)
-        await database.semester_read_models.update_one(
+        await semester_read_models.update_one(
             {"_id": read_model["_id"]},
             {"$set": read_model},
             upsert=True,
@@ -102,7 +112,10 @@ async def get_semester_read_model(
     semester_id: str,
     database: Any = db,
 ) -> dict[str, Any] | None:
-    read_model = await database.semester_read_models.find_one({"_id": parse_object_id(semester_id)})
+    semester_read_models = _collection(database, "semester_read_models")
+    if semester_read_models is None:
+        return await database.semesters.find_one({"_id": parse_object_id(semester_id)})
+    read_model = await semester_read_models.find_one({"_id": parse_object_id(semester_id)})
     if read_model:
         return read_model
     return await sync_semester_read_model(semester_id=semester_id, database=database)
@@ -115,9 +128,12 @@ async def hydrate_semesters_from_read_models(
 ) -> list[dict[str, Any]]:
     if not source_semesters:
         return []
+    semester_read_models = _collection(database, "semester_read_models")
+    if semester_read_models is None:
+        return source_semesters
 
     semester_ids = [str(item.get("_id")) for item in source_semesters if item.get("_id")]
-    read_models = await database.semester_read_models.find(
+    read_models = await semester_read_models.find(
         {"_id": {"$in": [parse_object_id(item) for item in semester_ids]}}
     ).to_list(length=len(semester_ids))
     read_model_map = {str(item.get("_id")): item for item in read_models if item.get("_id")}

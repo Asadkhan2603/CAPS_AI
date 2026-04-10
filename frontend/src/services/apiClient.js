@@ -3,6 +3,7 @@ import axios from 'axios';
 export const TOKEN_KEY = 'caps_ai_token';
 export const REFRESH_TOKEN_KEY = 'caps_ai_refresh_token';
 export const USER_KEY = 'caps_ai_user';
+let accessToken = '';
 const MAX_TRACE_ENTRIES = 100;
 const traceEntries = [];
 
@@ -45,9 +46,19 @@ export function removeAuthStorage(key) {
 }
 
 export function clearAuthStorage() {
+  accessToken = '';
   removeAuthStorage(TOKEN_KEY);
   removeAuthStorage(REFRESH_TOKEN_KEY);
   removeAuthStorage(USER_KEY);
+}
+
+export function setAccessToken(token) {
+  accessToken = String(token || '');
+  removeAuthStorage(TOKEN_KEY);
+}
+
+export function getAccessToken() {
+  return accessToken;
 }
 
 function makeTraceId() {
@@ -83,7 +94,7 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = readAuthStorage(TOKEN_KEY);
+  const token = accessToken || readAuthStorage(TOKEN_KEY);
   const traceId = makeTraceId();
   const startedAt = Date.now();
   config.headers['X-Trace-Id'] = traceId;
@@ -167,7 +178,7 @@ apiClient.interceptors.response.use(
           const nextAccessToken = refreshPayload?.access_token;
           const nextRefreshToken = refreshPayload?.refresh_token;
           if (nextAccessToken) {
-            writeAuthStorage(TOKEN_KEY, nextAccessToken);
+            setAccessToken(nextAccessToken);
             originalRequest.headers = originalRequest.headers || {};
             originalRequest.headers.Authorization = `Bearer ${nextAccessToken}`;
           }

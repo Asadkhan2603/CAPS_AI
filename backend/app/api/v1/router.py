@@ -3,6 +3,7 @@ from app.api.v1.endpoints import (
     admin_analytics,
     admin_communication,
     admin_governance,
+    admin_rbac,
     admin_recovery,
     admin_system,
     attendance_records,
@@ -83,6 +84,7 @@ api_router.include_router(
     tags=["event-registrations"],
 )
 api_router.include_router(admin_system.router, prefix="/admin/system", tags=["admin-system"])
+api_router.include_router(admin_rbac.router, prefix="/admin/rbac", tags=["admin-rbac"])
 api_router.include_router(admin_analytics.router, prefix="/admin/analytics", tags=["admin-analytics"])
 api_router.include_router(
     admin_communication.router,

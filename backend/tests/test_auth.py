@@ -386,6 +386,31 @@ def _setup_fake_db() -> FakeDB:
     return fake_db
 
 
+def _register_and_login(
+    client: TestClient,
+    *,
+    full_name: str,
+    email: str,
+    role: str,
+    password: str = "password123",
+    extended_roles: list[str] | None = None,
+):
+    payload: dict[str, Any] = {
+        "full_name": full_name,
+        "email": email,
+        "password": password,
+        "role": role,
+    }
+    if extended_roles:
+        payload["extended_roles"] = extended_roles
+
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+    login = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200, login.text
+    return register.json(), {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
 def _seed_canonical_structure(
     fake_db: FakeDB,
     *,

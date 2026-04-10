@@ -41,8 +41,11 @@ async def _resolve_university_fields(
     university_name: str | None,
     require_existing: bool,
 ) -> tuple[str | None, str | None, str | None, str | None]:
+    universities = getattr(db, "universities", None)
     if university_id:
-        university = await db.universities.find_one({"_id": parse_object_id(university_id)})
+        if universities is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="University collection is unavailable")
+        university = await universities.find_one({"_id": parse_object_id(university_id)})
         if not university:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="University not found for provided university_id")
         university_business_id = str(university.get("university_id") or "")
@@ -51,7 +54,9 @@ async def _resolve_university_fields(
     resolved_master_id = normalize_code(university_master_id)
     resolved_name = coalesce_text(university_name)
     if resolved_master_id:
-        university = await db.universities.find_one({"university_id": resolved_master_id})
+        if universities is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="University collection is unavailable")
+        university = await universities.find_one({"university_id": resolved_master_id})
         if not university:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -59,7 +64,7 @@ async def _resolve_university_fields(
             )
         university_business_id = str(university.get("university_id") or "")
         return str(university["_id"]), university_business_id, str(university.get("university_name") or ""), university_business_id
-    if require_existing:
+    if require_existing and universities is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Faculty must be linked to an existing university.",

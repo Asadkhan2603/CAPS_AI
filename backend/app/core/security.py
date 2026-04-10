@@ -13,6 +13,7 @@ from jose import JWTError, jwt
 from app.core.config import settings
 from app.core.database import db
 from app.core.permission_registry import PERMISSION_REGISTRY
+from app.services.rbac import check_admin_role
 from app.core.redis_store import redis_store
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/login")
@@ -275,3 +276,24 @@ def require_permission(permission: str) -> Callable:
         return current_user
 
     return permission_dependency
+
+
+def check_role(role_code: str) -> Callable:
+    normalized_role_code = role_code.strip().upper()
+
+    async def role_dependency(
+        current_user: Dict[str, str] = Depends(get_current_user),
+    ) -> Dict[str, str]:
+        if current_user.get("role") != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin role is required",
+            )
+        if not await check_admin_role(current_user, [normalized_role_code]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action",
+            )
+        return current_user
+
+    return role_dependency
