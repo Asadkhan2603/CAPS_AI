@@ -73,3 +73,30 @@ ClassOut = SectionOut
 
 class SectionLockRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=300)
+
+
+class SectionOperationalSummaryOut(BaseModel):
+    section_id: str
+    section_name: str
+    student_count: int = 0
+    legacy_profile_only_count: int = 0
+    active_offering_count: int = 0
+    pending_evaluation_count: int = 0
+    unreleased_evaluation_count: int = 0
+    latest_timetable_status: str | None = None
+    latest_timetable_sync_status: str | None = None
+    latest_timetable_drift_count: int = 0
+    average_attendance_percent: float | None = None
+    shortage_risk_count: int = 0
+
+
+class SectionDashboardResponse(BaseModel):
+    total_sections: int = 0
+    total_students: int = 0
+    total_active_offerings: int = 0
+    total_pending_evaluations: int = 0
+    total_unreleased_evaluations: int = 0
+    sections_with_drift: int = 0
+    sections_with_attendance_risk: int = 0
+    global_unmapped_students: int = 0
+    sections: list[SectionOperationalSummaryOut] = Field(default_factory=list)

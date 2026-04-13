@@ -25,6 +25,7 @@ def submission_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'schema_version': normalize_schema_version(document.get('schema_version'), default=SUBMISSION_SCHEMA_VERSION),
         'similarity_score': document.get('similarity_score'),
         'extracted_text': document.get('extracted_text'),
+        'extraction_quality': document.get('extraction_quality'),
         'created_at': document.get('created_at'),
     }
     return apply_public_identity(payload, kind="submission", document=document, display_name=document.get("original_filename"))

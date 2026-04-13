@@ -1,7 +1,9 @@
 from typing import Any
 
 from app.models.ai_evaluation_runs import ai_evaluation_run_public
+from app.services.ai_quality_gates import build_ai_quality_gate_snapshot
 from app.services.ai_jobs import serialize_ai_job
+from app.services.reviewer_outcome_calibration import build_reviewer_outcome_calibration_report
 
 
 def _and_query(*parts: dict[str, Any]) -> dict[str, Any]:
@@ -48,6 +50,35 @@ def _serialize_empty_scope_response(
         "recent_similarity_flags": [],
         "recent_chat_threads": [],
         "recent_jobs": [],
+        "quality_gates": {
+            **build_ai_quality_gate_snapshot(),
+            "reviewer_outcome_calibration": {
+                "status": "insufficient_data",
+                "generated_at": None,
+                "summary": {
+                    "logs_considered": 0,
+                    "reviewed_final_count": 0,
+                    "fixed_count": 0,
+                    "reopened_count": 0,
+                    "status_counts": {
+                        "open": 0,
+                        "in_progress": 0,
+                        "fixed": 0,
+                        "reopened": 0,
+                    },
+                },
+                "recommendations": {
+                    "keep_shadow_only": True,
+                    "assist_only_semantic_advantage_threshold": None,
+                    "promotion_thresholds": None,
+                    "requires_manual_rollout_approval": True,
+                },
+                "gates": {
+                    "promotion_ready": False,
+                    "failures": ["No accessible reviewer outcomes yet."],
+                },
+            },
+        },
     }
 
 
@@ -125,6 +156,11 @@ async def build_ai_operations_overview_payload(
     ).sort("created_at", -1).limit(limit).to_list(length=limit)
     recent_chat_threads = await database.ai_evaluation_chats.find(chat_scope_query).sort("updated_at", -1).limit(limit).to_list(length=limit)
     recent_jobs = await database.ai_jobs.find(job_scope_query).sort("requested_at", -1).limit(limit).to_list(length=limit)
+    reviewer_outcome_calibration = await build_reviewer_outcome_calibration_report(
+        database=database,
+        similarity_scope_query=similarity_scope_query,
+    )
+    reviewer_status = "passed" if reviewer_outcome_calibration.get("gates", {}).get("promotion_ready") else "assist_only"
 
     return {
         "scope": {
@@ -170,6 +206,13 @@ async def build_ai_operations_overview_payload(
             for item in recent_chat_threads
         ],
         "recent_jobs": [serialize_ai_job(item) for item in recent_jobs],
+        "quality_gates": {
+            **build_ai_quality_gate_snapshot(),
+            "reviewer_outcome_calibration": {
+                "status": reviewer_status,
+                **reviewer_outcome_calibration,
+            },
+        },
     }
 
 

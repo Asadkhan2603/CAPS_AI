@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     faculties,
     enrollments,
     event_registrations,
+    exams,
     auth,
     classes,
     class_slots,
@@ -67,6 +68,7 @@ api_router.include_router(submissions.router, prefix="/submissions", tags=["subm
 api_router.include_router(timetables.router, prefix="/timetables", tags=["timetables"])
 api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
 api_router.include_router(evaluations.router, prefix="/evaluations", tags=["evaluations"])
+api_router.include_router(exams.router, prefix="/exams", tags=["exams"])
 api_router.include_router(similarity.router, prefix="/similarity", tags=["similarity"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(branding.router, prefix="/branding", tags=["branding"])

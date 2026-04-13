@@ -9,9 +9,12 @@ from app.core.config import settings
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.schema_versions import NOTICE_SCHEMA_VERSION
+from app.api.v1.endpoints.admin_communication import get_delivery_anomaly_alerts
+from app.services.audit import log_audit_event
 from app.services.analytics_snapshot import compute_platform_snapshot
 from app.services.communication_email_content import build_notice_email_body, build_notice_email_subject
 from app.services.grievances import escalate_due_grievances
+from app.services.operational_alert_routing import route_operational_alert_notifications
 from app.services.communication_deliveries import (
     resolve_all_active_user_recipients,
     resolve_user_recipients,
@@ -415,5 +418,30 @@ async def get_scheduled_notice_dispatch_health() -> dict[str, Any]:
 async def dispatch_due_grievance_escalations(*, limit: int = 200) -> int:
     try:
         return await escalate_due_grievances(limit=limit)
+    except Exception:
+        return 0
+
+
+async def dispatch_delivery_anomaly_escalations(*, days: int = 3) -> int:
+    try:
+        alerts = await get_delivery_anomaly_alerts(days=max(1, min(days, 365)))
+        routing_result = await route_operational_alert_notifications(alerts=alerts, database=db)
+        if routing_result.get("routed_alert_codes") or routing_result.get("resolved_alert_codes"):
+            severity = "high" if routing_result.get("routed_alert_codes") else "low"
+            detail = (
+                f"Routed delivery alerts: {', '.join(routing_result.get('routed_alert_codes') or []) or 'none'}; "
+                f"resolved delivery alerts: {', '.join(routing_result.get('resolved_alert_codes') or []) or 'none'}; "
+                f"notifications_created={int(routing_result.get('notifications_created') or 0)}"
+            )
+            await log_audit_event(
+                actor_user_id=None,
+                action="communication_delivery_anomaly_escalation",
+                action_type="communication_delivery_anomaly_escalation",
+                entity_type="communication_delivery",
+                detail=detail,
+                new_value=routing_result,
+                severity=severity,
+            )
+        return int(routing_result.get("notifications_created") or 0)
     except Exception:
         return 0

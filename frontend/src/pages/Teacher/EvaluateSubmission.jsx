@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import FormInput from '../../components/ui/FormInput';
 import AIChatPanel from '../../components/Teacher/AIChatPanel';
+import Badge from '../../components/ui/Badge';
 import { apiClient } from '../../services/apiClient';
 import {
   getEvaluationChatHistory,
@@ -52,6 +53,19 @@ function formatTraceTimestamp(value) {
 
 function isFallbackStatus(status) {
   return status === 'fallback';
+}
+
+function formatHeuristicConfidence(confidence, mode, status) {
+  if (mode === 'fallback' || status === 'fallback') {
+    return 'Assistive fallback';
+  }
+  return confidence != null ? `${Math.round(confidence * 100)}% heuristic` : '-';
+}
+
+function formatConfidenceMode(mode, status) {
+  if (mode === 'fallback' || status === 'fallback') return 'Fallback assistive';
+  if (mode === 'provider') return 'Provider heuristic';
+  return '';
 }
 
 export default function EvaluateSubmissionPage() {
@@ -317,6 +331,13 @@ export default function EvaluateSubmissionPage() {
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 File: {submission.original_filename} ({submission.file_size_bytes} bytes)
               </p>
+              {String(submission.original_filename || '').toLowerCase().endsWith('.pdf') &&
+              typeof submission.extraction_quality === 'number' &&
+              submission.extraction_quality < 0.2 ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                  Low text extraction detected for this PDF. AI review may be incomplete. Consider re-uploading a clearer file.
+                </p>
+              ) : null}
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Student Answer Text</p>
                 <p className="max-h-56 overflow-y-auto whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">
@@ -384,10 +405,20 @@ export default function EvaluateSubmissionPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-semibold">Persisted Evaluation AI</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Status: {evaluation.ai_status || 'pending'} | Provider: {evaluation.ai_provider || '-'} | Confidence:{' '}
-                      {evaluation.ai_confidence != null ? `${Math.round(evaluation.ai_confidence * 100)}%` : '-'}
+                      Status: {evaluation.ai_status || 'pending'} | Provider: {evaluation.ai_provider || '-'} | Heuristic Confidence:{' '}
+                      {formatHeuristicConfidence(evaluation.ai_confidence, evaluation.ai_confidence_mode, evaluation.ai_status)}
                     </p>
+                    {(evaluation.ai_confidence_mode || evaluation.ai_status) ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant={(evaluation.ai_confidence_mode === 'provider' || evaluation.ai_status === 'completed') ? 'info' : 'warning'}>
+                          {formatConfidenceMode(evaluation.ai_confidence_mode, evaluation.ai_status)}
+                        </Badge>
+                      </div>
+                    ) : null}
                   </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Heuristic confidence reflects provider mode and summary consistency, not a calibrated probability of correctness.
+                  </p>
                   {isFallbackStatus(evaluation.ai_status) ? (
                     <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
                       This saved evaluation is in fallback mode. Verify the recommendation against the submission before finalizing marks.
@@ -412,9 +443,9 @@ export default function EvaluateSubmissionPage() {
                     </p>
                   ) : null}
                   {(evaluation.ai_risk_flags || []).length ? (
-                    <p className="mt-1 text-xs text-rose-700 dark:text-rose-300">
-                      Risk Flags: {(evaluation.ai_risk_flags || []).join(' | ')}
-                    </p>
+                    <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300">
+                      Student Risk Signals: {(evaluation.ai_risk_flags || []).join(' | ')}. These are context signals, not grading justification.
+                    </div>
                   ) : null}
                 </div>
               ) : (
@@ -482,8 +513,9 @@ export default function EvaluateSubmissionPage() {
                       </div>
                       <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
                         Grade: {item.grade || '-'} | Total: {item.grand_total ?? '-'} | Internal: {item.internal_total ?? '-'} | AI Score:{' '}
-                        {item.ai_score ?? '-'} | Confidence:{' '}
-                        {item.ai_confidence != null ? `${Math.round(item.ai_confidence * 100)}%` : '-'}
+                        {item.ai_score ?? '-'} | Heuristic Confidence:{' '}
+                        {formatHeuristicConfidence(item.ai_confidence, item.ai_confidence_mode, item.ai_status)}
+                        {(item.ai_confidence_mode || item.ai_status) ? ` (${formatConfidenceMode(item.ai_confidence_mode, item.ai_status)})` : ''}
                       </p>
                       {(item.ai_risk_flags || []).length ? (
                         <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">

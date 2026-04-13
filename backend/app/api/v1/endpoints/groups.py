@@ -12,6 +12,7 @@ from app.schemas.group_item import GroupCreate, GroupOut, GroupUpdate
 from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
 from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.public_ids import persist_public_id, persist_public_id_update
+from app.services.academic_students import resolve_student_academic_context_for_user
 
 router = APIRouter()
 
@@ -51,10 +52,10 @@ async def list_groups(
     if is_active is not None:
         query["is_active"] = is_active
     if current_user.get("role") == "student":
-        student = await db.students.find_one({"email": current_user.get("email"), "is_active": True})
-        if not student or not student.get("class_id"):
+        student = await resolve_student_academic_context_for_user(current_user, database=db)
+        if not student or not student.get("canonical_class_id"):
             return []
-        query["section_id"] = student.get("class_id")
+        query["section_id"] = student.get("canonical_class_id")
     items = await db.groups.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [GroupOut(**group_public(item)) for item in items]
 

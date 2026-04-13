@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import Table from '../components/ui/Table';
-import { createSection, getSections, syncSectionGroups } from '../services/sectionsApi';
+import { createSection, getSectionDashboard, getSections, syncSectionGroups } from '../services/sectionsApi';
 import { searchLookupOptions } from '../services/paginatedLookups';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../hooks/useAuth';
@@ -14,6 +14,7 @@ export default function SectionsPage() {
   const { pushToast } = useToast();
 
   const [rows, setRows] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
   const [faculties, setFaculties] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [programs, setPrograms] = useState([]);
@@ -273,8 +274,25 @@ export default function SectionsPage() {
     }
   }
 
+  async function loadDashboard() {
+    try {
+      const response = await getSectionDashboard({
+        faculty_id: filters.faculty_id || undefined,
+        department_id: filters.department_id || undefined,
+        program_id: filters.program_id || undefined,
+        specialization_id: filters.specialization_id || undefined,
+        batch_id: filters.batch_id || undefined,
+        semester_id: filters.semester_id || undefined
+      });
+      setDashboard(response || null);
+    } catch {
+      setDashboard(null);
+    }
+  }
+
   useEffect(() => {
     loadSections();
+    loadDashboard();
   }, [skip, limit, filters]);
 
   function handleFormBatchChange(batchId) {
@@ -383,6 +401,36 @@ export default function SectionsPage() {
     ]
   );
 
+  const sectionHealthColumns = useMemo(
+    () => [
+      { key: 'section_name', label: 'Section' },
+      { key: 'student_count', label: 'Students' },
+      { key: 'active_offering_count', label: 'Offerings' },
+      { key: 'average_attendance_percent', label: 'Attendance', render: (row) => (row.average_attendance_percent != null ? `${row.average_attendance_percent}%` : '-') },
+      { key: 'latest_timetable_sync_status', label: 'Timetable Sync', render: (row) => row.latest_timetable_sync_status || row.latest_timetable_status || '-' },
+      { key: 'latest_timetable_drift_count', label: 'Drift' },
+      { key: 'unreleased_evaluation_count', label: 'Unreleased Results' }
+    ],
+    []
+  );
+
+  const prioritySections = useMemo(() => {
+    const items = [...(dashboard?.sections || [])];
+    return items
+      .sort((left, right) => {
+        const leftScore =
+          (left.latest_timetable_drift_count || 0) * 10 +
+          (left.unreleased_evaluation_count || 0) * 4 +
+          (left.shortage_risk_count || 0) * 6;
+        const rightScore =
+          (right.latest_timetable_drift_count || 0) * 10 +
+          (right.unreleased_evaluation_count || 0) * 4 +
+          (right.shortage_risk_count || 0) * 6;
+        return rightScore - leftScore;
+      })
+      .slice(0, 4);
+  }, [dashboard]);
+
   return (
     <div className="space-y-4 page-fade">
       <Card className="space-y-4">
@@ -395,6 +443,9 @@ export default function SectionsPage() {
             <button className="btn-secondary" onClick={() => { setSkip(0); loadSections(); }}>Refresh</button>
           </div>
         </div>
+        <p className="text-sm text-slate-500">
+          Section operations now surface delivery health, timetable trust, attendance coverage, and result-release pressure so coordinators can spot problems before editing structure.
+        </p>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <SearchableSelect
@@ -524,6 +575,117 @@ export default function SectionsPage() {
           />
         </div>
       </Card>
+
+      {dashboard ? (
+        <>
+          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
+            {[
+              ['Sections', dashboard.total_sections || 0],
+              ['Students', dashboard.total_students || 0],
+              ['Offerings', dashboard.total_active_offerings || 0],
+              ['Pending Evaluations', dashboard.total_pending_evaluations || 0],
+              ['Unreleased Results', dashboard.total_unreleased_evaluations || 0],
+              ['Timetable Drift', dashboard.sections_with_drift || 0],
+              ['Unmapped Students', dashboard.global_unmapped_students || 0]
+            ].map(([label, value]) => (
+              <Card key={label} className="!p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+                <p className="mt-1 text-2xl font-semibold">{value}</p>
+              </Card>
+            ))}
+          </div>
+          <div className="grid gap-3 xl:grid-cols-[1.25fr_0.95fr]">
+            <Card className="space-y-3">
+              <div>
+                <h2 className="text-lg font-semibold">Section Health</h2>
+                <p className="text-sm text-slate-500">Operational summary across the currently filtered sections.</p>
+              </div>
+              <div className="hidden md:block">
+                <Table columns={sectionHealthColumns} data={dashboard.sections || []} />
+              </div>
+              <div className="grid gap-3 md:hidden">
+                {(dashboard.sections || []).map((row) => (
+                  <div key={row.section_id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-900">{row.section_name}</h3>
+                        <p className="text-xs text-slate-500">
+                          {row.student_count} students • {row.active_offering_count} offerings
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm">
+                        {row.latest_timetable_sync_status || row.latest_timetable_status || 'No timetable'}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                      <div className="rounded-xl bg-white px-3 py-2">
+                        <p className="uppercase tracking-wide text-slate-400">Attendance</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">
+                          {row.average_attendance_percent != null ? `${row.average_attendance_percent}%` : '-'}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white px-3 py-2">
+                        <p className="uppercase tracking-wide text-slate-400">Drift</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{row.latest_timetable_drift_count || 0}</p>
+                      </div>
+                      <div className="rounded-xl bg-white px-3 py-2">
+                        <p className="uppercase tracking-wide text-slate-400">Unreleased</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{row.unreleased_evaluation_count || 0}</p>
+                      </div>
+                      <div className="rounded-xl bg-white px-3 py-2">
+                        <p className="uppercase tracking-wide text-slate-400">Risk</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{row.shortage_risk_count || 0} flagged</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            <Card className="space-y-3">
+              <div>
+                <h2 className="text-lg font-semibold">Coordinator Priorities</h2>
+                <p className="text-sm text-slate-500">
+                  Focus sections with timetable drift, unreleased results, or attendance risk before editing hierarchy.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {prioritySections.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
+                    No priority sections in the current filter.
+                  </div>
+                ) : (
+                  prioritySections.map((row) => (
+                    <div key={row.section_id} className="rounded-2xl border border-slate-200 px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-medium text-slate-900">{row.section_name}</h3>
+                          <p className="text-sm text-slate-500">
+                            {row.student_count} students • {row.active_offering_count} offerings
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                          Drift {row.latest_timetable_drift_count || 0}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">
+                          Unreleased {row.unreleased_evaluation_count || 0}
+                        </span>
+                        <span className="rounded-full bg-rose-50 px-2.5 py-1 text-rose-700">
+                          Attendance risk {row.shortage_risk_count || 0}
+                        </span>
+                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
+                          Sync {row.latest_timetable_sync_status || row.latest_timetable_status || 'n/a'}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
+        </>
+      ) : null}
 
       {isAdmin ? (
         <Card>

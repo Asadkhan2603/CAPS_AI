@@ -44,3 +44,18 @@ export async function getAiJob(jobId) {
   const response = await apiClient.get(`/ai/jobs/${jobId}`);
   return response.data;
 }
+
+export async function getSimilarityCheck(logId) {
+  const response = await apiClient.get(`/similarity/checks/${logId}`);
+  return response.data;
+}
+
+export async function updateSimilarityCheck(logId, payload) {
+  const response = await apiClient.patch(`/similarity/checks/${logId}`, payload);
+  return response.data;
+}
+
+export async function listSimilarityChecks(params = {}) {
+  const response = await apiClient.get('/similarity/checks', { params });
+  return response.data;
+}

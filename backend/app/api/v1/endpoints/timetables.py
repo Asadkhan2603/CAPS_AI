@@ -25,6 +25,8 @@ from app.schemas.timetable import (
     TimetableSlotOut,
     TimetableUpdate,
 )
+from app.services.academic_students import resolve_student_academic_context_for_user
+from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
 
 router = APIRouter()
 
@@ -329,8 +331,92 @@ async def _subject_teacher_map_for_class(class_id: str) -> dict[str, list[str]]:
     return result
 
 
+async def _compute_sync_snapshot(document: dict) -> dict[str, Any]:
+    if document.get("status") != "published":
+        return {
+            "sync_status": "draft",
+            "synced_class_slot_count": 0,
+            "expected_class_slot_count": len(document.get("entries", []) or []),
+            "drift_count": 0,
+            "drift_messages": [],
+            "last_sync_checked_at": datetime.now(timezone.utc),
+        }
+
+    class_id = str(document.get("class_id") or "").strip()
+    if class_id:
+        await sync_class_slot_read_models_for_offering_query(offering_query={"section_id": class_id, "is_active": True}, database=db)
+    slot_rows = await db.class_slot_read_models.find({"section_id": class_id, "is_active": True}).to_list(length=5000) if class_id else []
+
+    slot_defs = {slot["slot_key"]: slot for slot in document.get("slots", []) if slot.get("slot_key")}
+    expected_entries = document.get("entries", []) or []
+    expected_keys: set[tuple[str, str, str, str, str]] = set()
+    matched_keys: set[tuple[str, str, str, str, str]] = set()
+    drift_messages: list[str] = []
+
+    for entry in expected_entries:
+        slot = slot_defs.get(entry.get("slot_key"))
+        slot_start = (slot or {}).get("start_time")
+        slot_end = (slot or {}).get("end_time")
+        expected_key = (
+            str(entry.get("day") or ""),
+            str(slot_start or ""),
+            str(slot_end or ""),
+            str(entry.get("subject_id") or ""),
+            str(entry.get("teacher_user_id") or ""),
+        )
+        expected_keys.add(expected_key)
+        matching_slot = next(
+            (
+                row
+                for row in slot_rows
+                if str(row.get("day") or "") == expected_key[0]
+                and str(row.get("start_time") or "") == expected_key[1]
+                and str(row.get("end_time") or "") == expected_key[2]
+                and str(row.get("subject_id") or "") == expected_key[3]
+                and str(row.get("teacher_user_id") or "") == expected_key[4]
+                and str((row.get("room_code") or "")).strip().lower() == str((entry.get("room_code") or "")).strip().lower()
+            ),
+            None,
+        )
+        if matching_slot:
+            matched_keys.add(expected_key)
+        else:
+            drift_messages.append(
+                f"Missing synced class slot for {entry.get('day')} {slot_start}-{slot_end} ({entry.get('subject_name') or entry.get('subject_id')})"
+            )
+
+    unexpected_slots = []
+    for row in slot_rows:
+        slot_key = (
+            str(row.get("day") or ""),
+            str(row.get("start_time") or ""),
+            str(row.get("end_time") or ""),
+            str(row.get("subject_id") or ""),
+            str(row.get("teacher_user_id") or ""),
+        )
+        if slot_key not in expected_keys:
+            unexpected_slots.append(row)
+
+    for row in unexpected_slots[:10]:
+        drift_messages.append(
+            f"Extra active class slot {row.get('day')} {row.get('start_time')}-{row.get('end_time')} ({row.get('subject_name') or row.get('subject_id')}) is outside published timetable"
+        )
+
+    drift_count = max(0, len(expected_keys) - len(matched_keys)) + len(unexpected_slots)
+    sync_status = "synced" if drift_count == 0 else "drifted"
+    return {
+        "sync_status": sync_status,
+        "synced_class_slot_count": len(matched_keys),
+        "expected_class_slot_count": len(expected_entries),
+        "drift_count": drift_count,
+        "drift_messages": drift_messages[:10],
+        "last_sync_checked_at": datetime.now(timezone.utc),
+    }
+
+
 async def _to_out(document: dict) -> TimetableOut:
     entries = await _hydrate_entries(document.get("entries", []))
+    sync_snapshot = await _compute_sync_snapshot({**document, "entries": entries})
     return TimetableOut(
         id=str(document["_id"]),
         class_id=document.get("class_id"),
@@ -345,6 +431,12 @@ async def _to_out(document: dict) -> TimetableOut:
         admin_locked=bool(document.get("admin_locked", False)),
         published_at=document.get("published_at"),
         published_by_user_id=document.get("published_by_user_id"),
+        sync_status=sync_snapshot["sync_status"],
+        synced_class_slot_count=sync_snapshot["synced_class_slot_count"],
+        expected_class_slot_count=sync_snapshot["expected_class_slot_count"],
+        drift_count=sync_snapshot["drift_count"],
+        drift_messages=sync_snapshot["drift_messages"],
+        last_sync_checked_at=sync_snapshot["last_sync_checked_at"],
         created_by_user_id=document.get("created_by_user_id"),
         created_at=document.get("created_at"),
         updated_at=document.get("updated_at"),
@@ -522,27 +614,13 @@ async def my_published_timetable(
     semester: str | None = Query(default=None),
     current_user=Depends(require_roles(["student"])),
 ) -> TimetableOut:
-    student = await db.students.find_one({"email": current_user.get("email"), "is_active": True}, {"_id": 1, "roll_number": 1})
-    if not student:
+    student = await resolve_student_academic_context_for_user(current_user, database=db)
+    if not student or not student.get("canonical_class_id"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found")
-    enrollments = await db.enrollments.find(
-        {
-            "student_id": {"$in": [str(student["_id"]), student.get("roll_number")]},
-        }
-    ).sort("created_at", -1).to_list(length=100)
-    if not enrollments:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No class enrollment found")
-    document = None
-    for enrollment in enrollments:
-        class_doc = await db.classes.find_one({"_id": parse_object_id(enrollment["class_id"]), "is_active": True}, {"_id": 1})
-        if not class_doc:
-            continue
-        query: dict[str, Any] = {"class_id": enrollment["class_id"], "status": "published", "is_active": True}
-        if semester:
-            query["semester"] = semester
-        document = await db.timetables.find_one(query, sort=[("version", -1)])
-        if document:
-            break
+    query: dict[str, Any] = {"class_id": student["canonical_class_id"], "status": "published", "is_active": True}
+    if semester:
+        query["semester"] = semester
+    document = await db.timetables.find_one(query, sort=[("version", -1)])
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Published timetable not found")
     return await _to_out(document)
@@ -626,6 +704,7 @@ async def publish_timetable(
             }
         },
     )
+    sync_snapshot = await _compute_sync_snapshot(timetable)
     await db.timetables.update_one(
         {"_id": timetable["_id"]},
         {
@@ -633,6 +712,10 @@ async def publish_timetable(
                 "status": "published",
                 "published_at": datetime.now(timezone.utc),
                 "published_by_user_id": str(current_user.get("_id")),
+                "synced_class_slot_count": sync_snapshot["synced_class_slot_count"],
+                "expected_class_slot_count": sync_snapshot["expected_class_slot_count"],
+                "drift_count": sync_snapshot["drift_count"],
+                "last_sync_checked_at": sync_snapshot["last_sync_checked_at"],
                 "updated_at": datetime.now(timezone.utc),
                 "schema_version": TIMETABLE_SCHEMA_VERSION,
             }

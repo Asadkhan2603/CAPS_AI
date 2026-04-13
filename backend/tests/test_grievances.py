@@ -52,3 +52,23 @@ def test_grievance_public_hides_internal_entries_for_students() -> None:
 
     assert [entry["entry_id"] for entry in student_payload["timeline"]] == ["public-1"]
     assert [entry["entry_id"] for entry in staff_payload["timeline"]] == ["public-1", "internal-1"]
+
+
+def test_grievance_inbox_query_limits_coordinator_view_to_active_stage(monkeypatch) -> None:
+    async def _fake_teacher_scope_section_ids(_current_user, *, database=None):
+        return {"section-1", "section-2"}
+
+    monkeypatch.setattr(grievance_service, "teacher_scope_section_ids", _fake_teacher_scope_section_ids)
+
+    query = asyncio.run(
+        grievance_service.grievance_inbox_query(
+            {"_id": "teacher-1", "role": "teacher", "extended_roles": ["class_coordinator"]},
+            view="coordinator",
+        )
+    )
+
+    assert query == {
+        "section_id": {"$in": ["section-1", "section-2"]},
+        "current_stage": "coordinator",
+        "status": {"$in": sorted(grievance_service.UNRESOLVED_GRIEVANCE_STATUSES)},
+    }

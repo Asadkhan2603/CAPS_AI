@@ -16,6 +16,7 @@ from app.services.course_offering_read_models import (
     sync_course_offering_read_model,
 )
 from app.services.public_ids import persist_public_id, persist_public_id_update
+from app.services.academic_students import resolve_student_academic_context_for_user
 
 router = APIRouter()
 
@@ -129,11 +130,14 @@ async def list_course_offerings(
         query["is_active"] = is_active
 
     if current_user.get("role") == "student":
-        student = await db.students.find_one({"email": current_user.get("email"), "is_active": True})
-        if not student or not student.get("class_id"):
+        student = await resolve_student_academic_context_for_user(current_user, database=db)
+        if not student or not student.get("canonical_class_id"):
             return []
-        query["section_id"] = student.get("class_id")
-        query["$or"] = [{"group_id": None}, {"group_id": student.get("group_id")}]
+        query["section_id"] = student.get("canonical_class_id")
+        if student.get("canonical_group_id"):
+            query["$or"] = [{"group_id": None}, {"group_id": student.get("canonical_group_id")}]
+        else:
+            query["group_id"] = None
 
     items = await db.course_offerings.find(query).skip(skip).limit(limit).to_list(length=limit)
     items = await hydrate_course_offerings_from_read_models(source_offerings=items, database=db)

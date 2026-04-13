@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-04-12T19:43:04.519310+00:00",
+  "thresholds": {
+    "max_concise_delta": 1.5,
+    "max_formula_delta": 1.25,
+    "max_mixed_language_eval_delta": 1.0,
+    "max_unicode_eval_delta": 1.25,
+    "max_short_answer_delta": 1.1,
+    "max_rubric_shape_delta": 1.25
+  },
+  "scores": {
+    "concise_answer": 5.0,
+    "verbose_answer": 5.9,
+    "formula_heavy_answer": 4.61,
+    "prose_formula_answer": 5.62,
+    "english_answer": 5.0,
+    "mixed_language_answer": 5.25,
+    "unicode_mixed_script_answer": 5.54,
+    "short_correct_answer": 4.5,
+    "short_expanded_answer": 5.54,
+    "rubric_bullet_answer": 4.46,
+    "rubric_prose_answer": 5.56
+  },
+  "checks": [
+    {
+      "id": "concise_vs_verbose",
+      "baseline_score": 5.0,
+      "comparison_score": 5.9,
+      "delta": 0.9,
+      "max_allowed_delta": 1.5,
+      "notes": "Verbose detail can help, but concise correct answers should not be heavily penalized.",
+      "passed": true
+    },
+    {
+      "id": "formula_vs_prose",
+      "baseline_score": 4.61,
+      "comparison_score": 5.62,
+      "delta": 1.01,
+      "max_allowed_delta": 1.25,
+      "notes": "Formula-heavy technical answers should stay within a limited penalty band.",
+      "passed": true
+    },
+    {
+      "id": "english_vs_mixed_language",
+      "baseline_score": 5.0,
+      "comparison_score": 5.25,
+      "delta": 0.25,
+      "max_allowed_delta": 1.0,
+      "notes": "Mixed-language phrasing should not drift far from the equivalent English answer.",
+      "passed": true
+    },
+    {
+      "id": "mixed_language_vs_unicode_script",
+      "baseline_score": 5.25,
+      "comparison_score": 5.54,
+      "delta": 0.29,
+      "max_allowed_delta": 1.25,
+      "notes": "Unicode-tokenized multilingual answers should remain close to transliterated mixed-language answers.",
+      "passed": true
+    },
+    {
+      "id": "short_correct_vs_expanded_correct",
+      "baseline_score": 4.5,
+      "comparison_score": 5.54,
+      "delta": 1.04,
+      "max_allowed_delta": 1.1,
+      "notes": "Short correct answers can score slightly lower, but not enough to punish brevity unfairly.",
+      "passed": true
+    },
+    {
+      "id": "rubric_bullets_vs_rubric_prose",
+      "baseline_score": 4.46,
+      "comparison_score": 5.56,
+      "delta": 1.1,
+      "max_allowed_delta": 1.25,
+      "notes": "Rubric-shaped technical answers should stay close whether written as bullets or prose.",
+      "passed": true
+    }
+  ],
+  "summary": {
+    "check_count": 6,
+    "passed_count": 6,
+    "failed_count": 0,
+    "max_observed_delta": 1.1
+  },
+  "recommendations": {
+    "keep_provider_fallback_separate": true,
+    "next_focus": "Add reviewer-confirmed multilingual grading samples before raising fairness expectations."
+  },
+  "gates": {
+    "passed": true,
+    "failures": []
+  }
+}

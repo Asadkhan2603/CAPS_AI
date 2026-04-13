@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-04-12T19:43:05.018380+00:00",
+  "generated_thresholds": {
+    "exact_min": 0.95,
+    "paraphrase_advantage_min": 0.15,
+    "mixed_language_advantage_min": 0.15,
+    "unrelated_max": 0.1
+  },
+  "summary": {
+    "case_count": 4,
+    "passed_count": 4,
+    "failed_count": 0,
+    "min_exact_alignment": 1.0,
+    "min_semantic_advantage": 0.1795,
+    "max_unrelated_shadow": 0.0229
+  },
+  "recommendations": {
+    "keep_shadow_only": true,
+    "next_focus": "Compare stored shadow scores against reviewer-confirmed cases before semantic promotion.",
+    "recommended_semantic_advantage_trigger": 0.1795
+  },
+  "gates": {
+    "passed": true,
+    "failures": []
+  },
+  "cases": [
+    {
+      "id": "exact_copy",
+      "expectation": "exact_match",
+      "lexical_score": 1.0,
+      "semantic_shadow_score": 1.0,
+      "semantic_advantage": 0.0,
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "english_paraphrase",
+      "expectation": "paraphrase_advantage",
+      "lexical_score": 0.1274,
+      "semantic_shadow_score": 0.3069,
+      "semantic_advantage": 0.1795,
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "mixed_language_shadow",
+      "expectation": "mixed_language_advantage",
+      "lexical_score": 0.6683,
+      "semantic_shadow_score": 0.8618,
+      "semantic_advantage": 0.1935,
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "unrelated_control",
+      "expectation": "unrelated_low",
+      "lexical_score": 0.0,
+      "semantic_shadow_score": 0.0229,
+      "semantic_advantage": 0.0229,
+      "passed": true,
+      "failure_reason": null
+    }
+  ]
+}

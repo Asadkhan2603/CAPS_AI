@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -6,8 +7,9 @@ from app.core.mongo import parse_object_id
 from app.core.security import require_roles
 from app.models.ai_evaluation_runs import ai_evaluation_run_public
 from app.models.evaluations import evaluation_public
-from app.schemas.evaluation import EvaluationOut
+from app.schemas.evaluation import EvaluationOut, OfficialMarksheetItemOut, OfficialMarksheetOut
 from app.services.evaluation_access_policy import ensure_can_view_evaluation, ensure_teacher_owns_evaluation
+from app.services.academic_students import resolve_student_profile_for_user
 
 from .evaluations_common import get_evaluations_db
 
@@ -43,6 +45,87 @@ async def list_evaluations(
     cursor = database.evaluations.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
     return [EvaluationOut(**evaluation_public(item)) for item in items]
+
+
+@router.get("/results/marksheet", response_model=OfficialMarksheetOut)
+async def get_official_marksheet(
+    student_user_id: str | None = Query(default=None),
+    current_user=Depends(require_roles(["admin", "student"])),
+) -> OfficialMarksheetOut:
+    database = get_evaluations_db()
+
+    target_student_user_id = student_user_id
+    if current_user.get("role") == "student":
+        target_student_user_id = str(current_user.get("_id"))
+    if not target_student_user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="student_user_id is required")
+
+    if current_user.get("role") == "student" and target_student_user_id != str(current_user.get("_id")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this marksheet")
+
+    student_profile = None
+    if current_user.get("role") == "student":
+        student_profile = await resolve_student_profile_for_user(current_user, database=database)
+    if student_profile is None:
+        student_profile = await database.students.find_one({"user_id": target_student_user_id, "is_active": True})
+
+    user_doc = await database.users.find_one({"_id": parse_object_id(target_student_user_id), "is_active": True})
+    if not user_doc and student_profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+
+    rows = await database.evaluations.find(
+        {"student_user_id": target_student_user_id, "result_status": "released"}
+    ).sort("released_at", -1).to_list(length=500)
+
+    submission_ids = sorted({row.get("submission_id") for row in rows if row.get("submission_id")})
+    submission_map = {}
+    assignment_map = {}
+    if submission_ids:
+        submission_rows = await database.submissions.find(
+            {"_id": {"$in": [parse_object_id(value) for value in submission_ids]}},
+            {"assignment_id": 1, "original_filename": 1},
+        ).to_list(length=len(submission_ids))
+        submission_map = {str(item["_id"]): item for item in submission_rows if item.get("_id")}
+        assignment_ids = sorted({item.get("assignment_id") for item in submission_rows if item.get("assignment_id")})
+        if assignment_ids:
+            assignment_rows = await database.assignments.find(
+                {"_id": {"$in": [parse_object_id(value) for value in assignment_ids]}},
+                {"title": 1},
+            ).to_list(length=len(assignment_ids))
+            assignment_map = {str(item["_id"]): item for item in assignment_rows if item.get("_id")}
+
+    items = [
+        OfficialMarksheetItemOut(
+            evaluation_id=str(row["_id"]),
+            submission_id=row.get("submission_id"),
+            submission_label=(
+                assignment_map.get(submission_map.get(row.get("submission_id"), {}).get("assignment_id"), {}).get("title")
+                or submission_map.get(row.get("submission_id"), {}).get("original_filename")
+            ),
+            teacher_user_id=row.get("teacher_user_id"),
+            attendance_percent=int(row.get("attendance_percent") or 0),
+            internal_total=float(row.get("internal_total") or 0),
+            final_exam=int(row.get("final_exam") or 0),
+            grand_total=float(row.get("grand_total") or 0),
+            grade=row.get("grade") or "Needs Improvement",
+            remarks=row.get("remarks"),
+            released_at=row.get("released_at"),
+            result_version=int(row.get("result_version") or 1),
+        )
+        for row in rows
+    ]
+    average_score = round(sum(item.grand_total for item in items) / len(items), 2) if items else 0
+
+    return OfficialMarksheetOut(
+        student_user_id=target_student_user_id,
+        student_name=(student_profile or {}).get("full_name") or (user_doc or {}).get("full_name"),
+        roll_number=(student_profile or {}).get("roll_number"),
+        email=(student_profile or {}).get("email") or (user_doc or {}).get("email"),
+        generated_at=datetime.now(timezone.utc),
+        released_results_count=len(items),
+        average_score=average_score,
+        items=items,
+    )
 
 
 @router.get("/{evaluation_id}", response_model=EvaluationOut)

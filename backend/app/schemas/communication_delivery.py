@@ -106,6 +106,58 @@ class CommunicationDeliveryAnomalyReportOut(BaseModel):
     alerts: list[CommunicationDeliveryAnomalyOut] = Field(default_factory=list)
 
 
+class CommunicationDeliveryBenchmarkMetricOut(BaseModel):
+    key: str
+    label: str
+    current_value: float | int = 0
+    previous_value: float | int = 0
+    delta_value: float | int = 0
+    delta_pct: float | None = None
+    trend: str = "stable"
+
+
+class CommunicationDeliveryBenchmarkReportOut(BaseModel):
+    days: int = 7
+    current_start: datetime
+    current_end: datetime
+    previous_start: datetime
+    previous_end: datetime
+    metrics: list["CommunicationDeliveryBenchmarkMetricOut"] = Field(default_factory=list)
+
+
+class CommunicationIncidentRouteHistoryEntryOut(BaseModel):
+    timestamp: str | None = None
+    action: str | None = None
+    level: str | None = None
+    message: str | None = None
+    notifications_created: int = 0
+    target_user_count: int = 0
+
+
+class CommunicationIncidentOut(BaseModel):
+    alert_code: str
+    level: str | None = None
+    message: str | None = None
+    is_active: bool = False
+    first_seen_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    last_sent_at: datetime | None = None
+    resolved_at: datetime | None = None
+    last_routing_outcome: str | None = None
+    last_routing_outcome_at: datetime | None = None
+    routed_count: int = 0
+    resolved_count: int = 0
+    cooldown_suppressed_count: int = 0
+    notifications_sent_total: int = 0
+    history: list["CommunicationIncidentRouteHistoryEntryOut"] = Field(default_factory=list)
+
+
+class CommunicationIncidentHistoryReportOut(BaseModel):
+    total: int = 0
+    active_count: int = 0
+    incidents: list["CommunicationIncidentOut"] = Field(default_factory=list)
+
+
 class CommunicationDeliveryBreakdownRowOut(BaseModel):
     key: str
     label: str
@@ -139,3 +191,4 @@ class CommunicationDeliveryEmailHealthOut(BaseModel):
 
 
 CommunicationDeliveryReportOut.model_rebuild()
+CommunicationDeliveryBenchmarkReportOut.model_rebuild()

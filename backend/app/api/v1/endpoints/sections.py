@@ -9,7 +9,14 @@ from app.core.schema_versions import CLASS_SCHEMA_VERSION, GROUP_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.sections import section_public
-from app.schemas.section import SectionCreate, SectionLockRequest, SectionOut, SectionUpdate
+from app.schemas.section import (
+    SectionCreate,
+    SectionDashboardResponse,
+    SectionLockRequest,
+    SectionOperationalSummaryOut,
+    SectionOut,
+    SectionUpdate,
+)
 from app.services.academic_hierarchy import validate_batch_specialization_scope
 from app.services.audit import log_audit_event, log_destructive_action_event
 from app.services.governance import enforce_review_approval
@@ -29,6 +36,8 @@ from app.services.section_mapping import (
     is_section_coordinator,
 )
 from app.services.public_ids import persist_public_id, persist_public_id_update
+from app.services.attendance_summary import build_attendance_section_summary
+from app.api.v1.endpoints.timetables import _compute_sync_snapshot
 
 router = APIRouter()
 AUTO_SECTION_GROUP_SLOTS = ("A", "B")
@@ -297,6 +306,76 @@ async def _ensure_section_delete_is_safe(section_id: str) -> None:
             )
 
 
+async def _build_section_dashboard_item(section: dict[str, Any]) -> SectionOperationalSummaryOut:
+    section_id = str(section.get("_id") or "")
+    enrolled_rows = await db.enrollments.find({"class_id": section_id}).to_list(length=5000)
+    enrolled_student_ids = {
+        str(item.get("student_id"))
+        for item in enrolled_rows
+        if item.get("student_id")
+    }
+    student_count = len(enrolled_student_ids)
+
+    legacy_students = await db.students.find({"class_id": section_id, "is_active": True}, {"_id": 1}).to_list(length=5000)
+    legacy_profile_only_count = sum(1 for item in legacy_students if str(item.get("_id")) not in enrolled_student_ids)
+
+    active_offering_rows = await db.course_offerings.find({"section_id": section_id, "is_active": True}, {"_id": 1}).to_list(length=5000)
+    offering_ids = [str(item["_id"]) for item in active_offering_rows if item.get("_id")]
+
+    slot_ids: list[str] = []
+    if offering_ids:
+        slot_rows = await db.class_slots.find(
+            {"course_offering_id": {"$in": offering_ids}, "is_active": True},
+            {"_id": 1},
+        ).to_list(length=5000)
+        slot_ids = [str(item["_id"]) for item in slot_rows if item.get("_id")]
+
+    pending_evaluation_count = 0
+    unreleased_evaluation_count = 0
+    if enrolled_student_ids:
+        evaluation_rows = await db.evaluations.find(
+            {"student_user_id": {"$in": sorted(enrolled_student_ids)}},
+            {"is_finalized": 1, "result_status": 1},
+        ).to_list(length=10000)
+        pending_evaluation_count = sum(1 for item in evaluation_rows if not item.get("is_finalized"))
+        unreleased_evaluation_count = sum(1 for item in evaluation_rows if item.get("is_finalized") and item.get("result_status") != "released")
+
+    latest_timetable = await db.timetables.find_one(
+        {"class_id": section_id, "status": "published", "is_active": True},
+        sort=[("version", -1)],
+    )
+    latest_timetable_status = None
+    latest_timetable_sync_status = None
+    latest_timetable_drift_count = 0
+    if latest_timetable:
+        latest_timetable_status = latest_timetable.get("status")
+        sync_snapshot = await _compute_sync_snapshot(latest_timetable)
+        latest_timetable_sync_status = sync_snapshot["sync_status"]
+        latest_timetable_drift_count = sync_snapshot["drift_count"]
+
+    average_attendance_percent = None
+    shortage_risk_count = 0
+    if slot_ids:
+        attendance_summary = await build_attendance_section_summary(section_id=section_id, database=db)
+        average_attendance_percent = attendance_summary.average_attendance_percent
+        shortage_risk_count = attendance_summary.shortage_risk_count
+
+    return SectionOperationalSummaryOut(
+        section_id=section_id,
+        section_name=str(section.get("name") or ""),
+        student_count=student_count,
+        legacy_profile_only_count=legacy_profile_only_count,
+        active_offering_count=len(active_offering_rows),
+        pending_evaluation_count=pending_evaluation_count,
+        unreleased_evaluation_count=unreleased_evaluation_count,
+        latest_timetable_status=latest_timetable_status,
+        latest_timetable_sync_status=latest_timetable_sync_status,
+        latest_timetable_drift_count=latest_timetable_drift_count,
+        average_attendance_percent=average_attendance_percent,
+        shortage_risk_count=shortage_risk_count,
+    )
+
+
 @router.get('/', response_model=List[SectionOut])
 async def list_sections(
     faculty_id: str | None = Query(default=None),
@@ -345,6 +424,69 @@ async def list_sections(
     items = await cursor.to_list(length=limit)
     items = await hydrate_sections_from_read_models(source_sections=items, database=db)
     return [SectionOut(**section_public(item)) for item in items]
+
+
+@router.get('/dashboard', response_model=SectionDashboardResponse)
+async def section_dashboard(
+    faculty_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
+    program_id: str | None = Query(default=None),
+    specialization_id: str | None = Query(default=None),
+    batch_id: str | None = Query(default=None),
+    semester_id: str | None = Query(default=None),
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> SectionDashboardResponse:
+    query: dict[str, Any] = {"is_active": True}
+    if faculty_id:
+        query['faculty_id'] = faculty_id
+    if department_id:
+        query['department_id'] = department_id
+    if program_id:
+        query['program_id'] = program_id
+    if specialization_id:
+        query['specialization_id'] = specialization_id
+    if batch_id:
+        query['batch_id'] = batch_id
+    if semester_id:
+        query['semester_id'] = semester_id
+
+    if current_user.get("role") == "teacher":
+        coordinator_section_id = coordinator_scope_class_id(current_user)
+        if coordinator_section_id:
+            query["_id"] = parse_object_id(coordinator_section_id)
+        else:
+            query["class_coordinator_user_id"] = str(current_user.get("_id"))
+    else:
+        query = await _apply_admin_scope_to_query(current_user, query)
+
+    sections = await db.classes.find(query).to_list(length=500)
+    items: list[SectionOperationalSummaryOut] = []
+    for section in sections:
+        items.append(await _build_section_dashboard_item(section))
+
+    global_unmapped_query: dict[str, Any] = {"is_active": True}
+    if batch_id:
+        global_unmapped_query["batch_id"] = batch_id
+    if semester_id:
+        global_unmapped_query["semester_id"] = semester_id
+    global_unmapped_students = await db.students.count_documents(
+        {
+            "is_active": True,
+            "$or": [{"class_id": None}, {"class_id": ""}, {"class_id": {"$exists": False}}],
+        }
+    )
+
+    return SectionDashboardResponse(
+        total_sections=len(items),
+        total_students=sum(item.student_count for item in items),
+        total_active_offerings=sum(item.active_offering_count for item in items),
+        total_pending_evaluations=sum(item.pending_evaluation_count for item in items),
+        total_unreleased_evaluations=sum(item.unreleased_evaluation_count for item in items),
+        sections_with_drift=sum(1 for item in items if item.latest_timetable_drift_count > 0),
+        sections_with_attendance_risk=sum(1 for item in items if item.shortage_risk_count > 0),
+        global_unmapped_students=global_unmapped_students,
+        sections=items,
+    )
 
 
 @router.post('/sync-groups')

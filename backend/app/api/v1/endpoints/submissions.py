@@ -17,6 +17,7 @@ from app.services.ai_jobs import AI_JOB_TYPE_BULK_SUBMISSION, queue_ai_job, sche
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
 from app.services.file_parser import parse_file_content
+from app.services.similarity_engine import build_similarity_retrieval_artifact, extraction_quality_score
 from app.services.public_ids import build_public_id, persist_public_id, persist_public_id_update
 from app.services.submission_access_policy import teacher_accessible_assignment_ids, teacher_can_access_submission
 from app.services.submission_ai import evaluate_submission_and_save
@@ -121,6 +122,9 @@ async def upload_submission(
     saved_path = UPLOAD_DIR / stored_name
     await run_in_threadpool(saved_path.write_bytes, content)
 
+    extraction_quality = extraction_quality_score(extracted_text)
+    similarity_retrieval_artifact = build_similarity_retrieval_artifact(extracted_text)
+    now = datetime.now(timezone.utc)
     document = {
         'assignment_id': assignment_id,
         'student_user_id': str(current_user['_id']),
@@ -138,7 +142,10 @@ async def upload_submission(
         'schema_version': SUBMISSION_SCHEMA_VERSION,
         'similarity_score': None,
         'extracted_text': extracted_text,
-        'created_at': datetime.now(timezone.utc),
+        'extraction_quality': extraction_quality,
+        'similarity_retrieval_artifact': similarity_retrieval_artifact,
+        'created_at': now,
+        'updated_at': now,
     }
     persist_public_id(document, kind='submission')
 

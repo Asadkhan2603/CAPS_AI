@@ -347,8 +347,11 @@ function PreviewTable({ preview }) {
   );
 }
 
-function CommitResultCard({ commitResult }) {
+function CommitResultCard({ commitResult, workflow }) {
   if (!commitResult) return null;
+
+  const committedRows = Number(commitResult.summary?.committed_rows || 0);
+  const cleanupHref = `/enrollments?cleanup=unmapped&source=bulk-create&committed=${committedRows}`;
 
   return (
     <Card className="space-y-4 !p-5 lg:!p-6">
@@ -369,6 +372,19 @@ function CommitResultCard({ commitResult }) {
           <p className="font-medium">Temporary password</p>
           <p className="mt-1 font-mono">{commitResult.temporary_password}</p>
           <p className="mt-2 text-xs">{commitResult.credential_notice}</p>
+        </div>
+      ) : null}
+      {workflow === 'create_students' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.35rem] border border-sky-200 bg-sky-50 p-4">
+          <div>
+            <p className="text-sm font-semibold text-sky-900">Next step: place newly created students into sections</p>
+            <p className="mt-1 text-sm text-sky-800">
+              Jump straight into enrollment cleanup and review unmapped students after this bulk create run.
+            </p>
+          </div>
+          <Link className="btn-secondary !border-sky-300 !bg-white !text-sky-800 hover:!bg-sky-100" to={cleanupHref}>
+            Open Enrollment Cleanup
+          </Link>
         </div>
       ) : null}
     </Card>
@@ -542,6 +558,13 @@ export default function StudentBulkWorkflow({ mode = 'admin' }) {
       await loadSections();
       if (selectedSectionId) {
         await loadGroups(selectedSectionId);
+      }
+      if (workflow === 'create_students') {
+        pushToast({
+          title: 'Placement cleanup ready',
+          description: 'Use Enrollment Cleanup next to place newly created students into their sections.',
+          variant: 'info'
+        });
       }
     } catch (err) {
       pushToast({ title: 'Commit failed', description: formatApiError(err, 'Failed to commit student upload'), variant: 'error' });
@@ -775,7 +798,7 @@ export default function StudentBulkWorkflow({ mode = 'admin' }) {
         </div>
       ) : null}
 
-      <CommitResultCard commitResult={commitResult} />
+      <CommitResultCard commitResult={commitResult} workflow={workflow} />
     </div>
   );
 }

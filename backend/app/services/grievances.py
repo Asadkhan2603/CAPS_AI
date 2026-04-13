@@ -312,7 +312,11 @@ async def grievance_inbox_query(current_user: dict[str, Any], *, view: str, data
         section_ids = sorted(await teacher_scope_section_ids(current_user, database=active_db))
         if not section_ids:
             return {"_id": {"$exists": False}}
-        return {"section_id": {"$in": section_ids}}
+        return {
+            "section_id": {"$in": section_ids},
+            "current_stage": "coordinator",
+            "status": {"$in": sorted(UNRESOLVED_GRIEVANCE_STATUSES)},
+        }
 
     if current_user.get("role") != "admin":
         return {"_id": {"$exists": False}}

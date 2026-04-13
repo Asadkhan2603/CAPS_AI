@@ -22,6 +22,7 @@ from app.api.v1.endpoints import clubs as clubs_endpoint
 from app.api.v1.endpoints import departments as departments_endpoint
 from app.api.v1.endpoints import enrollments as enrollments_endpoint
 from app.api.v1.endpoints import event_registrations as event_registrations_endpoint
+from app.api.v1.endpoints import exams as exams_endpoint
 from app.api.v1.endpoints import faculties as faculties_endpoint
 from app.api.v1.endpoints import groups as groups_endpoint
 from app.api.v1.endpoints import auth as auth_endpoint
@@ -30,6 +31,7 @@ from app.api.v1.endpoints import class_slots as class_slots_endpoint
 from app.api.v1.endpoints import classes as classes_endpoint
 from app.api.v1.endpoints import course_offerings as course_offerings_endpoint
 from app.api.v1.endpoints import evaluations as evaluations_endpoint
+from app.api.v1.endpoints import evaluations_results as evaluations_results_endpoint
 from app.api.v1.endpoints import notices as notices_endpoint
 from app.api.v1.endpoints import notifications as notifications_endpoint
 from app.api.v1.endpoints import programs as programs_endpoint
@@ -197,6 +199,29 @@ class FakeUsersCollection:
             return type("UpdateResult", (), {"matched_count": 0, "upserted_id": document["_id"]})()
         return type("UpdateResult", (), {"matched_count": matched, "upserted_id": None})()
 
+    async def find_one_and_update(
+        self,
+        query: Dict[str, Any],
+        update: Dict[str, Any],
+        sort=None,
+        return_document=None,
+    ) -> Dict[str, Any] | None:
+        _ = return_document
+        items = [item for item in self.items if _matches_query(item, query)]
+        if sort:
+            if isinstance(sort, list):
+                for key, dir_value in reversed(sort):
+                    reverse = dir_value == -1
+                    items.sort(key=lambda row: row.get(key), reverse=reverse)
+            elif isinstance(sort, tuple):
+                key, dir_value = sort
+                items.sort(key=lambda row: row.get(key), reverse=(dir_value == -1))
+        if not items:
+            return None
+        target = items[0]
+        target.update(update.get("$set", {}))
+        return target
+
     async def update_many(self, query: Dict[str, Any], update: Dict[str, Any]):
         matched = 0
         for item in self.items:
@@ -300,6 +325,8 @@ class FakeDB:
         self.ai_evaluation_runs = FakeUsersCollection()
         self.ai_jobs = FakeUsersCollection()
         self.evaluations = FakeUsersCollection()
+        self.semester_results = FakeUsersCollection()
+        self.exams = FakeUsersCollection()
         self.similarity_logs = FakeUsersCollection()
         self.notifications = FakeUsersCollection()
         self.communication_deliveries = FakeUsersCollection()
@@ -352,6 +379,7 @@ def _setup_fake_db() -> FakeDB:
     submissions_endpoint.db = fake_db
     ai_endpoint.db = fake_db
     evaluations_endpoint.db = fake_db
+    evaluations_results_endpoint.db = fake_db
     similarity_endpoint.db = fake_db
     analytics_endpoint.db = fake_db
     admin_system_endpoint.db = fake_db
@@ -363,6 +391,7 @@ def _setup_fake_db() -> FakeDB:
     clubs_endpoint.db = fake_db
     club_events_endpoint.db = fake_db
     event_registrations_endpoint.db = fake_db
+    exams_endpoint.db = fake_db
     club_governance_service.db = fake_db
     club_permissions_service.db = fake_db
     club_queue_insights_service.db = fake_db

@@ -10,6 +10,22 @@ from app.core.observability import observability_state
 from app.services.ai_runtime import AI_CHAT_PROMPT_VERSION, build_runtime_snapshot
 
 
+def _coverage_band(coverage_ratio: float) -> str:
+    if coverage_ratio >= 0.7:
+        return "strong"
+    if coverage_ratio >= 0.4:
+        return "moderate"
+    return "limited"
+
+
+def _answer_depth_band(answer_tokens: list[str]) -> str:
+    if len(answer_tokens) >= 180:
+        return "detailed"
+    if len(answer_tokens) >= 70:
+        return "moderate"
+    return "brief"
+
+
 def _fallback_response(question_text: str | None, rubric: str | None, student_answer: str | None) -> str:
     answer = (student_answer or "").strip()
     answer_tokens = re.findall(r"[a-zA-Z0-9]+", answer.lower())
@@ -18,20 +34,22 @@ def _fallback_response(question_text: str | None, rubric: str | None, student_an
     reference_terms = set(question_tokens + rubric_tokens)
     overlap = len([token for token in answer_tokens if token in reference_terms])
     coverage_ratio = (overlap / max(len(reference_terms), 1)) if reference_terms else 0.0
-    length_component = min(len(answer_tokens) / 180.0, 1.0)
-    fallback_marks = round((0.55 * coverage_ratio + 0.45 * length_component) * 10, 1)
+    coverage_band = _coverage_band(coverage_ratio)
+    answer_depth = _answer_depth_band(answer_tokens)
 
     if not answer:
         return (
-            "Suggested Marks: 0/10\n"
-            "Explanation: Student answer is empty or unavailable.\n"
+            "Fallback Review Hint: No answer text available.\n"
+            "Explanation: Deterministic backup guidance was used because answer text is empty or unavailable.\n"
+            "Teacher Action: Do not rely on this fallback alone for grading.\n"
             "Constructive Feedback: Ask the student to address the question directly with key concepts.\n"
             "Improvement Suggestions: Include definitions, examples, and a clear structure."
         )
     return (
-        f"Suggested Marks: {fallback_marks}/10\n"
-        "Explanation: Deterministic fallback assessment generated because AI provider was unavailable. "
-        f"Coverage ratio against question/rubric terms is {round(coverage_ratio, 2)} with {len(answer_tokens)} words.\n"
+        f"Fallback Review Hint: {coverage_band.title()} rubric-term coverage in a {answer_depth} response.\n"
+        "Explanation: Deterministic backup guidance was generated because the primary AI provider was unavailable. "
+        "This summary is based on term overlap and answer structure only.\n"
+        "Teacher Action: Treat this as assistive review context, not a grading decision.\n"
         "Constructive Feedback: Improve direct alignment to rubric checkpoints and ensure each key term is explained.\n"
         "Improvement Suggestions: Use structured points, add evidence/examples, and close with a concise summary statement."
     )

@@ -4,7 +4,7 @@ from typing import Any
 from starlette.concurrency import run_in_threadpool
 
 from app.core.schema_versions import AI_EVALUATION_RUN_SCHEMA_VERSION
-from app.services.evaluation_ai_module import build_ai_insight
+from app.services.evaluation_ai_module import build_ai_insight, build_ai_payload_from_summary
 from app.services.grading import grade_from_total, grand_total, internal_total
 
 
@@ -52,19 +52,16 @@ def build_submission_reuse_ai_payload(submission: dict[str, Any]) -> dict[str, A
     if submission.get("ai_score") is None or not submission.get("ai_feedback"):
         return None
 
-    return {
-        "ai_score": submission.get("ai_score"),
-        "ai_feedback": submission.get("ai_feedback"),
-        "ai_status": submission.get("ai_status"),
-        "ai_provider": submission.get("ai_provider"),
-        "ai_prompt_version": submission.get("ai_prompt_version"),
-        "ai_runtime_snapshot": submission.get("ai_runtime_snapshot"),
-        "ai_confidence": None,
-        "ai_risk_flags": [],
-        "ai_strengths": [],
-        "ai_gaps": [],
-        "ai_suggestions": [],
-    }
+    payload = build_ai_payload_from_summary(
+        ai_score=submission.get("ai_score"),
+        ai_feedback=submission.get("ai_feedback"),
+        ai_status=submission.get("ai_status"),
+        ai_provider=submission.get("ai_provider"),
+        ai_prompt_version=submission.get("ai_prompt_version"),
+        ai_runtime_snapshot=submission.get("ai_runtime_snapshot"),
+    )
+    payload["ai_risk_flags"] = []
+    return payload
 
 
 def ai_payload_update_fields(ai_payload: dict[str, Any]) -> dict[str, Any]:
@@ -76,6 +73,7 @@ def ai_payload_update_fields(ai_payload: dict[str, Any]) -> dict[str, Any]:
         "ai_prompt_version": ai_payload.get("ai_prompt_version"),
         "ai_runtime_snapshot": ai_payload.get("ai_runtime_snapshot"),
         "ai_confidence": ai_payload.get("ai_confidence"),
+        "ai_confidence_mode": ai_payload.get("ai_confidence_mode"),
         "ai_risk_flags": ai_payload.get("ai_risk_flags") or [],
         "ai_strengths": ai_payload.get("ai_strengths") or [],
         "ai_gaps": ai_payload.get("ai_gaps") or [],
@@ -103,6 +101,7 @@ async def persist_ai_trace(
         "ai_prompt_version": ai_payload.get("ai_prompt_version"),
         "ai_runtime_snapshot": ai_payload.get("ai_runtime_snapshot"),
         "ai_confidence": ai_payload.get("ai_confidence"),
+        "ai_confidence_mode": ai_payload.get("ai_confidence_mode"),
         "ai_strengths": ai_payload.get("ai_strengths") or [],
         "ai_gaps": ai_payload.get("ai_gaps") or [],
         "ai_suggestions": ai_payload.get("ai_suggestions") or [],

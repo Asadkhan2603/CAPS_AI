@@ -43,6 +43,7 @@ const AssignmentsPage = lazy(() => import('../pages/AssignmentsPage'));
 const SubmissionsPage = lazy(() => import('../pages/SubmissionsPage'));
 const AIModulePage = lazy(() => import('../pages/AIModulePage'));
 const ReviewTicketsPage = lazy(() => import('../pages/ReviewTicketsPage'));
+const ExamsPage = lazy(() => import('../pages/ExamsPage'));
 const GrievancesPage = lazy(() => import('../pages/GrievancesPage'));
 const CommunicationFeedPage = lazy(() => import('../pages/Communication/FeedPage'));
 const CommunicationAnnouncementsPage = lazy(() => import('../pages/Communication/AnnouncementsPage'));
@@ -94,6 +95,7 @@ const workspaceRouteMap = {
   '/submissions': { access: FEATURE_ACCESS.submissions, element: <SubmissionsPage /> },
   '/ai-operations': { access: FEATURE_ACCESS.aiModule, element: <AIModulePage /> },
   '/review-tickets': { access: FEATURE_ACCESS.reviewTickets, element: <ReviewTicketsPage /> },
+  '/exams': { access: FEATURE_ACCESS.exams, element: <ExamsPage /> },
   '/grievances': { access: FEATURE_ACCESS.grievancesStudent, element: <GrievancesPage mode="student" /> },
   '/grievances/coordinator': { access: FEATURE_ACCESS.grievancesCoordinator, element: <GrievancesPage mode="coordinator" /> },
   '/grievances/hod': { access: FEATURE_ACCESS.grievancesHod, element: <GrievancesPage mode="hod" /> },
@@ -286,6 +288,7 @@ export function AppRoutes() {
             element={<WorkspaceRedirect path="/notifications" />}
           />
           <Route path="/evaluations" element={<WorkspaceRedirect path="/evaluations" />} />
+          <Route path="/exams" element={<WorkspaceRedirect path="/exams" />} />
           <Route path="/event-registrations" element={<WorkspaceRedirect path="/event-registrations" />} />
           <Route path="/enrollments" element={<WorkspaceRedirect path="/enrollments" />} />
           <Route path="/audit-logs" element={<WorkspaceRedirect path="/audit-logs" />} />

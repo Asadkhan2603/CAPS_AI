@@ -91,6 +91,99 @@ class Settings:
     similarity_threshold: float = field(
         default_factory=lambda: _as_float(os.getenv("SIMILARITY_THRESHOLD", "0.8"), 0.8)
     )
+    similarity_prefilter_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SIMILARITY_PREFILTER_ENABLED"), True)
+    )
+    similarity_retrieval_cache_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SIMILARITY_RETRIEVAL_CACHE_ENABLED"), True)
+    )
+    similarity_retrieval_terms_limit: int = field(
+        default_factory=lambda: _as_int(os.getenv("SIMILARITY_RETRIEVAL_TERMS_LIMIT", "96"), 96)
+    )
+    similarity_prefilter_top_k: int = field(
+        default_factory=lambda: _as_int(os.getenv("SIMILARITY_PREFILTER_TOP_K", "250"), 250)
+    )
+    similarity_prefilter_min_shared_tokens: int = field(
+        default_factory=lambda: _as_int(os.getenv("SIMILARITY_PREFILTER_MIN_SHARED_TOKENS", "1"), 1)
+    )
+    similarity_sync_inline_candidate_limit: int = field(
+        default_factory=lambda: _as_int(os.getenv("SIMILARITY_SYNC_INLINE_CANDIDATE_LIMIT", "250"), 250)
+    )
+    semantic_shadow_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SEMANTIC_SHADOW_ENABLED"), True)
+    )
+    semantic_shadow_capture_top_n: int = field(
+        default_factory=lambda: _as_int(os.getenv("SEMANTIC_SHADOW_CAPTURE_TOP_N", "10"), 10)
+    )
+    semantic_shadow_min_lexical_score: float = field(
+        default_factory=lambda: _as_float(os.getenv("SEMANTIC_SHADOW_MIN_LEXICAL_SCORE", "0.35"), 0.35)
+    )
+    semantic_shadow_calibration_exact_min: float = field(
+        default_factory=lambda: _as_float(os.getenv("SEMANTIC_SHADOW_CALIBRATION_EXACT_MIN", "0.95"), 0.95)
+    )
+    semantic_shadow_calibration_paraphrase_advantage_min: float = field(
+        default_factory=lambda: _as_float(
+            os.getenv("SEMANTIC_SHADOW_CALIBRATION_PARAPHRASE_ADVANTAGE_MIN", "0.15"),
+            0.15,
+        )
+    )
+    semantic_shadow_calibration_mixed_language_advantage_min: float = field(
+        default_factory=lambda: _as_float(
+            os.getenv("SEMANTIC_SHADOW_CALIBRATION_MIXED_LANGUAGE_ADVANTAGE_MIN", "0.15"),
+            0.15,
+        )
+    )
+    semantic_shadow_calibration_unrelated_max: float = field(
+        default_factory=lambda: _as_float(os.getenv("SEMANTIC_SHADOW_CALIBRATION_UNRELATED_MAX", "0.1"), 0.1)
+    )
+    fairness_gate_max_concise_delta: float = field(
+        default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_CONCISE_DELTA", "1.5"), 1.5)
+    )
+    fairness_gate_max_formula_delta: float = field(
+        default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_FORMULA_DELTA", "1.25"), 1.25)
+    )
+    fairness_gate_max_mixed_language_eval_delta: float = field(
+        default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_MIXED_LANGUAGE_EVAL_DELTA", "1.0"), 1.0)
+    )
+    fairness_gate_max_unicode_eval_delta: float = field(
+        default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_UNICODE_EVAL_DELTA", "1.25"), 1.25)
+    )
+    fairness_gate_max_short_answer_delta: float = field(
+        default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_SHORT_ANSWER_DELTA", "1.1"), 1.1)
+    )
+    fairness_gate_max_rubric_shape_delta: float = field(
+        default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_RUBRIC_SHAPE_DELTA", "1.25"), 1.25)
+    )
+    similarity_language_detection_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SIMILARITY_LANGUAGE_DETECTION_ENABLED"), False)
+    )
+    similarity_language_detector: str = field(
+        default_factory=lambda: os.getenv("SIMILARITY_LANGUAGE_DETECTOR", "unicode_script_heuristic").strip().lower()
+    )
+    similarity_tokenizer_mode: str = field(
+        default_factory=lambda: os.getenv("SIMILARITY_TOKENIZER_MODE", "ascii_legacy").strip().lower()
+    )
+    similarity_stopword_strategy: str = field(
+        default_factory=lambda: os.getenv("SIMILARITY_STOPWORD_STRATEGY", "english_only").strip().lower()
+    )
+    similarity_mixed_language_mode: str = field(
+        default_factory=lambda: os.getenv("SIMILARITY_MIXED_LANGUAGE_MODE", "keep_all_tokens").strip().lower()
+    )
+    similarity_cross_assignment_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SIMILARITY_CROSS_ASSIGNMENT_ENABLED"), False)
+    )
+    ocr_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("OCR_ENABLED"), False)
+    )
+    ocr_provider: str = field(
+        default_factory=lambda: os.getenv("OCR_PROVIDER", "disabled").strip().lower()
+    )
+    ocr_languages: List[str] = field(
+        default_factory=lambda: _as_csv_list(os.getenv("OCR_LANGUAGES", "eng"))
+    )
+    ocr_min_chars: int = field(
+        default_factory=lambda: _as_int(os.getenv("OCR_MIN_CHARS", "120"), 120)
+    )
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
     observability_slow_request_ms: int = field(
         default_factory=lambda: _as_int(os.getenv("OBSERVABILITY_SLOW_REQUEST_MS", "1500"), 1500)

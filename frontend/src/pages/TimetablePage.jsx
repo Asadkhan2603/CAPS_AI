@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import {
   createTimetable,
+  getMyTimetable,
   getTimetableShifts,
   listClassTimetables,
   publishTimetable,
@@ -48,8 +49,6 @@ export default function TimetablePage() {
   const [classTimetables, setClassTimetables] = useState([]);
   const [timetable, setTimetable] = useState(null);
   const [draftMap, setDraftMap] = useState({});
-  const [studentClassSlots, setStudentClassSlots] = useState([]);
-  const [studentOfferings, setStudentOfferings] = useState([]);
 
   async function loadLookups(classId) {
     const [shiftRes, lookupRes] = await Promise.all([
@@ -76,16 +75,11 @@ export default function TimetablePage() {
   async function loadStudentTimetable() {
     setLoading(true);
     try {
-      const [slotsResp, offeringsResp] = await Promise.all([
-        apiClient.get('/class-slots/my'),
-        apiClient.get('/course-offerings/', { params: { skip: 0, limit: 100 } })
-      ]);
-      setStudentClassSlots(slotsResp.data || []);
-      setStudentOfferings(offeringsResp.data || []);
+      const published = await getMyTimetable();
+      setTimetable(published || null);
     } catch (err) {
-      setStudentClassSlots([]);
-      setStudentOfferings([]);
-      pushApiErrorToast(pushToast, err, 'Unable to load timetable slots');
+      setTimetable(null);
+      pushApiErrorToast(pushToast, err, 'Unable to load published timetable');
     } finally {
       setLoading(false);
     }
@@ -160,24 +154,34 @@ export default function TimetablePage() {
     return item ? item.name : '-';
   }, [classes, selectedClassId]);
 
-  const studentOfferingMap = useMemo(
-    () => Object.fromEntries(studentOfferings.map((item) => [item.id, item])),
-    [studentOfferings]
+  const subjectMap = useMemo(
+    () =>
+      Object.fromEntries(
+        subjects.map((subject) => [subject.id, `${subject.name}${subject.code ? ` (${subject.code})` : ''}`])
+      ),
+    [subjects]
+  );
+
+  const teacherMap = useMemo(
+    () => Object.fromEntries(teachers.map((teacher) => [teacher.id, teacher.name])),
+    [teachers]
   );
 
   const studentTimetableByDay = useMemo(() => {
-    if (!studentClassSlots.length) return [];
+    if (!(timetable?.entries || []).length) return [];
     const grouped = {};
-    for (const slot of studentClassSlots) {
-      const offering = studentOfferingMap[slot.course_offering_id] || {};
-      const day = slot.day || 'Unknown';
+    const slotMap = Object.fromEntries((timetable?.slots || []).map((slot) => [slot.slot_key, slot]));
+    for (const entry of timetable.entries || []) {
+      const slot = slotMap[entry.slot_key] || {};
+      const day = entry.day || 'Unknown';
       if (!grouped[day]) grouped[day] = [];
       grouped[day].push({
-        ...slot,
-        subject: offering.subject_name || offering.subject_code || offering.subject_id || 'Subject',
-        teacher: offering.teacher_name || offering.teacher_user_id || 'Teacher',
-        group: offering.group_name || '',
-        type: offering.offering_type || '-'
+        ...entry,
+        start_time: slot.start_time || '-',
+        end_time: slot.end_time || '-',
+        subject: entry.subject_name || entry.subject_code || entry.subject_id || 'Subject',
+        teacher: entry.teacher_name || entry.teacher_user_id || 'Teacher',
+        type: entry.session_type || '-'
       });
     }
     return Object.entries(grouped)
@@ -186,7 +190,7 @@ export default function TimetablePage() {
         rows: [...rows].sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)))
       }))
       .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
-  }, [studentClassSlots, studentOfferingMap]);
+  }, [timetable]);
 
   function updateCell(day, slotKey, patch) {
     const key = entryKey(day, slotKey);
@@ -277,6 +281,65 @@ export default function TimetablePage() {
     }
   }
 
+  function renderEditorFields(day, slot) {
+    const key = entryKey(day, slot.slot_key);
+    const value = draftMap[key] || { session_type: 'theory' };
+    const allowedTeacherIds = teacherBySubject[value.subject_id] || [];
+    const teacherPool = allowedTeacherIds.length
+      ? teachers.filter((teacher) => allowedTeacherIds.includes(teacher.id))
+      : teachers;
+
+    return (
+      <div className="space-y-1">
+        <select
+          className="input"
+          value={value.subject_id || ''}
+          disabled={isLocked}
+          onChange={(e) => updateCell(day, slot.slot_key, { subject_id: e.target.value, teacher_user_id: '' })}
+        >
+          <option value="">Subject</option>
+          {subjects.map((subject) => (
+            <option key={subject.id} value={subject.id}>
+              {subject.name} ({subject.code})
+            </option>
+          ))}
+        </select>
+        <select
+          className="input"
+          value={value.teacher_user_id || ''}
+          disabled={isLocked}
+          onChange={(e) => updateCell(day, slot.slot_key, { teacher_user_id: e.target.value })}
+        >
+          <option value="">Teacher</option>
+          {teacherPool.map((teacher) => (
+            <option key={teacher.id} value={teacher.id}>
+              {teacher.name}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input"
+          placeholder="Room/Lab"
+          value={value.room_code || ''}
+          disabled={isLocked}
+          onChange={(e) => updateCell(day, slot.slot_key, { room_code: e.target.value })}
+        />
+        <select
+          className="input"
+          value={value.session_type || 'theory'}
+          disabled={isLocked}
+          onChange={(e) => updateCell(day, slot.slot_key, { session_type: e.target.value })}
+        >
+          {SESSION_TYPES.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
   if (isStudent) {
     return (
       <div className="space-y-5 page-fade">
@@ -284,7 +347,7 @@ export default function TimetablePage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold">My Timetable</h1>
-              <p className="text-sm text-slate-500">Section and group filtered timetable from class slots.</p>
+              <p className="text-sm text-slate-500">Student-visible timetable sourced from the latest published section schedule.</p>
             </div>
             <div className="flex items-center gap-2">
               <button className="btn-secondary" onClick={loadStudentTimetable}>Refresh</button>
@@ -293,9 +356,30 @@ export default function TimetablePage() {
               </button>
             </div>
           </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+            Published timetable sync is now the schedule trust source for students.
+          </div>
+          {timetable ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                Version {timetable.version}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                Sync {timetable.sync_status} ({timetable.synced_class_slot_count || 0}/{timetable.expected_class_slot_count || 0})
+              </span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                Drift {timetable.drift_count || 0}
+              </span>
+            </div>
+          ) : null}
+          {timetable?.drift_messages?.length ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {timetable.drift_messages[0]}
+            </div>
+          ) : null}
         </Card>
         {loading ? <Card>Loading timetable...</Card> : null}
-        {!loading && studentTimetableByDay.length === 0 ? <Card>No class slots available yet.</Card> : null}
+        {!loading && studentTimetableByDay.length === 0 ? <Card>No published timetable is available yet.</Card> : null}
         {!loading && studentTimetableByDay.length > 0 ? (
           <div className="grid gap-4 lg:grid-cols-2">
             {studentTimetableByDay.map((dayBlock) => (
@@ -303,11 +387,11 @@ export default function TimetablePage() {
                 <h2 className="text-lg font-semibold">{dayBlock.day}</h2>
                 <div className="space-y-2">
                   {dayBlock.rows.map((row) => (
-                    <div key={row.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/30">
+                    <div key={`${dayBlock.day}-${row.slot_key}-${row.subject_id}-${row.teacher_user_id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/30">
                       <p className="text-xs text-slate-500">{row.start_time} - {row.end_time}</p>
                       <p className="mt-1 text-sm font-semibold">{row.subject}</p>
                       <p className="text-xs text-slate-500">{row.teacher}</p>
-                      <p className="text-xs text-slate-500">{row.room_code} | {row.type}{row.group ? ` | ${row.group}` : ''}</p>
+                      <p className="text-xs text-slate-500">{row.room_code} | {row.type}</p>
                     </div>
                   ))}
                 </div>
@@ -412,8 +496,94 @@ export default function TimetablePage() {
               <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{timetable.shift_label}</span>
               <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">Semester: {timetable.semester}</span>
               <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">Version: {timetable.version}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">
+                Sync: {timetable.sync_status || 'draft'} ({timetable.synced_class_slot_count || 0}/{timetable.expected_class_slot_count || 0})
+              </span>
+              {timetable.status === 'published' ? (
+                <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">
+                  Drift: {timetable.drift_count || 0}
+                </span>
+              ) : null}
             </div>
-            <div className="overflow-x-auto">
+            {timetable?.drift_messages?.length ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {timetable.drift_messages[0]}
+              </div>
+            ) : null}
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 xl:hidden">
+              Card editor mode is enabled on tablet and mobile so coordinators can update one slot at a time without the
+              full desktop matrix.
+            </div>
+            <div className="grid gap-4 xl:hidden">
+              {days.map((day) => (
+                <Card key={day} className="!p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold">{day}</h3>
+                      <p className="text-xs text-slate-500">Review each slot as a stacked card on smaller screens.</p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                      {slots.filter((slot) => !slot.is_lunch).length} teaching slots
+                    </span>
+                  </div>
+                  <div className="grid gap-3">
+                    {slots.map((slot) => {
+                      if (slot.is_lunch) {
+                        return (
+                          <div
+                            key={`${day}-${slot.slot_key}`}
+                            className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700"
+                          >
+                            {slot.label} • {slot.start_time} - {slot.end_time} • Lunch Lock
+                          </div>
+                        );
+                      }
+                      const key = entryKey(day, slot.slot_key);
+                      const value = draftMap[key] || { session_type: 'theory' };
+                      return (
+                        <div key={key} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-slate-900">{slot.label}</h4>
+                              <p className="text-xs text-slate-500">
+                                {slot.start_time} - {slot.end_time}
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm">
+                              {value.subject_id ? 'Assigned' : 'Empty'}
+                            </span>
+                          </div>
+                          {!isLocked && <div className="mt-3">{renderEditorFields(day, slot)}</div>}
+                          {isLocked ? (
+                            <div className="mt-3 grid gap-2 text-sm text-slate-600">
+                              <div className="rounded-xl bg-white px-3 py-2">
+                                <p className="text-xs uppercase tracking-wide text-slate-400">Subject</p>
+                                <p className="mt-1 font-medium text-slate-900">{subjectMap[value.subject_id] || '-'}</p>
+                              </div>
+                              <div className="rounded-xl bg-white px-3 py-2">
+                                <p className="text-xs uppercase tracking-wide text-slate-400">Teacher</p>
+                                <p className="mt-1 font-medium text-slate-900">{teacherMap[value.teacher_user_id] || '-'}</p>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="rounded-xl bg-white px-3 py-2">
+                                  <p className="text-xs uppercase tracking-wide text-slate-400">Room</p>
+                                  <p className="mt-1 font-medium text-slate-900">{value.room_code || '-'}</p>
+                                </div>
+                                <div className="rounded-xl bg-white px-3 py-2">
+                                  <p className="text-xs uppercase tracking-wide text-slate-400">Type</p>
+                                  <p className="mt-1 font-medium text-slate-900">{value.session_type || 'theory'}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto xl:block">
               <table className="w-full min-w-[1100px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-slate-700">
@@ -440,63 +610,9 @@ export default function TimetablePage() {
                             </td>
                           );
                         }
-                        const key = entryKey(day, slot.slot_key);
-                        const value = draftMap[key] || { session_type: 'theory' };
                         return (
-                          <td key={key} className="p-2">
-                            <div className="space-y-1">
-                              <select
-                                className="input"
-                                value={value.subject_id || ''}
-                                disabled={isLocked}
-                                onChange={(e) => updateCell(day, slot.slot_key, { subject_id: e.target.value })}
-                              >
-                                <option value="">Subject</option>
-                                {subjects.map((subject) => (
-                                  <option key={subject.id} value={subject.id}>
-                                    {subject.name} ({subject.code})
-                                  </option>
-                                ))}
-                              </select>
-                              <select
-                                className="input"
-                                value={value.teacher_user_id || ''}
-                                disabled={isLocked}
-                                onChange={(e) => updateCell(day, slot.slot_key, { teacher_user_id: e.target.value })}
-                              >
-                                <option value="">Teacher</option>
-                                {(() => {
-                                  const allowedTeacherIds = teacherBySubject[value.subject_id] || [];
-                                  const pool = allowedTeacherIds.length
-                                    ? teachers.filter((teacher) => allowedTeacherIds.includes(teacher.id))
-                                    : teachers;
-                                  return pool.map((teacher) => (
-                                    <option key={teacher.id} value={teacher.id}>
-                                      {teacher.name}
-                                    </option>
-                                  ));
-                                })()}
-                              </select>
-                              <input
-                                className="input"
-                                placeholder="Room/Lab"
-                                value={value.room_code || ''}
-                                disabled={isLocked}
-                                onChange={(e) => updateCell(day, slot.slot_key, { room_code: e.target.value })}
-                              />
-                              <select
-                                className="input"
-                                value={value.session_type || 'theory'}
-                                disabled={isLocked}
-                                onChange={(e) => updateCell(day, slot.slot_key, { session_type: e.target.value })}
-                              >
-                                {SESSION_TYPES.map((item) => (
-                                  <option key={item.value} value={item.value}>
-                                    {item.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
+                          <td key={entryKey(day, slot.slot_key)} className="p-2">
+                            {renderEditorFields(day, slot)}
                           </td>
                         );
                       })}

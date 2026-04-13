@@ -10,8 +10,12 @@ def student_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "full_name": document.get("full_name", ""),
         "roll_number": document.get("roll_number", ""),
         "email": document.get("email"),
+        "user_id": document.get("user_id"),
         "class_id": document.get("class_id"),
         "group_id": document.get("group_id"),
+        "canonical_class_id": document.get("canonical_class_id"),
+        "canonical_group_id": document.get("canonical_group_id"),
+        "placement_source": document.get("placement_source"),
         "is_active": document.get("is_active", True),
         "created_at": document.get("created_at"),
         "schema_version": normalize_schema_version(

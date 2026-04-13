@@ -42,7 +42,7 @@ export const FEATURE_ACCESS = {
     allowedRoles: ['admin'],
     requiredAdminTypes: ['academic_admin', 'super_admin']
   },
-  academicStructure: { allowedRoles: ['admin', 'teacher', 'student'] },
+  academicStructure: { allowedRoles: ['admin', 'teacher'] },
   students: { allowedRoles: ['admin', 'teacher'] },
   groups: { allowedRoles: ['admin', 'teacher'] },
   subjects: { allowedRoles: ['admin', 'teacher'] },
@@ -54,6 +54,7 @@ export const FEATURE_ACCESS = {
   aiModule: { allowedRoles: ['admin', 'teacher'] },
   reviewTickets: { allowedRoles: ['admin', 'teacher'] },
   evaluations: { allowedRoles: ['admin', 'teacher', 'student'] },
+  exams: { allowedRoles: ['admin', 'teacher', 'student'] },
   enrollments: {
     allowedRoles: ['admin', 'teacher'],
     requiredTeacherExtensions: ['year_head', 'class_coordinator']

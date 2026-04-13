@@ -17,6 +17,7 @@ from app.services.class_slot_read_models import (
     sync_class_slot_read_models_for_query,
 )
 from app.services.public_ids import persist_public_id, persist_public_id_update
+from app.services.academic_students import resolve_student_academic_context_for_user
 
 router = APIRouter()
 
@@ -129,16 +130,24 @@ async def list_class_slots(
         offering_scope_query = {"section_id": section_id, "is_active": True}
 
     if current_user.get("role") == "student":
-        student = await db.students.find_one({"email": current_user.get("email"), "is_active": True})
-        if not student or not student.get("class_id"):
+        student = await resolve_student_academic_context_for_user(current_user, database=db)
+        if not student or not student.get("canonical_class_id"):
             return []
-        query["section_id"] = student["class_id"]
-        query["$or"] = [{"group_id": None}, {"group_id": student.get("group_id")}]
-        offering_scope_query = {
-            "section_id": student["class_id"],
-            "is_active": True,
-            "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
-        }
+        query["section_id"] = student["canonical_class_id"]
+        if student.get("canonical_group_id"):
+            query["$or"] = [{"group_id": None}, {"group_id": student.get("canonical_group_id")}]
+            offering_scope_query = {
+                "section_id": student["canonical_class_id"],
+                "is_active": True,
+                "$or": [{"group_id": None}, {"group_id": student.get("canonical_group_id")}],
+            }
+        else:
+            query["group_id"] = None
+            offering_scope_query = {
+                "section_id": student["canonical_class_id"],
+                "is_active": True,
+                "group_id": None,
+            }
 
     if offering_scope_query is not None:
         await sync_class_slot_read_models_for_offering_query(offering_query=offering_scope_query, database=db)
@@ -160,24 +169,28 @@ async def list_class_slots(
 async def my_slots(
     current_user=Depends(require_roles(["student"])),
 ) -> List[ClassSlotOut]:
-    student = await db.students.find_one({"email": current_user.get("email"), "is_active": True})
-    if not student or not student.get("class_id"):
+    student = await resolve_student_academic_context_for_user(current_user, database=db)
+    if not student or not student.get("canonical_class_id"):
         return []
+    offering_query = {
+        "section_id": student["canonical_class_id"],
+        "is_active": True,
+    }
+    slot_query = {
+        "section_id": student["canonical_class_id"],
+        "is_active": True,
+    }
+    if student.get("canonical_group_id"):
+        offering_query["$or"] = [{"group_id": None}, {"group_id": student.get("canonical_group_id")}]
+        slot_query["$or"] = [{"group_id": None}, {"group_id": student.get("canonical_group_id")}]
+    else:
+        offering_query["group_id"] = None
+        slot_query["group_id"] = None
     await sync_class_slot_read_models_for_offering_query(
-        offering_query={
-            "section_id": student["class_id"],
-            "is_active": True,
-            "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
-        },
+        offering_query=offering_query,
         database=db,
     )
-    rows = await db.class_slot_read_models.find(
-        {
-            "section_id": student["class_id"],
-            "is_active": True,
-            "$or": [{"group_id": None}, {"group_id": student.get("group_id")}],
-        }
-    ).to_list(length=5000)
+    rows = await db.class_slot_read_models.find(slot_query).to_list(length=5000)
     return [ClassSlotOut(**class_slot_public(item)) for item in rows]
 
 

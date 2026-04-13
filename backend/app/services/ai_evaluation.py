@@ -28,9 +28,11 @@ ACADEMIC_TERMS = {
     "validation",
 }
 
+_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
+
 
 def _tokenize(text: str) -> list[str]:
-    return re.findall(r"[a-zA-Z0-9]+", (text or "").lower())
+    return [token.lower() for token in _TOKEN_RE.findall(text or "") if any(char.isalnum() for char in token)]
 
 
 def _sentence_count(text: str) -> int:
@@ -102,6 +104,10 @@ def _heuristic_summary(metrics: dict[str, float | int], *, provider_state: str) 
         f"Gaps: {gaps_text}. "
         "Suggested improvements: add topic-specific examples, concise definitions, and a brief conclusion."
     )
+
+
+def compute_heuristic_evaluation_metrics(text: str, *, max_score: float = 10.0) -> dict[str, float | int]:
+    return _heuristic_evaluation(text, max_score)
 
 
 def generate_ai_feedback(
@@ -193,7 +199,7 @@ def generate_ai_feedback(
             f" Suggestions: {', '.join(str(item) for item in suggestions[:3]) or 'N/A'}."
         )
         if confidence_value is not None:
-            explainability_tail += f" Confidence: {round(confidence_value, 2)}."
+            explainability_tail += f" Heuristic confidence (not calibrated): {round(confidence_value, 2)}."
 
         payload = {
             "score": ai_score,

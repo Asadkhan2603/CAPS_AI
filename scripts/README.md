@@ -61,6 +61,18 @@ Utility scripts for local setup, safety checks, and canonical academic data seed
   - Backfills `schema_version` on `scheduler_locks`.
 - `python scripts/perf_smoke.py`
   - Runs an in-process backend performance smoke gate against `/health`, `/auth/login`, `/admin/system/health`, an authenticated teacher submission-list workflow, an authenticated admin section-list academic workflow, a write-heavy admin student-create academic workflow, and a mixed teacher review workflow (`submissions -> evaluations -> analytics summary`).
+- `python scripts/ai_similarity_benchmark.py`
+  - Runs an in-process benchmark pass for AI evaluation preview latency, large-assignment similarity candidate-cap behavior, and similarity review-detail load.
+  - Writes `artifacts/ai_similarity_benchmark_report.json` with rollout config, provider mode, and measured timings.
+- `python scripts/ai_semantic_shadow_calibration.py`
+  - Runs semantic shadow calibration cases for exact-match, paraphrase, mixed-language, and unrelated controls.
+  - Writes `artifacts/ai_semantic_shadow_calibration_report.json` with rollout thresholds and gate results.
+- `python scripts/ai_fairness_regression.py`
+  - Runs evaluation fairness regression checks across concise, formula-heavy, multilingual, Unicode-script, short-answer, and rubric-shaped cases.
+  - Writes `artifacts/ai_fairness_regression_report.json` with thresholds and drift deltas.
+- `python scripts/ai_reviewer_outcome_calibration.py`
+  - Summarizes real similarity reviewer outcomes from stored logs to estimate assist-only semantic drift thresholds and promotion readiness.
+  - Writes `artifacts/ai_reviewer_outcome_calibration_report.json` with reviewer-status breakdown and rollout guardrails.
 - `python scripts/release_gate.py`
   - Runs release-governance health gates against either:
     - an in-process local backend using `TestClient`, or

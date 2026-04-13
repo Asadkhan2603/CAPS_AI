@@ -68,7 +68,7 @@ export default function DashboardPage() {
       return [
         { to: '/submissions', label: 'My Submissions' },
         { to: '/evaluations', label: 'My Evaluations' },
-        { to: '/attendance-records', label: 'Attendance' },
+        { to: '/attendance-records', label: 'Attendance Logs' },
         { to: '/communication/announcements', label: 'Announcements' },
         { to: '/profile', label: 'My Profile' }
       ];

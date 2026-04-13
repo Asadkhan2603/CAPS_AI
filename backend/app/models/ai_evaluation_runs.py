@@ -22,6 +22,7 @@ def ai_evaluation_run_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=AI_EVALUATION_RUN_SCHEMA_VERSION,
         ),
         "ai_confidence": document.get("ai_confidence"),
+        "ai_confidence_mode": document.get("ai_confidence_mode"),
         "ai_strengths": list(document.get("ai_strengths") or []),
         "ai_gaps": list(document.get("ai_gaps") or []),
         "ai_suggestions": list(document.get("ai_suggestions") or []),

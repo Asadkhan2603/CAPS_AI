@@ -9,9 +9,32 @@ from app.core.schema_versions import STUDENT_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.models.students import student_public
 from app.schemas.student import StudentCreate, StudentOut, StudentUpdate
+from app.services.academic_students import resolve_student_placement_snapshot
 from app.services.public_ids import persist_public_id, persist_public_id_update
 
 router = APIRouter()
+
+
+async def _student_out(document: dict) -> StudentOut:
+    placement = await resolve_student_placement_snapshot(document, database=db)
+    return StudentOut(**student_public({**document, **placement}))
+
+
+async def _resolve_user_id(*, user_id: str | None, email: str | None) -> str | None:
+    normalized_user_id = str(user_id or "").strip() or None
+    if normalized_user_id:
+        user = await db.users.find_one({"_id": parse_object_id(normalized_user_id), "is_active": True})
+        if not user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User not found for provided user_id")
+        if user.get("role") != "student":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id must reference a student user")
+        return normalized_user_id
+
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        return None
+    user = await db.users.find_one({"email": normalized_email, "role": "student", "is_active": True}, {"_id": 1})
+    return str(user["_id"]) if user and user.get("_id") else None
 
 
 @router.get("/", response_model=List[StudentOut])
@@ -37,7 +60,61 @@ async def list_students(
 
     cursor = db.students.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
-    return [StudentOut(**student_public(item)) for item in items]
+    return [await _student_out(item) for item in items]
+
+
+@router.get("/duplicate-audit")
+async def student_duplicate_audit(
+    _current_user=Depends(require_permission("academic:manage")),
+) -> dict:
+    rows = await db.students.find({}, {"full_name": 1, "roll_number": 1, "email": 1, "user_id": 1, "class_id": 1, "is_active": 1}).to_list(length=5000)
+    groupings: dict[tuple[str, str], list[dict]] = {}
+    for item in rows:
+        keys = []
+        if item.get("roll_number"):
+            keys.append(("roll_number", str(item.get("roll_number")).strip().lower()))
+        if item.get("email"):
+            keys.append(("email", str(item.get("email")).strip().lower()))
+        if item.get("user_id"):
+            keys.append(("user_id", str(item.get("user_id")).strip()))
+        for key_type, key_value in keys:
+            if not key_value:
+                continue
+            groupings.setdefault((key_type, key_value), []).append(item)
+
+    duplicate_groups = []
+    for (key_type, key_value), items in groupings.items():
+        if len(items) < 2:
+            continue
+        duplicate_groups.append(
+            {
+                "match_type": key_type,
+                "match_value": key_value,
+                "count": len(items),
+                "students": [
+                    {
+                        "id": str(item.get("_id")),
+                        "full_name": item.get("full_name"),
+                        "roll_number": item.get("roll_number"),
+                        "email": item.get("email"),
+                        "user_id": item.get("user_id"),
+                        "class_id": item.get("class_id"),
+                        "is_active": bool(item.get("is_active", True)),
+                    }
+                    for item in items
+                ],
+            }
+        )
+
+    duplicate_groups.sort(key=lambda item: (-item["count"], item["match_type"], item["match_value"]))
+    summary = {
+        "total_students": len(rows),
+        "duplicate_groups": len(duplicate_groups),
+        "roll_number_groups": sum(1 for item in duplicate_groups if item["match_type"] == "roll_number"),
+        "email_groups": sum(1 for item in duplicate_groups if item["match_type"] == "email"),
+        "user_id_groups": sum(1 for item in duplicate_groups if item["match_type"] == "user_id"),
+    }
+    return {"summary": summary, "groups": duplicate_groups[:50]}
 
 
 @router.get("/{student_id}", response_model=StudentOut)
@@ -48,7 +125,7 @@ async def get_student(
     item = await db.students.find_one({"_id": parse_object_id(student_id)})
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
-    return StudentOut(**student_public(item))
+    return await _student_out(item)
 
 
 @router.post("/", response_model=StudentOut, status_code=status.HTTP_201_CREATED)
@@ -84,6 +161,7 @@ async def create_student(
         "full_name": payload.full_name.strip(),
         "roll_number": payload.roll_number.strip(),
         "email": payload.email.lower().strip() if payload.email else None,
+        "user_id": await _resolve_user_id(user_id=payload.user_id, email=payload.email),
         "class_id": payload.class_id,
         "group_id": payload.group_id,
         "is_active": True,
@@ -93,7 +171,7 @@ async def create_student(
     persist_public_id(document, kind="student")
     result = await db.students.insert_one(document)
     created = await db.students.find_one({"_id": result.inserted_id})
-    return StudentOut(**student_public(created))
+    return await _student_out(created)
 
 
 @router.put("/{student_id}", response_model=StudentOut)
@@ -141,6 +219,11 @@ async def update_student(
 
     if not update_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    if "user_id" in update_data or "email" in update_data:
+        update_data["user_id"] = await _resolve_user_id(
+            user_id=update_data.get("user_id", current.get("user_id")),
+            email=update_data.get("email", current.get("email")),
+        )
     persist_public_id_update(current, update_data, kind="student")
 
     result = await db.students.update_one(
@@ -151,7 +234,7 @@ async def update_student(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
 
     updated = await db.students.find_one({"_id": student_obj_id})
-    return StudentOut(**student_public(updated))
+    return await _student_out(updated)
 
 
 @router.delete("/{student_id}")

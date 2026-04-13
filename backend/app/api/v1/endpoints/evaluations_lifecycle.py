@@ -17,6 +17,7 @@ from app.services.evaluation_workflow import (
     compute_evaluation_totals,
     persist_ai_trace,
 )
+from app.services.official_results import request_semester_result_correction
 
 from .evaluations_common import get_evaluations_db
 
@@ -43,6 +44,7 @@ async def update_evaluation(
     if item.get("is_finalized") and current_user.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Finalized evaluation can only be modified by admin")
 
+    was_released = item.get("result_status") == "released"
     merged = {
         "attendance_percent": update_data.get("attendance_percent", item.get("attendance_percent", 0)),
         "skill": update_data.get("skill", item.get("skill", 0.0)),
@@ -79,6 +81,10 @@ async def update_evaluation(
             ai_payload=ai_payload,
             totals_payload={"internal_total": internal, "grand_total": total, "grade": grade},
         )
+        if was_released:
+            update_data["result_status"] = "finalized_unreleased" if item.get("is_finalized") else "draft"
+            update_data["released_at"] = None
+            update_data["released_by_user_id"] = None
 
     update_data["schema_version"] = EVALUATION_SCHEMA_VERSION
     update_data["updated_at"] = datetime.now(timezone.utc)
@@ -92,6 +98,13 @@ async def update_evaluation(
         entity_id=evaluation_id,
         detail="Updated evaluation fields",
     )
+    if was_released:
+        await request_semester_result_correction(
+            trigger_evaluation=updated,
+            actor_user_id=str(current_user.get("_id") or ""),
+            reason="Underlying released evaluation changed and requires semester result review.",
+            database=database,
+        )
 
     return EvaluationOut(**evaluation_public(updated))
 
@@ -113,6 +126,7 @@ async def finalize_evaluation(
         {
             "$set": {
                 "is_finalized": True,
+                "result_status": "finalized_unreleased",
                 "finalized_at": datetime.now(timezone.utc),
                 "finalized_by_user_id": str(current_user["_id"]),
                 "schema_version": EVALUATION_SCHEMA_VERSION,
@@ -146,11 +160,13 @@ async def override_unfinalize_evaluation(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation not found")
 
+    was_released = item.get("result_status") == "released"
     await database.evaluations.update_one(
         {"_id": evaluation_obj_id},
         {
             "$set": {
                 "is_finalized": False,
+                "result_status": "draft",
                 "schema_version": EVALUATION_SCHEMA_VERSION,
                 "updated_at": datetime.now(timezone.utc),
             }
@@ -163,5 +179,54 @@ async def override_unfinalize_evaluation(
         entity_type="evaluation",
         entity_id=evaluation_id,
         detail=f"Admin override unfinalized evaluation. Reason: {payload.reason.strip()}",
+    )
+    if was_released:
+        await request_semester_result_correction(
+            trigger_evaluation=updated,
+            actor_user_id=str(current_user.get("_id") or ""),
+            reason=f"Released evaluation was unfinalized by admin override. Reason: {payload.reason.strip()}",
+            database=database,
+        )
+    return EvaluationOut(**evaluation_public(updated))
+
+
+@router.patch("/{evaluation_id}/release", response_model=EvaluationOut)
+async def release_evaluation_result(
+    evaluation_id: str,
+    current_user=Depends(require_roles(["admin", "teacher"])),
+) -> EvaluationOut:
+    database = get_evaluations_db()
+    evaluation_obj_id = parse_object_id(evaluation_id)
+    item = await database.evaluations.find_one({"_id": evaluation_obj_id})
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation not found")
+    ensure_teacher_owns_evaluation(current_user, item)
+    if not item.get("is_finalized"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only finalized evaluation can be released")
+
+    next_version = int(item.get("result_version") or 1)
+    if item.get("result_status") != "released":
+        next_version += 1
+
+    await database.evaluations.update_one(
+        {"_id": evaluation_obj_id},
+        {
+            "$set": {
+                "result_status": "released",
+                "released_at": datetime.now(timezone.utc),
+                "released_by_user_id": str(current_user["_id"]),
+                "result_version": next_version,
+                "schema_version": EVALUATION_SCHEMA_VERSION,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    updated = await database.evaluations.find_one({"_id": evaluation_obj_id})
+    await log_audit_event(
+        actor_user_id=str(current_user["_id"]),
+        action="release_result",
+        entity_type="evaluation",
+        entity_id=evaluation_id,
+        detail=f"Released official result version {next_version}",
     )
     return EvaluationOut(**evaluation_public(updated))

@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-04-12T19:43:13.233254+00:00",
+  "provider_mode": "openai+fallback",
+  "openai_configured": true,
+  "benchmark_inputs": {
+    "candidate_seed_count": 1005,
+    "candidate_cap": 1000,
+    "preview_iterations": 1,
+    "similarity_iterations": 1,
+    "detail_iterations": 5
+  },
+  "rollout_plan": {
+    "semantic_shadow": {
+      "enabled": true,
+      "capture_top_n": 10,
+      "min_lexical_score": 0.35,
+      "cross_assignment_enabled": false,
+      "flagging_mode": "shadow_only",
+      "calibration_thresholds": {
+        "exact_min": 0.95,
+        "paraphrase_advantage_min": 0.15,
+        "mixed_language_advantage_min": 0.15,
+        "unrelated_max": 0.1
+      }
+    },
+    "multilingual": {
+      "language_detection_enabled": false,
+      "language_detector": "unicode_script_heuristic",
+      "tokenizer_mode": "ascii_legacy",
+      "stopword_strategy": "english_only",
+      "mixed_language_mode": "keep_all_tokens",
+      "notes": [
+        "Use unicode-script heuristic detection before enabling multilingual scoring.",
+        "Keep mixed-language submissions in shadow analysis until benchmark coverage is stable.",
+        "Disable English stop-word filtering automatically when non-Latin or mixed scripts are detected."
+      ]
+    },
+    "fairness_regression": {
+      "max_concise_delta": 1.5,
+      "max_formula_delta": 1.25,
+      "max_mixed_language_eval_delta": 1.0,
+      "max_unicode_eval_delta": 1.25,
+      "max_short_answer_delta": 1.1,
+      "max_rubric_shape_delta": 1.25,
+      "gate_mode": "regression_only"
+    }
+  },
+  "metrics": [
+    {
+      "label": "evaluation_preview",
+      "iterations": 1,
+      "avg_ms": 4643.91,
+      "p95_ms": 4643.91,
+      "max_ms": 4643.91
+    },
+    {
+      "label": "similarity_sync_handoff",
+      "iterations": 1,
+      "avg_ms": 42.49,
+      "p95_ms": 42.49,
+      "max_ms": 42.49
+    },
+    {
+      "label": "similarity_background_processing",
+      "iterations": 1,
+      "avg_ms": 119.14,
+      "p95_ms": 119.14,
+      "max_ms": 119.14
+    },
+    {
+      "label": "review_modal_detail",
+      "iterations": 5,
+      "avg_ms": 2.4,
+      "p95_ms": 3.48,
+      "max_ms": 3.48
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "thresholds": {
+      "max_sync_handoff_ms": 250.0,
+      "max_background_processing_ms": 20000.0
+    },
+    "failures": []
+  },
+  "notes": [
+    "Evaluation preview latency uses the current provider mode; fallback-only environments will under-report production provider latency.",
+    "Similarity benchmark seeds retrieval artifacts for a candidate set larger than the inline sync limit to exercise async handoff plus background similarity processing.",
+    "Review-modal load is approximated by repeated GET /similarity/checks/{id} calls against the in-process backend."
+  ]
+}

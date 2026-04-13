@@ -335,4 +335,6 @@ async def _run_similarity_job(job: dict[str, Any]) -> dict[str, Any]:
         "updated_count": result.get("updated_count"),
         "flagged_count": result.get("flagged_count"),
         "max_score": result.get("max_score"),
+        "candidate_count": result.get("candidate_count"),
+        "raw_candidate_count": result.get("raw_candidate_count"),
     }

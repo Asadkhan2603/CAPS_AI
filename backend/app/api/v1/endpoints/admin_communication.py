@@ -13,9 +13,14 @@ from app.core.mongo import parse_object_id
 from app.core.security import require_permission
 from app.schemas.communication_delivery import (
     CommunicationDeliveryAnomalyReportOut,
+    CommunicationDeliveryBenchmarkMetricOut,
+    CommunicationDeliveryBenchmarkReportOut,
     CommunicationDeliveryBreakdownRowOut,
     CommunicationDeliveryEmailHealthOut,
     CommunicationDeliveryErrorSummaryOut,
+    CommunicationIncidentHistoryReportOut,
+    CommunicationIncidentOut,
+    CommunicationIncidentRouteHistoryEntryOut,
     CommunicationDeliveryReportOut,
     CommunicationDeliveryTrendReportOut,
     DeliveryDetailsOut,
@@ -26,6 +31,7 @@ from app.services.club_permissions import can_manage_club
 from app.services.communication_deliveries import get_delivery_rows, get_delivery_summaries
 from app.services.communication_digests import dispatch_due_notification_digests, get_notification_digest_report
 from app.services.communication_delivery_retry import retry_source_email_delivery
+from app.services.operational_alert_routing import list_operational_alert_route_history
 from app.services.public_ids import build_user_label
 
 router = APIRouter()
@@ -93,6 +99,7 @@ def _row_matches_report_filters(
     *,
     row: dict[str, Any],
     date_from: datetime | None,
+    date_to: datetime | None = None,
     scope: str | None,
     status: str | None,
     created_by: str | None,
@@ -101,6 +108,8 @@ def _row_matches_report_filters(
 ) -> tuple[bool, str, str | None]:
     updated_at = _normalize_datetime(row.get("updated_at") or row.get("sent_at") or row.get("read_at"))
     if date_from and updated_at and updated_at < date_from:
+        return False, "unknown", None
+    if date_to and updated_at and updated_at >= date_to:
         return False, "unknown", None
     row_status = str(row.get("status") or "pending").strip().lower()
     if status and row_status != status:
@@ -255,6 +264,7 @@ async def _delivery_rows_for_export(*, source_kind: str, source_doc: dict) -> li
 async def _delivery_report(
     *,
     date_from: datetime | None,
+    date_to: datetime | None = None,
     source_kind: str | None = None,
     scope: str | None = None,
     status: str | None = None,
@@ -292,6 +302,7 @@ async def _delivery_report(
         matched, source_scope, source_created_by = _row_matches_report_filters(
             row=row,
             date_from=date_from,
+            date_to=date_to,
             scope=scope,
             status=status,
             created_by=created_by,
@@ -411,6 +422,7 @@ async def _delivery_trends(
         matched, _source_scope, _source_created_by = _row_matches_report_filters(
             row=row,
             date_from=date_from,
+            date_to=None,
             scope=scope,
             status=status,
             created_by=created_by,
@@ -546,6 +558,260 @@ async def _delivery_anomalies(
         )
 
     return CommunicationDeliveryAnomalyReportOut(days=days, alerts=alerts[:5])
+
+
+def _benchmark_delta_pct(*, current_value: float, previous_value: float) -> float | None:
+    if previous_value == 0:
+        return None if current_value == 0 else 100.0
+    return round(((current_value - previous_value) / previous_value) * 100.0, 2)
+
+
+def _benchmark_trend(*, current_value: float, previous_value: float, higher_is_better: bool) -> str:
+    if current_value == previous_value:
+        return "stable"
+    improved = current_value > previous_value if higher_is_better else current_value < previous_value
+    return "up" if improved else "down"
+
+
+def _benchmark_metric(
+    *,
+    key: str,
+    label: str,
+    current_value: float | int,
+    previous_value: float | int,
+    higher_is_better: bool,
+) -> CommunicationDeliveryBenchmarkMetricOut:
+    current_numeric = float(current_value)
+    previous_numeric = float(previous_value)
+    delta = round(current_numeric - previous_numeric, 2)
+    return CommunicationDeliveryBenchmarkMetricOut(
+        key=key,
+        label=label,
+        current_value=round(current_numeric, 2),
+        previous_value=round(previous_numeric, 2),
+        delta_value=delta,
+        delta_pct=_benchmark_delta_pct(current_value=current_numeric, previous_value=previous_numeric),
+        trend=_benchmark_trend(current_value=current_numeric, previous_value=previous_numeric, higher_is_better=higher_is_better),
+    )
+
+
+async def _delivery_benchmarks(
+    *,
+    days: int,
+    source_kind: str | None = None,
+    scope: str | None = None,
+    status: str | None = None,
+    created_by: str | None = None,
+) -> CommunicationDeliveryBenchmarkReportOut:
+    safe_days = max(1, min(days, 365))
+    current_end = _utcnow()
+    current_start = current_end - _parse_days(safe_days)
+    previous_end = current_start
+    previous_start = previous_end - _parse_days(safe_days)
+
+    current_report = await _delivery_report(
+        date_from=current_start,
+        date_to=current_end,
+        source_kind=source_kind,
+        scope=(scope or None),
+        status=(status or None),
+        created_by=(created_by or None),
+    )
+    previous_report = await _delivery_report(
+        date_from=previous_start,
+        date_to=previous_end,
+        source_kind=source_kind,
+        scope=(scope or None),
+        status=(status or None),
+        created_by=(created_by or None),
+    )
+
+    query: dict[str, Any] = {}
+    if source_kind:
+        query["source_kind"] = source_kind
+    rows = await db.communication_deliveries.find(query).to_list(length=20000)
+    notices_by_id, notifications_by_id = await _load_source_maps(rows)
+    current_sources: set[str] = set()
+    previous_sources: set[str] = set()
+
+    for row in rows:
+        matched_current, _scope_current, _created_current = _row_matches_report_filters(
+            row=row,
+            date_from=current_start,
+            date_to=current_end,
+            scope=(scope or None),
+            status=(status or None),
+            created_by=(created_by or None),
+            notices_by_id=notices_by_id,
+            notifications_by_id=notifications_by_id,
+        )
+        if matched_current and row.get("source_id"):
+            current_sources.add(f"{row.get('source_kind')}:{row.get('source_id')}")
+            continue
+        matched_previous, _scope_previous, _created_previous = _row_matches_report_filters(
+            row=row,
+            date_from=previous_start,
+            date_to=previous_end,
+            scope=(scope or None),
+            status=(status or None),
+            created_by=(created_by or None),
+            notices_by_id=notices_by_id,
+            notifications_by_id=notifications_by_id,
+        )
+        if matched_previous and row.get("source_id"):
+            previous_sources.add(f"{row.get('source_kind')}:{row.get('source_id')}")
+
+    current_total = max(1, int(current_report.total_rows or 0))
+    previous_total = max(1, int(previous_report.total_rows or 0))
+    metrics = [
+        _benchmark_metric(
+            key="total_rows",
+            label="Delivery Rows",
+            current_value=current_report.total_rows,
+            previous_value=previous_report.total_rows,
+            higher_is_better=True,
+        ),
+        _benchmark_metric(
+            key="total_sources",
+            label="Active Sources",
+            current_value=len(current_sources),
+            previous_value=len(previous_sources),
+            higher_is_better=True,
+        ),
+        _benchmark_metric(
+            key="sent_count",
+            label="Sent Rows",
+            current_value=current_report.sent_count,
+            previous_value=previous_report.sent_count,
+            higher_is_better=True,
+        ),
+        _benchmark_metric(
+            key="read_count",
+            label="Read Rows",
+            current_value=current_report.read_count,
+            previous_value=previous_report.read_count,
+            higher_is_better=True,
+        ),
+        _benchmark_metric(
+            key="failed_count",
+            label="Failed Rows",
+            current_value=current_report.failed_count,
+            previous_value=previous_report.failed_count,
+            higher_is_better=False,
+        ),
+        _benchmark_metric(
+            key="pending_count",
+            label="Pending Rows",
+            current_value=current_report.pending_count,
+            previous_value=previous_report.pending_count,
+            higher_is_better=False,
+        ),
+        _benchmark_metric(
+            key="delivered_rate_pct",
+            label="Delivered Rate",
+            current_value=round((float(current_report.sent_count or 0) / float(current_total)) * 100.0, 2)
+            if int(current_report.total_rows or 0) > 0
+            else 0.0,
+            previous_value=round((float(previous_report.sent_count or 0) / float(previous_total)) * 100.0, 2)
+            if int(previous_report.total_rows or 0) > 0
+            else 0.0,
+            higher_is_better=True,
+        ),
+        _benchmark_metric(
+            key="failure_rate_pct",
+            label="Failure Rate",
+            current_value=round((float(current_report.failed_count or 0) / float(current_total)) * 100.0, 2)
+            if int(current_report.total_rows or 0) > 0
+            else 0.0,
+            previous_value=round((float(previous_report.failed_count or 0) / float(previous_total)) * 100.0, 2)
+            if int(previous_report.total_rows or 0) > 0
+            else 0.0,
+            higher_is_better=False,
+        ),
+        _benchmark_metric(
+            key="read_rate_pct",
+            label="Read Rate",
+            current_value=round((float(current_report.read_count or 0) / float(current_total)) * 100.0, 2)
+            if int(current_report.total_rows or 0) > 0
+            else 0.0,
+            previous_value=round((float(previous_report.read_count or 0) / float(previous_total)) * 100.0, 2)
+            if int(previous_report.total_rows or 0) > 0
+            else 0.0,
+            higher_is_better=True,
+        ),
+    ]
+
+    return CommunicationDeliveryBenchmarkReportOut(
+        days=safe_days,
+        current_start=current_start,
+        current_end=current_end,
+        previous_start=previous_start,
+        previous_end=previous_end,
+        metrics=metrics,
+    )
+
+
+async def _communication_incidents(*, limit: int) -> CommunicationIncidentHistoryReportOut:
+    rows = await list_operational_alert_route_history(limit=limit, database=db)
+    incidents: list[CommunicationIncidentOut] = []
+    for row in rows:
+        code = str(row.get("alert_code") or "")
+        if not code.startswith("delivery."):
+            continue
+        history = [
+            CommunicationIncidentRouteHistoryEntryOut(
+                timestamp=item.get("timestamp"),
+                action=item.get("action"),
+                level=item.get("level"),
+                message=item.get("message"),
+                notifications_created=int(item.get("notifications_created") or 0),
+                target_user_count=int(item.get("target_user_count") or 0),
+            )
+            for item in list(row.get("history") or [])
+        ]
+        incidents.append(
+            CommunicationIncidentOut(
+                alert_code=code,
+                level=row.get("level"),
+                message=row.get("message"),
+                is_active=bool(row.get("is_active")),
+                first_seen_at=row.get("first_seen_at"),
+                last_seen_at=row.get("last_seen_at"),
+                last_sent_at=row.get("last_sent_at"),
+                resolved_at=row.get("resolved_at"),
+                last_routing_outcome=row.get("last_routing_outcome"),
+                last_routing_outcome_at=row.get("last_routing_outcome_at"),
+                routed_count=int(row.get("routed_count") or 0),
+                resolved_count=int(row.get("resolved_count") or 0),
+                cooldown_suppressed_count=int(row.get("cooldown_suppressed_count") or 0),
+                notifications_sent_total=int(row.get("notifications_sent_total") or 0),
+                history=history,
+            )
+        )
+    incidents.sort(key=lambda item: (not item.is_active, -(item.routed_count or 0), str(item.alert_code).lower()))
+    return CommunicationIncidentHistoryReportOut(
+        total=len(incidents),
+        active_count=len([item for item in incidents if item.is_active]),
+        incidents=incidents,
+    )
+
+
+async def get_delivery_anomaly_alerts(
+    *,
+    days: int,
+    source_kind: str | None = None,
+    scope: str | None = None,
+    status: str | None = None,
+    created_by: str | None = None,
+) -> list[dict[str, Any]]:
+    report = await _delivery_anomalies(
+        days=days,
+        source_kind=source_kind,
+        scope=scope,
+        status=status,
+        created_by=created_by,
+    )
+    return [item.model_dump() for item in report.alerts]
 
 
 async def _assert_notice_delivery_access(current_user: dict, notice: dict) -> None:
@@ -788,6 +1054,32 @@ async def get_delivery_report_anomalies(
         status=(status or None),
         created_by=(created_by or None),
     )
+
+
+@router.get('/delivery/report/benchmarks', response_model=CommunicationDeliveryBenchmarkReportOut)
+async def get_delivery_report_benchmarks(
+    days: int = Query(default=7, ge=1, le=365),
+    source_kind: str | None = Query(default=None),
+    scope: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    created_by: str | None = Query(default=None),
+    _current_user=Depends(require_permission('announcements.publish')),
+) -> CommunicationDeliveryBenchmarkReportOut:
+    return await _delivery_benchmarks(
+        days=days,
+        source_kind=source_kind,
+        scope=(scope or None),
+        status=(status or None),
+        created_by=(created_by or None),
+    )
+
+
+@router.get('/delivery/incidents', response_model=CommunicationIncidentHistoryReportOut)
+async def get_communication_delivery_incidents(
+    limit: int = Query(default=25, ge=1, le=100),
+    _current_user=Depends(require_permission('announcements.publish')),
+) -> CommunicationIncidentHistoryReportOut:
+    return await _communication_incidents(limit=limit)
 
 
 @router.get('/delivery/report/export')

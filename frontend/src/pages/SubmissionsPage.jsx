@@ -73,7 +73,19 @@ export default function SubmissionsPage() {
           render: (row) => {
             const text = row.ai_feedback || '-';
             if (!row.ai_feedback) return text;
-            return text.length > 120 ? `${text.slice(0, 120)}...` : text;
+            const truncated = text.length > 120 ? `${text.slice(0, 120)}...` : text;
+            const isPdf = String(row.original_filename || '').toLowerCase().endsWith('.pdf');
+            const lowExtraction = isPdf && typeof row.extraction_quality === 'number' && row.extraction_quality < 0.2;
+            return (
+              <div className="space-y-1">
+                <span>{truncated}</span>
+                {lowExtraction ? (
+                  <span className="block text-xs text-amber-700 dark:text-amber-300">
+                    Low text extraction detected. Consider re-uploading with a clearer PDF.
+                  </span>
+                ) : null}
+              </div>
+            );
           }
         }
       ];
@@ -427,7 +439,7 @@ export default function SubmissionsPage() {
         </div>
         {(user?.role === 'teacher' || user?.role === 'admin') ? (
           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-            `fallback` means the system returned a deterministic backup result because the primary AI provider was unavailable or not used. Review those cases before finalizing marks.
+            `fallback` means the system returned deterministic backup guidance because the primary AI provider was unavailable or not used. Review those cases before finalizing marks.
           </p>
         ) : null}
         <div className="grid gap-3 sm:grid-cols-3">
@@ -522,6 +534,12 @@ export default function SubmissionsPage() {
                     : []),
                   ...(canRunAi
                     ? [
+                        {
+                          key: 'similarity-review',
+                          label: 'Similarity',
+                          className: 'text-sky-700 dark:text-sky-300',
+                          onClick: (row) => navigate(`/ai-operations?source_submission_id=${row.id}`)
+                        },
                         {
                           key: 'ai-evaluate',
                           label: 'Run/Rerun AI',

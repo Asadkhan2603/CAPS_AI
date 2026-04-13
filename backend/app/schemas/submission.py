@@ -25,6 +25,7 @@ class SubmissionOut(BaseModel):
     schema_version: int = 1
     similarity_score: float | None = None
     extracted_text: str | None = None
+    extraction_quality: float | None = Field(default=None, ge=0, le=1)
     created_at: datetime | None = None
 
 

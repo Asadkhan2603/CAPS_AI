@@ -15,6 +15,7 @@ from app.core.observability import observability_state
 from app.core.schema_versions import SCHEDULER_LOCK_SCHEMA_VERSION
 from app.services.ai_jobs import process_ai_jobs_once, sample_ai_queue_metrics
 from app.services.background_jobs import (
+    dispatch_delivery_anomaly_escalations,
     dispatch_due_grievance_escalations,
     dispatch_scheduled_notice_notifications,
     run_daily_analytics_snapshot_job,
@@ -54,6 +55,8 @@ class AppScheduler:
         self._last_notice_dispatch_count = 0
         self._last_digest_dispatch_at: datetime | None = None
         self._last_digest_dispatch_count = 0
+        self._last_delivery_anomaly_check_at: datetime | None = None
+        self._last_delivery_anomaly_notification_count = 0
         self._last_grievance_escalation_at: datetime | None = None
         self._last_grievance_escalation_count = 0
 
@@ -110,6 +113,8 @@ class AppScheduler:
             "last_notice_dispatch_count": self._last_notice_dispatch_count,
             "last_digest_dispatch_at": self._last_digest_dispatch_at,
             "last_digest_dispatch_count": self._last_digest_dispatch_count,
+            "last_delivery_anomaly_check_at": self._last_delivery_anomaly_check_at,
+            "last_delivery_anomaly_notification_count": self._last_delivery_anomaly_notification_count,
             "last_grievance_escalation_at": self._last_grievance_escalation_at,
             "last_grievance_escalation_count": self._last_grievance_escalation_count,
             "last_snapshot_at": self._last_snapshot_at,
@@ -162,6 +167,7 @@ class AppScheduler:
         self._job_tasks = [
             asyncio.create_task(self._scheduled_notice_loop(), name="scheduled-notice-loop"),
             asyncio.create_task(self._notification_digest_loop(), name="notification-digest-loop"),
+            asyncio.create_task(self._delivery_anomaly_loop(), name="delivery-anomaly-loop"),
             asyncio.create_task(self._grievance_escalation_loop(), name="grievance-escalation-loop"),
             asyncio.create_task(self._ai_job_loop(), name="ai-job-loop"),
             asyncio.create_task(self._daily_snapshot_loop(), name="daily-snapshot-loop"),
@@ -325,6 +331,29 @@ class AppScheduler:
                     duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
                 )
                 logger.exception({"event": "scheduler.grievance_escalation.error"})
+            await asyncio.sleep(sleep_for)
+
+    async def _delivery_anomaly_loop(self) -> None:
+        sleep_for = max(60, settings.notification_digest_poll_seconds)
+        while self._running and self._is_leader:
+            started = datetime.now(timezone.utc)
+            try:
+                count = await dispatch_delivery_anomaly_escalations()
+                self._last_delivery_anomaly_check_at = datetime.now(timezone.utc)
+                self._last_delivery_anomaly_notification_count = count
+                observability_state.record_scheduler_job_run(
+                    job_name="delivery_anomaly_escalation",
+                    success=True,
+                    duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+                    processed_count=count,
+                )
+            except Exception:
+                observability_state.record_scheduler_job_run(
+                    job_name="delivery_anomaly_escalation",
+                    success=False,
+                    duration_ms=int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+                )
+                logger.exception({"event": "scheduler.delivery_anomaly_escalation.error"})
             await asyncio.sleep(sleep_for)
 
     async def _ai_job_loop(self) -> None:

@@ -62,6 +62,12 @@ class TimetableOut(BaseModel):
     admin_locked: bool = False
     published_at: datetime | None = None
     published_by_user_id: str | None = None
+    sync_status: str = "draft"
+    synced_class_slot_count: int = 0
+    expected_class_slot_count: int = 0
+    drift_count: int = 0
+    drift_messages: list[str] = Field(default_factory=list)
+    last_sync_checked_at: datetime | None = None
     created_by_user_id: str
     created_at: datetime | None = None
     updated_at: datetime | None = None

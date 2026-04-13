@@ -23,6 +23,11 @@ export async function getTeacherSectionsAnalytics() {
   return await apiClient.get('/analytics/teacher/sections');
 }
 
+export async function getSectionDashboard(params = {}) {
+  const response = await apiClient.get('/sections/dashboard', { params });
+  return response.data;
+}
+
 export async function lockSectionMapping(sectionId, reason = '') {
   return await apiClient.post(`/sections/${sectionId}/lock`, { reason });
 }

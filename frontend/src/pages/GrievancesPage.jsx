@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CirclePlus } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import Badge from '../components/ui/Badge';
 import Card from '../components/ui/Card';
 import FileUpload from '../components/ui/FileUpload';
 import FormInput from '../components/ui/FormInput';
+import Modal from '../components/ui/Modal';
 import Table from '../components/ui/Table';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
@@ -33,6 +34,7 @@ const MODE_CONFIG = {
 
 const CATEGORY_OPTIONS = ['academic', 'fees', 'facility', 'behavior', 'administration', 'other'];
 const STATUS_OPTIONS = ['', 'open', 'in_progress', 'resolved', 'reopened', 'routing_failed'];
+const PAGE_SIZE = 20;
 
 function toTitle(value) {
   return String(value || '')
@@ -78,33 +80,57 @@ export default function GrievancesPage({ mode = 'student' }) {
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [resolveModalOpen, setResolveModalOpen] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreRows, setHasMoreRows] = useState(false);
+  const [submissionConfirmation, setSubmissionConfirmation] = useState(null);
   const [filters, setFilters] = useState({ status: '', q: '', onlyOverdue: false });
   const [createForm, setCreateForm] = useState({ category: 'academic', title: '', description: '', attachment: null });
   const [commentMessage, setCommentMessage] = useState('');
   const [internalNoteMessage, setInternalNoteMessage] = useState('');
   const [reopenMessage, setReopenMessage] = useState('');
+  const [resolutionNote, setResolutionNote] = useState('');
   const [forwardState, setForwardState] = useState({ targetUserId: '', note: '' });
   const [forwardTargets, setForwardTargets] = useState([]);
+  const createTitleInputRef = useRef(null);
+  const resolveNoteInputRef = useRef(null);
 
-  async function loadRows(nextFilters = filters) {
-    setLoading(true);
+  async function loadRows(nextFilters = filters, { append = false } = {}) {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     try {
-      const params = {};
+      const currentRows = append ? rows : [];
+      const params = {
+        skip: append ? currentRows.length : 0,
+        limit: PAGE_SIZE,
+      };
       if (nextFilters.status) params.status = nextFilters.status;
       if (nextFilters.q && isStaffMode) params.q = nextFilters.q;
       if (nextFilters.onlyOverdue && isStaffMode) params.only_overdue = true;
       const data = isStudentMode ? await listMyGrievances(params) : await listGrievanceInbox({ ...params, view: config.inboxView });
-      setRows(data);
+      const nextRows = append
+        ? [...currentRows, ...data.filter((item) => !currentRows.some((existingRow) => existingRow.id === item.id))]
+        : data;
+      setRows(nextRows);
+      setHasMoreRows(data.length === PAGE_SIZE);
       const nextId =
-        (highlightedId && data.some((item) => item.id === highlightedId) && highlightedId) ||
-        (selectedId && data.some((item) => item.id === selectedId) && selectedId) ||
-        data[0]?.id ||
+        (highlightedId && nextRows.some((item) => item.id === highlightedId) && highlightedId) ||
+        (selectedId && nextRows.some((item) => item.id === selectedId) && selectedId) ||
+        nextRows[0]?.id ||
         '';
       setSelectedId(nextId);
     } catch (err) {
       pushToast({ title: 'Load failed', description: formatApiError(err, 'Failed to load grievances'), variant: 'error' });
     } finally {
-      setLoading(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
@@ -155,6 +181,22 @@ export default function GrievancesPage({ mode = 'student' }) {
     loadForwardTargets();
   }, [mode]);
 
+  useEffect(() => {
+    if (!createModalOpen) return;
+    const timer = window.setTimeout(() => {
+      createTitleInputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [createModalOpen]);
+
+  useEffect(() => {
+    if (!resolveModalOpen) return;
+    const timer = window.setTimeout(() => {
+      resolveNoteInputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [resolveModalOpen]);
+
   const columns = useMemo(
     () => [
       { key: 'public_id', label: 'ID', render: (row) => row.public_id || row.id },
@@ -197,6 +239,13 @@ export default function GrievancesPage({ mode = 'student' }) {
     try {
       const created = await createGrievance(createForm);
       setCreateForm({ category: 'academic', title: '', description: '', attachment: null });
+      setCreateModalOpen(false);
+      setSubmissionConfirmation({
+        id: created.id,
+        publicId: created.public_id || created.id,
+        title: created.title,
+        currentStage: created.current_stage,
+      });
       pushToast({ title: 'Submitted', description: 'Grievance submitted successfully.', variant: 'success' });
       await refresh(created.id, created);
     } catch (err) {
@@ -254,12 +303,11 @@ export default function GrievancesPage({ mode = 'student' }) {
     }
   }
 
-  async function onStatusChange(nextStatus) {
+  async function onStatusChange(nextStatus, note = '') {
     if (!selectedId) return;
-    const resolutionNote = nextStatus === 'resolved' ? window.prompt('Add a public resolution note', '') || '' : '';
     setSubmitting(true);
     try {
-      const updated = await updateGrievanceStatus(selectedId, nextStatus, resolutionNote);
+      const updated = await updateGrievanceStatus(selectedId, nextStatus, note);
       pushToast({ title: 'Updated', description: `Grievance marked ${toTitle(nextStatus)}.`, variant: 'success' });
       await refresh(selectedId, updated);
     } catch (err) {
@@ -267,6 +315,14 @@ export default function GrievancesPage({ mode = 'student' }) {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function onResolveSubmit(event) {
+    event.preventDefault();
+    if (!resolutionNote.trim()) return;
+    await onStatusChange('resolved', resolutionNote.trim());
+    setResolveModalOpen(false);
+    setResolutionNote('');
   }
 
   async function onReopen(event) {
@@ -286,11 +342,7 @@ export default function GrievancesPage({ mode = 'student' }) {
   }
 
   function onBannerCreateClick() {
-    pushToast({
-      title: 'CREATE',
-      description: 'Create button is clickable. The grievance banner shortcut will be connected next.',
-      variant: 'info'
-    });
+    setCreateModalOpen(true);
   }
 
   return (
@@ -316,26 +368,25 @@ export default function GrievancesPage({ mode = 'student' }) {
         </div>
       </Card>
 
-      {isStudentMode ? (
-        <Card className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Submit New Grievance</h2>
-          <form className="space-y-4" onSubmit={onCreate}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <FormInput as="select" label="Category" value={createForm.category} onChange={(event) => setCreateForm((prev) => ({ ...prev, category: event.target.value }))}>
-                {CATEGORY_OPTIONS.map((item) => (
-                  <option key={item} value={item}>{toTitle(item)}</option>
-                ))}
-              </FormInput>
-              <FormInput label="Title" value={createForm.title} onChange={(event) => setCreateForm((prev) => ({ ...prev, title: event.target.value }))} required />
+      {isStudentMode && submissionConfirmation ? (
+        <Card className="space-y-3 border border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/70 dark:bg-emerald-950/30">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold text-emerald-900 dark:text-emerald-100">Grievance Submitted</h2>
+              <p className="text-sm text-emerald-800 dark:text-emerald-200">
+                <span className="font-semibold">{submissionConfirmation.publicId}</span> was created successfully.
+              </p>
+              <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                Current stage: <span className="font-medium">{toTitle(submissionConfirmation.currentStage)}</span>
+              </p>
+              <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                Next action: Track updates in the grievance detail panel and add a public reply if more context is needed.
+              </p>
             </div>
-            <FormInput as="textarea" rows={5} label="Description" value={createForm.description} onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))} required />
-            <div className="space-y-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Attachment</span>
-              <FileUpload accept=".png,.jpg,.jpeg,.pdf,.doc,.docx,.txt,.md" onFileSelect={(file) => setCreateForm((prev) => ({ ...prev, attachment: file || null }))} />
-              {createForm.attachment ? <p className="text-xs text-slate-500 dark:text-slate-400">Selected: {createForm.attachment.name}</p> : null}
-            </div>
-            <div className="flex justify-end"><button className="btn-primary" type="submit" disabled={submitting}>{submitting ? 'Submitting...' : 'Submit Grievance'}</button></div>
-          </form>
+            <button className="btn-secondary" type="button" onClick={() => setSubmissionConfirmation(null)}>
+              Dismiss
+            </button>
+          </div>
         </Card>
       ) : null}
 
@@ -353,10 +404,20 @@ export default function GrievancesPage({ mode = 'student' }) {
               Overdue only
             </label>
           ) : null}
-          <button className="btn-secondary mt-5" onClick={() => loadRows(filters)} disabled={loading}>Refresh</button>
+          <button className="btn-secondary mt-5" onClick={() => loadRows(filters)} disabled={loading || loadingMore}>Refresh</button>
         </div>
         {loading ? <p className="text-sm text-slate-500 dark:text-slate-400">Loading grievances...</p> : null}
         <Table columns={columns} data={rows} rowActions={[{ key: 'open', label: (row) => (row.id === selectedId ? 'Opened' : 'Open'), onClick: (row) => setSelectedId(row.id), disabled: (row) => row.id === selectedId }]} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Showing {rows.length} grievance{rows.length === 1 ? '' : 's'}.
+          </p>
+          {hasMoreRows ? (
+            <button className="btn-secondary" type="button" onClick={() => loadRows(filters, { append: true })} disabled={loading || loadingMore}>
+              {loadingMore ? 'Loading More...' : 'Load More'}
+            </button>
+          ) : null}
+        </div>
       </Card>
 
       <Card className="space-y-4">
@@ -437,7 +498,17 @@ export default function GrievancesPage({ mode = 'student' }) {
                   <Card className="space-y-3">
                     <div className="flex flex-wrap gap-2">
                       <button className="btn-secondary" type="button" disabled={submitting || selected.status === 'in_progress'} onClick={() => onStatusChange('in_progress')}>Mark In Progress</button>
-                      <button className="btn-primary" type="button" disabled={submitting || selected.status === 'resolved'} onClick={() => onStatusChange('resolved')}>Resolve</button>
+                      <button
+                        className="btn-primary"
+                        type="button"
+                        disabled={submitting || selected.status === 'resolved'}
+                        onClick={() => {
+                          setResolutionNote('');
+                          setResolveModalOpen(true);
+                        }}
+                      >
+                        Resolve
+                      </button>
                     </div>
                   </Card>
                 ) : null}
@@ -454,6 +525,82 @@ export default function GrievancesPage({ mode = 'student' }) {
           </div>
         ) : null}
       </Card>
+
+      {isStudentMode ? (
+        <Modal open={createModalOpen} title="Submit New Grievance" onClose={() => setCreateModalOpen(false)}>
+          <form className="space-y-4" onSubmit={onCreate}>
+            <div className="grid gap-3 md:grid-cols-2">
+              <FormInput as="select" label="Category" value={createForm.category} onChange={(event) => setCreateForm((prev) => ({ ...prev, category: event.target.value }))}>
+                {CATEGORY_OPTIONS.map((item) => (
+                  <option key={item} value={item}>{toTitle(item)}</option>
+                ))}
+              </FormInput>
+              <FormInput
+                ref={createTitleInputRef}
+                label="Title"
+                value={createForm.title}
+                onChange={(event) => setCreateForm((prev) => ({ ...prev, title: event.target.value }))}
+                required
+              />
+            </div>
+            <FormInput as="textarea" rows={5} label="Description" value={createForm.description} onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))} required />
+            <div className="space-y-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Attachment</span>
+              <FileUpload accept=".png,.jpg,.jpeg,.pdf,.doc,.docx,.txt,.md" onFileSelect={(file) => setCreateForm((prev) => ({ ...prev, attachment: file || null }))} />
+              {createForm.attachment ? <p className="text-xs text-slate-500 dark:text-slate-400">Selected: {createForm.attachment.name}</p> : null}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn-secondary" type="button" onClick={() => setCreateModalOpen(false)} disabled={submitting}>Cancel</button>
+              <button className="btn-primary" type="submit" disabled={submitting}>{submitting ? 'Submitting...' : 'Submit Grievance'}</button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {canResolve && selected ? (
+        <Modal
+          open={resolveModalOpen}
+          title="Resolve Grievance"
+          onClose={() => {
+            setResolveModalOpen(false);
+            setResolutionNote('');
+          }}
+        >
+          <form className="space-y-4" onSubmit={onResolveSubmit}>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selected.title}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Add a public resolution note so the student can understand what was decided.
+              </p>
+            </div>
+            <FormInput
+              ref={resolveNoteInputRef}
+              as="textarea"
+              rows={5}
+              label="Resolution Note"
+              value={resolutionNote}
+              onChange={(event) => setResolutionNote(event.target.value)}
+              required
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => {
+                  setResolveModalOpen(false);
+                  setResolutionNote('');
+                }}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button className="btn-primary" type="submit" disabled={submitting || !resolutionNote.trim()}>
+                {submitting ? 'Resolving...' : 'Confirm Resolution'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
     </div>
   );
 }

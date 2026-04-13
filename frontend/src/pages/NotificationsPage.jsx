@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { CirclePlus, Funnel, Settings } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, CirclePlus, Funnel, Settings } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import CommunicationTabs from '../components/communication/CommunicationTabs';
 import CommunicationDeliveryModal from '../components/communication/CommunicationDeliveryModal';
@@ -171,6 +171,14 @@ const REPORT_VIEW_STARTERS = [
     readonly: true
   }
 ];
+
+const SECTION_HASH_BY_ACTION = {
+  settings: '#notification-preferences',
+  filter: '#notification-filters',
+  create: '#notification-create'
+};
+
+const COMMUNICATION_OPERATOR_TEACHER_EXTENSIONS = ['year_head', 'class_coordinator', 'club_coordinator'];
 
 function formatTimestamp(value) {
   if (!value) return '-';
@@ -427,11 +435,70 @@ function formatPercent(value) {
   return `${numeric.toFixed(numeric % 1 === 0 ? 0 : 1)}%`;
 }
 
+function formatDelta(value, { suffix = '', decimals = 1 } = {}) {
+  const numeric = Number(value || 0);
+  const rounded = numeric.toFixed(Number.isInteger(numeric) ? 0 : decimals);
+  return `${numeric > 0 ? '+' : ''}${rounded}${suffix}`;
+}
+
+function resolveReconciliationPreset({ alertCode = '', metricKey = '', metricLabel = '' } = {}) {
+  const haystack = `${alertCode} ${metricKey} ${metricLabel}`.toLowerCase();
+  if (haystack.includes('failed')) {
+    return { label: 'failed delivery rows', filters: { status: 'failed' }, exportView: 'rows' };
+  }
+  if (haystack.includes('pending')) {
+    return { label: 'pending delivery rows', filters: { status: 'pending' }, exportView: 'rows' };
+  }
+  if (haystack.includes('read')) {
+    return { label: 'read delivery rows', filters: { status: 'read' }, exportView: 'rows' };
+  }
+  if (haystack.includes('sent') || haystack.includes('delivered')) {
+    return { label: 'sent delivery rows', filters: { status: 'sent' }, exportView: 'rows' };
+  }
+  if (haystack.includes('skipped')) {
+    return { label: 'skipped delivery rows', filters: { status: 'skipped' }, exportView: 'rows' };
+  }
+  return null;
+}
+
+function ResponsiveOpsSection({ title, summary, badge = null, open, onToggle, children }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/30">
+      <button
+        type="button"
+        className="flex w-full items-start justify-between gap-3 rounded-2xl px-4 py-3 text-left lg:hidden"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</p>
+            {badge}
+          </div>
+          {summary ? <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{summary}</p> : null}
+        </div>
+        <ChevronDown
+          size={18}
+          className={`mt-0.5 shrink-0 text-slate-500 transition-transform dark:text-slate-400 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      <div className={`${open ? 'block' : 'hidden'} lg:block`}>
+        <div className="p-4 lg:p-0">{children}</div>
+      </div>
+    </section>
+  );
+}
+
 export default function NotificationsPage() {
   const { user, refreshUser } = useAuth();
   const { pushToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const canCreate = ['admin', 'teacher'].includes(user?.role || '');
+  const canManageCommunicationOps =
+    user?.role === 'admin' ||
+    (user?.role === 'teacher' &&
+      COMMUNICATION_OPERATOR_TEACHER_EXTENSIONS.some((extension) => (user?.extended_roles || []).includes(extension)));
+  const canSelectTargetUser = user?.role === 'admin';
   const highlightedNotificationId = searchParams.get('highlight') || '';
 
   const [rows, setRows] = useState([]);
@@ -461,6 +528,10 @@ export default function NotificationsPage() {
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [deliveryAnomalies, setDeliveryAnomalies] = useState([]);
   const [loadingAnomalies, setLoadingAnomalies] = useState(false);
+  const [deliveryBenchmarks, setDeliveryBenchmarks] = useState(null);
+  const [loadingBenchmarks, setLoadingBenchmarks] = useState(false);
+  const [deliveryIncidents, setDeliveryIncidents] = useState([]);
+  const [loadingIncidents, setLoadingIncidents] = useState(false);
   const [processingDigests, setProcessingDigests] = useState(false);
   const [exportingDelivery, setExportingDelivery] = useState(false);
   const [exportingReport, setExportingReport] = useState(false);
@@ -478,6 +549,21 @@ export default function NotificationsPage() {
     scope: 'global',
     target_user_id: ''
   });
+  const [reportingPanels, setReportingPanels] = useState({
+    controls: true,
+    views: false,
+    anomalies: false,
+    benchmarks: false,
+    incidents: false,
+    comparisons: false,
+    emailOps: false,
+    trends: false,
+    breakdowns: false
+  });
+  const preferencesSectionRef = useRef(null);
+  const filtersSectionRef = useRef(null);
+  const createSectionRef = useRef(null);
+  const reportControlsSectionRef = useRef(null);
 
   useEffect(() => {
     setPreferences(normalizeCommunicationPreferences(user?.communication_preferences));
@@ -492,11 +578,13 @@ export default function NotificationsPage() {
   }, [savedReportViews, user?.id]);
 
   useEffect(() => {
-    if (!canCreate) return;
+    if (!canManageCommunicationOps) return;
     loadDeliveryReport(reportDays, reportFilters);
     loadDeliveryTrends(reportDays, reportFilters);
     loadDeliveryAnomalies(reportDays, reportFilters);
-  }, [canCreate, reportDays, reportFilters]);
+    loadDeliveryBenchmarks(reportDays, reportFilters);
+    loadDeliveryIncidents();
+  }, [canManageCommunicationOps, reportDays, reportFilters]);
 
   async function loadNotifications(nextSkip = skip, nextLimit = limit, nextFilters = filters) {
     setLoading(true);
@@ -525,7 +613,7 @@ export default function NotificationsPage() {
   }
 
   async function loadUsers() {
-    if (!canCreate) return;
+    if (!canSelectTargetUser) return;
     try {
       const response = await apiClient.get('/users/');
       setUsers(response.data || []);
@@ -540,7 +628,7 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     loadUsers();
-  }, [canCreate]);
+  }, [canSelectTargetUser]);
 
   useEffect(() => {
     if (!highlightedNotificationId || loading || rows.length === 0) return;
@@ -603,6 +691,8 @@ export default function NotificationsPage() {
 
   const creatorComparisonRows = useMemo(() => deliveryReport?.creator_rows || [], [deliveryReport?.creator_rows]);
   const scopeComparisonRows = useMemo(() => deliveryReport?.scope_rows || [], [deliveryReport?.scope_rows]);
+  const benchmarkMetrics = useMemo(() => deliveryBenchmarks?.metrics || [], [deliveryBenchmarks?.metrics]);
+  const benchmarkPrimaryMetrics = useMemo(() => benchmarkMetrics.slice(0, 4), [benchmarkMetrics]);
   const emailHealth = useMemo(
     () =>
       deliveryReport?.email_health || {
@@ -695,11 +785,13 @@ export default function NotificationsPage() {
       });
       pushToast({ title: 'Created', description: 'Notification created successfully.', variant: 'success' });
       await loadNotifications(0, limit, filters);
-      if (canCreate) {
+      if (canManageCommunicationOps) {
         await Promise.all([
           loadDeliveryReport(reportDays, reportFilters),
           loadDeliveryTrends(reportDays, reportFilters),
-          loadDeliveryAnomalies(reportDays, reportFilters)
+          loadDeliveryAnomalies(reportDays, reportFilters),
+          loadDeliveryBenchmarks(reportDays, reportFilters),
+          loadDeliveryIncidents()
         ]);
       }
       setSkip(0);
@@ -783,7 +875,9 @@ export default function NotificationsPage() {
         loadNotifications(skip, limit, filters),
         loadDeliveryReport(reportDays, reportFilters),
         loadDeliveryTrends(reportDays, reportFilters),
-        loadDeliveryAnomalies(reportDays, reportFilters)
+        loadDeliveryAnomalies(reportDays, reportFilters),
+        loadDeliveryBenchmarks(reportDays, reportFilters),
+        loadDeliveryIncidents()
       ]);
       pushToast({
         title: retriedCount > 0 ? 'Email retry queued' : 'Nothing to retry',
@@ -805,7 +899,7 @@ export default function NotificationsPage() {
   }
 
   async function loadDeliveryReport(days = reportDays, nextReportFilters = reportFilters) {
-    if (!canCreate) return;
+    if (!canManageCommunicationOps) return;
     setLoadingReport(true);
     try {
       const response = await apiClient.get('/admin/communication/delivery/report', {
@@ -830,7 +924,7 @@ export default function NotificationsPage() {
   }
 
   async function loadDeliveryTrends(days = reportDays, nextReportFilters = reportFilters) {
-    if (!canCreate) return;
+    if (!canManageCommunicationOps) return;
     setLoadingTrends(true);
     try {
       const response = await apiClient.get('/admin/communication/delivery/report/trends', {
@@ -855,7 +949,7 @@ export default function NotificationsPage() {
   }
 
   async function loadDeliveryAnomalies(days = reportDays, nextReportFilters = reportFilters) {
-    if (!canCreate) return;
+    if (!canManageCommunicationOps) return;
     setLoadingAnomalies(true);
     try {
       const response = await apiClient.get('/admin/communication/delivery/report/anomalies', {
@@ -876,6 +970,50 @@ export default function NotificationsPage() {
       });
     } finally {
       setLoadingAnomalies(false);
+    }
+  }
+
+  async function loadDeliveryBenchmarks(days = reportDays, nextReportFilters = reportFilters) {
+    if (!canManageCommunicationOps) return;
+    setLoadingBenchmarks(true);
+    try {
+      const response = await apiClient.get('/admin/communication/delivery/report/benchmarks', {
+        params: {
+          days,
+          source_kind: 'notification',
+          scope: nextReportFilters.scope || undefined,
+          status: nextReportFilters.status || undefined,
+          created_by: nextReportFilters.created_by || undefined
+        }
+      });
+      setDeliveryBenchmarks(response.data || null);
+    } catch (err) {
+      pushToast({
+        title: 'Benchmark load failed',
+        description: formatApiError(err, 'Unable to load delivery benchmarks'),
+        variant: 'error'
+      });
+    } finally {
+      setLoadingBenchmarks(false);
+    }
+  }
+
+  async function loadDeliveryIncidents() {
+    if (!canManageCommunicationOps) return;
+    setLoadingIncidents(true);
+    try {
+      const response = await apiClient.get('/admin/communication/delivery/incidents', {
+        params: { limit: 25 }
+      });
+      setDeliveryIncidents(Array.isArray(response.data?.incidents) ? response.data.incidents : []);
+    } catch (err) {
+      pushToast({
+        title: 'Incident load failed',
+        description: formatApiError(err, 'Unable to load communication incidents'),
+        variant: 'error'
+      });
+    } finally {
+      setLoadingIncidents(false);
     }
   }
 
@@ -919,29 +1057,34 @@ export default function NotificationsPage() {
   }
 
   async function exportDeliveryReportCsv() {
+    return exportDeliveryReportCsvFor(reportDays, reportFilters, reportExportView);
+  }
+
+  async function exportDeliveryReportCsvFor(days, nextReportFilters, view) {
     const query = new URLSearchParams({
-      days: String(reportDays),
+      days: String(days),
       source_kind: 'notification',
-      view: reportExportView
+      view
     });
-    if (reportFilters.scope) {
-      query.set('scope', reportFilters.scope);
+    if (nextReportFilters.scope) {
+      query.set('scope', nextReportFilters.scope);
     }
-    if (reportFilters.status) {
-      query.set('status', reportFilters.status);
+    if (nextReportFilters.status) {
+      query.set('status', nextReportFilters.status);
     }
-    if (reportFilters.created_by) {
-      query.set('created_by', reportFilters.created_by);
+    if (nextReportFilters.created_by) {
+      query.set('created_by', nextReportFilters.created_by);
     }
     const ok = await downloadCsv(
       `/admin/communication/delivery/report/export?${query.toString()}`,
-      `notification-delivery-${reportExportView}-${reportDays}d.csv`,
+      `notification-delivery-${view}-${days}d.csv`,
       setExportingReport
     );
     if (ok) {
-      const exportLabel = REPORT_EXPORT_VIEW_OPTIONS.find((item) => item.value === reportExportView)?.label || 'Report';
+      const exportLabel = REPORT_EXPORT_VIEW_OPTIONS.find((item) => item.value === view)?.label || 'Report';
       pushToast({ title: 'Export ready', description: `${exportLabel} download is ready.`, variant: 'success' });
     }
+    return ok;
   }
 
   async function processDueDigests() {
@@ -953,6 +1096,8 @@ export default function NotificationsPage() {
         loadDeliveryReport(reportDays, reportFilters),
         loadDeliveryTrends(reportDays, reportFilters),
         loadDeliveryAnomalies(reportDays, reportFilters),
+        loadDeliveryBenchmarks(reportDays, reportFilters),
+        loadDeliveryIncidents(),
         loadNotifications(skip, limit, filters)
       ]);
       pushToast({
@@ -982,6 +1127,62 @@ export default function NotificationsPage() {
   function clearReportViewFilters() {
     setReportFilters({ scope: '', status: '', created_by: '' });
     setReportDays(7);
+  }
+
+  function applyReconciliationPreset(preset, sourceLabel = 'Reconciliation') {
+    if (!preset) return;
+    const nextFilters = normalizeReportFilters({
+      ...reportFilters,
+      ...preset.filters
+    });
+    const nextDays = Number(preset.days || reportDays);
+    const nextExportView = preset.exportView || reportExportView;
+    setReportDays(nextDays);
+    setReportFilters(nextFilters);
+    setReportExportView(nextExportView);
+    setReportingPanels((prev) => ({
+      ...prev,
+      controls: true,
+      anomalies: true,
+      benchmarks: true,
+      incidents: true
+    }));
+    window.setTimeout(() => {
+      const target = reportControlsSectionRef.current;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.focus({ preventScroll: true });
+    }, 0);
+    pushToast({
+      title: 'Report view updated',
+      description: `${sourceLabel} is now focused on ${preset.label}.`,
+      variant: 'info'
+    });
+  }
+
+  async function exportReconciliationPreset(preset, sourceLabel = 'Reconciliation') {
+    if (!preset) return;
+    const nextFilters = normalizeReportFilters({
+      ...reportFilters,
+      ...preset.filters
+    });
+    const nextDays = Number(preset.days || reportDays);
+    const nextExportView = preset.exportView || reportExportView;
+    setReportDays(nextDays);
+    setReportFilters(nextFilters);
+    setReportExportView(nextExportView);
+    setReportingPanels((prev) => ({
+      ...prev,
+      controls: true,
+      incidents: true
+    }));
+    const ok = await exportDeliveryReportCsvFor(nextDays, nextFilters, nextExportView);
+    if (ok) {
+      pushToast({
+        title: 'Impacted rows exported',
+        description: `${sourceLabel} exported ${preset.label}.`,
+        variant: 'success'
+      });
+    }
   }
 
   function saveCurrentReportView() {
@@ -1105,30 +1306,27 @@ export default function NotificationsPage() {
     }
   }
 
+  function scrollBannerActionTarget(actionKey) {
+    const targetMap = {
+      settings: preferencesSectionRef.current,
+      filter: filtersSectionRef.current,
+      create: createSectionRef.current
+    };
+    const target = targetMap[actionKey];
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target.focus({ preventScroll: true });
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', SECTION_HASH_BY_ACTION[actionKey] || window.location.pathname);
+    }
+  }
+
   function onBannerActionClick(actionKey) {
-    if (actionKey === 'settings') {
-      pushToast({
-        title: 'Notification settings',
-        description: 'Notification settings button is clickable. The full action will be connected next.',
-        variant: 'info'
-      });
-      return;
-    }
+    scrollBannerActionTarget(actionKey);
+  }
 
-    if (actionKey === 'filter') {
-      pushToast({
-        title: 'FILTER',
-        description: 'Filter button is clickable. The banner shortcut will be connected next.',
-        variant: 'info'
-      });
-      return;
-    }
-
-    pushToast({
-      title: 'CREATE',
-      description: 'Create button is clickable. The quick-create shortcut will be connected next.',
-      variant: 'info'
-    });
+  function toggleReportingPanel(key) {
+    setReportingPanels((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   return (
@@ -1180,7 +1378,13 @@ export default function NotificationsPage() {
         </div>
       </Card>
 
-      <Card className="space-y-4">
+      <section
+        id="notification-preferences"
+        ref={preferencesSectionRef}
+        tabIndex={-1}
+        className="scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      >
+        <Card className="space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Notification Preferences</h2>
@@ -1365,11 +1569,17 @@ export default function NotificationsPage() {
             ))}
           </div>
         </div>
-      </Card>
+        </Card>
+      </section>
 
-      {canCreate ? (
+      {canManageCommunicationOps ? (
         <Card className="space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          <div
+            ref={reportControlsSectionRef}
+            id="notification-delivery-report"
+            tabIndex={-1}
+            className="flex flex-wrap items-start justify-between gap-3 scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          >
             <div>
               <h2 className="text-lg font-semibold">Delivery Reporting</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -1377,104 +1587,183 @@ export default function NotificationsPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                className="input w-36"
-                value={reportDays}
-                onChange={(event) => setReportDays(Number(event.target.value))}
-              >
-                {[1, 7, 14, 30, 90].map((days) => (
-                  <option key={days} value={days}>
-                    Last {days} day{days === 1 ? '' : 's'}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="input min-w-[180px]"
-                value={reportExportView}
-                onChange={(event) => setReportExportView(event.target.value)}
-              >
-                {REPORT_EXPORT_VIEW_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  void Promise.all([
-                    loadDeliveryReport(reportDays, reportFilters),
-                    loadDeliveryTrends(reportDays, reportFilters),
-                    loadDeliveryAnomalies(reportDays, reportFilters)
-                  ]);
-                }}
-                disabled={loadingReport || loadingTrends || loadingAnomalies}
-              >
-                {loadingReport || loadingTrends || loadingAnomalies ? 'Refreshing...' : 'Refresh'}
-              </button>
-              <button type="button" className="btn-secondary" onClick={exportDeliveryReportCsv} disabled={exportingReport}>
-                {exportingReport ? 'Exporting...' : 'Export CSV'}
-              </button>
-              <button type="button" className="btn-primary" onClick={processDueDigests} disabled={processingDigests}>
-                {processingDigests ? 'Processing...' : 'Process Due Digests'}
-              </button>
+              <Badge variant="info">{reportDays}d Window</Badge>
+              <Badge variant={deliveryAnomalies.length ? 'warning' : 'success'}>
+                {loadingAnomalies ? 'Checking...' : deliveryAnomalies.length ? `${deliveryAnomalies.length} Alerts` : 'Stable'}
+              </Badge>
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-4">
-            <label className="text-sm text-slate-600 dark:text-slate-300">
-              <span className="mb-1 block font-medium">Scope Filter</span>
-              <select
-                className="input"
-                value={reportFilters.scope}
-                onChange={(event) => setReportFilters((prev) => ({ ...prev, scope: event.target.value }))}
-              >
-                <option value="">All Scopes</option>
-                {SCOPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm text-slate-600 dark:text-slate-300">
-              <span className="mb-1 block font-medium">Status Filter</span>
-              <select
-                className="input"
-                value={reportFilters.status}
-                onChange={(event) => setReportFilters((prev) => ({ ...prev, status: event.target.value }))}
-              >
-                {REPORT_STATUS_OPTIONS.map((option) => (
-                  <option key={option.value || 'all'} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm text-slate-600 dark:text-slate-300">
-              <span className="mb-1 block font-medium">Creator Filter</span>
-              <select
-                className="input"
-                value={reportFilters.created_by}
-                onChange={(event) => setReportFilters((prev) => ({ ...prev, created_by: event.target.value }))}
-              >
-                <option value="">All Creators</option>
-                {userOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex items-end gap-2">
-              <button type="button" className="btn-secondary w-full" onClick={clearReportViewFilters}>
-                Reset View
-              </button>
-            </div>
-          </div>
+          <ResponsiveOpsSection
+            title="Report Controls"
+            summary="Filters, export settings, refresh controls, and digest processing."
+            badge={<Badge variant="default">{reportExportView.replace('_', ' ')}</Badge>}
+            open={reportingPanels.controls}
+            onToggle={() => toggleReportingPanel('controls')}
+          >
+            <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="hidden lg:flex lg:flex-wrap lg:items-center lg:gap-2">
+                <select
+                  className="input w-full sm:w-36"
+                  value={reportDays}
+                  onChange={(event) => setReportDays(Number(event.target.value))}
+                >
+                  {[1, 7, 14, 30, 90].map((days) => (
+                    <option key={days} value={days}>
+                      Last {days} day{days === 1 ? '' : 's'}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="input w-full sm:min-w-[180px]"
+                  value={reportExportView}
+                  onChange={(event) => setReportExportView(event.target.value)}
+                >
+                  {REPORT_EXPORT_VIEW_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn-secondary w-full sm:w-auto"
+                  onClick={() => {
+                    void Promise.all([
+                      loadDeliveryReport(reportDays, reportFilters),
+                      loadDeliveryTrends(reportDays, reportFilters),
+                      loadDeliveryAnomalies(reportDays, reportFilters),
+                      loadDeliveryBenchmarks(reportDays, reportFilters),
+                      loadDeliveryIncidents()
+                    ]);
+                  }}
+                  disabled={loadingReport || loadingTrends || loadingAnomalies || loadingBenchmarks || loadingIncidents}
+                >
+                  {loadingReport || loadingTrends || loadingAnomalies || loadingBenchmarks || loadingIncidents ? 'Refreshing...' : 'Refresh'}
+                </button>
+                <button type="button" className="btn-secondary w-full sm:w-auto" onClick={exportDeliveryReportCsv} disabled={exportingReport}>
+                  {exportingReport ? 'Exporting...' : 'Export CSV'}
+                </button>
+                <button type="button" className="btn-primary w-full sm:w-auto" onClick={processDueDigests} disabled={processingDigests}>
+                  {processingDigests ? 'Processing...' : 'Process Due Digests'}
+                </button>
+              </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="text-sm text-slate-600 dark:text-slate-300">
+                  <span className="mb-1 block font-medium">Time Window</span>
+                  <select
+                    className="input"
+                    value={reportDays}
+                    onChange={(event) => setReportDays(Number(event.target.value))}
+                  >
+                    {[1, 7, 14, 30, 90].map((days) => (
+                      <option key={days} value={days}>
+                        Last {days} day{days === 1 ? '' : 's'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm text-slate-600 dark:text-slate-300">
+                  <span className="mb-1 block font-medium">Export View</span>
+                  <select
+                    className="input"
+                    value={reportExportView}
+                    onChange={(event) => setReportExportView(event.target.value)}
+                  >
+                    {REPORT_EXPORT_VIEW_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm text-slate-600 dark:text-slate-300">
+                  <span className="mb-1 block font-medium">Scope Filter</span>
+                  <select
+                    className="input"
+                    value={reportFilters.scope}
+                    onChange={(event) => setReportFilters((prev) => ({ ...prev, scope: event.target.value }))}
+                  >
+                    <option value="">All Scopes</option>
+                    {SCOPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm text-slate-600 dark:text-slate-300">
+                  <span className="mb-1 block font-medium">Status Filter</span>
+                  <select
+                    className="input"
+                    value={reportFilters.status}
+                    onChange={(event) => setReportFilters((prev) => ({ ...prev, status: event.target.value }))}
+                  >
+                    {REPORT_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value || 'all'} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm text-slate-600 dark:text-slate-300 sm:col-span-2 xl:col-span-3">
+                  <span className="mb-1 block font-medium">Creator Filter</span>
+                  <select
+                    className="input"
+                    value={reportFilters.created_by}
+                    onChange={(event) => setReportFilters((prev) => ({ ...prev, created_by: event.target.value }))}
+                  >
+                    <option value="">All Creators</option>
+                    {userOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="sm:col-span-2 xl:col-span-1">
+                  <button type="button" className="btn-secondary w-full" onClick={clearReportViewFilters}>
+                    Reset View
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  className="btn-secondary w-full"
+                  onClick={() => {
+                    void Promise.all([
+                      loadDeliveryReport(reportDays, reportFilters),
+                      loadDeliveryTrends(reportDays, reportFilters),
+                      loadDeliveryAnomalies(reportDays, reportFilters),
+                      loadDeliveryBenchmarks(reportDays, reportFilters),
+                      loadDeliveryIncidents()
+                    ]);
+                  }}
+                  disabled={loadingReport || loadingTrends || loadingAnomalies || loadingBenchmarks || loadingIncidents}
+                >
+                  {loadingReport || loadingTrends || loadingAnomalies || loadingBenchmarks || loadingIncidents ? 'Refreshing...' : 'Refresh'}
+                </button>
+                <button type="button" className="btn-secondary w-full" onClick={exportDeliveryReportCsv} disabled={exportingReport}>
+                  {exportingReport ? 'Exporting...' : 'Export CSV'}
+                </button>
+                <button type="button" className="btn-primary w-full" onClick={processDueDigests} disabled={processingDigests}>
+                  {processingDigests ? 'Processing...' : 'Process Due Digests'}
+                </button>
+              </div>
+            </div>
+          </ResponsiveOpsSection>
+
+          <ResponsiveOpsSection
+            title="Saved Report Views"
+            summary="Reuse common operational filters without rebuilding the same report every time."
+            badge={<Badge variant="default">{availableReportViews.length}</Badge>}
+            open={reportingPanels.views}
+            onToggle={() => toggleReportingPanel('views')}
+          >
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Saved Report Views</p>
@@ -1482,8 +1771,8 @@ export default function NotificationsPage() {
                   Reuse common operational filters without rebuilding the same report every time.
                 </p>
               </div>
-              <div className="flex min-w-[280px] flex-1 flex-wrap items-end gap-2">
-                <label className="min-w-[180px] flex-1 text-sm text-slate-600 dark:text-slate-300">
+              <div className="flex min-w-0 flex-1 flex-col items-stretch gap-2 sm:min-w-[280px] sm:flex-row sm:flex-wrap sm:items-end">
+                <label className="min-w-0 flex-1 text-sm text-slate-600 dark:text-slate-300 sm:min-w-[180px]">
                   <span className="mb-1 block font-medium">Save Current Filters</span>
                   <input
                     className="input"
@@ -1492,7 +1781,7 @@ export default function NotificationsPage() {
                     onChange={(event) => setReportViewName(event.target.value)}
                   />
                 </label>
-                <button type="button" className="btn-primary" onClick={saveCurrentReportView}>
+                <button type="button" className="btn-primary w-full sm:w-auto" onClick={saveCurrentReportView}>
                   Save View
                 </button>
               </div>
@@ -1521,12 +1810,16 @@ export default function NotificationsPage() {
                           {view.days}d | Scope {view.filters.scope || 'all'} | Status {view.filters.status || 'all'} | Creator {view.filters.created_by || 'all'}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" className="btn-secondary" onClick={() => applyReportView(view)}>
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+                        <button type="button" className="btn-secondary w-full sm:w-auto" onClick={() => applyReportView(view)}>
                           Apply
                         </button>
                         {!view.readonly ? (
-                          <button type="button" className="btn-secondary" onClick={() => deleteSavedReportView(view.key)}>
+                          <button
+                            type="button"
+                            className="btn-secondary w-full sm:w-auto"
+                            onClick={() => deleteSavedReportView(view.key)}
+                          >
                             Delete
                           </button>
                         ) : null}
@@ -1536,10 +1829,22 @@ export default function NotificationsPage() {
                 );
               })}
             </div>
-          </div>
+            </div>
+          </ResponsiveOpsSection>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-            <div className="flex items-start justify-between gap-3">
+          <ResponsiveOpsSection
+            title="Anomaly Watch"
+            summary="Rule-based warnings for the active report view, focused on failure spikes and pending backlog buildup."
+            badge={
+              <Badge variant={deliveryAnomalies.length ? 'warning' : 'success'}>
+                {loadingAnomalies ? 'Checking...' : deliveryAnomalies.length ? `${deliveryAnomalies.length} Active` : 'Stable'}
+              </Badge>
+            }
+            open={reportingPanels.anomalies}
+            onToggle={() => toggleReportingPanel('anomalies')}
+          >
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Anomaly Watch</p>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -1572,6 +1877,23 @@ export default function NotificationsPage() {
                       Metric {alert.metric} | Current {alert.current_value}
                       {alert.baseline_value !== null && alert.baseline_value !== undefined ? ` | Baseline ${alert.baseline_value}` : ''}
                     </p>
+                    {resolveReconciliationPreset({ alertCode: alert.code, metricKey: alert.metric }) ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          aria-label={`Focus impacted rows for ${alert.code}`}
+                          onClick={() =>
+                            applyReconciliationPreset(
+                              resolveReconciliationPreset({ alertCode: alert.code, metricKey: alert.metric }),
+                              alert.code
+                            )
+                          }
+                        >
+                          Focus impacted rows
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ))
               ) : (
@@ -1580,9 +1902,186 @@ export default function NotificationsPage() {
                 </p>
               )}
             </div>
-          </div>
+            </div>
+          </ResponsiveOpsSection>
 
-          <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
+          <ResponsiveOpsSection
+            title="Benchmark View"
+            summary="Compare the current reporting window against the immediately previous window using the same filters."
+            badge={<Badge variant="info">{loadingBenchmarks ? 'Loading...' : `${reportDays}d vs previous`}</Badge>}
+            open={reportingPanels.benchmarks}
+            onToggle={() => toggleReportingPanel('benchmarks')}
+          >
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Benchmark View</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Current window performance versus the prior matched window for the active report filters.
+                  </p>
+                </div>
+                {deliveryBenchmarks ? (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {new Date(deliveryBenchmarks.current_start).toLocaleDateString()} to {new Date(deliveryBenchmarks.current_end).toLocaleDateString()}
+                  </div>
+                ) : null}
+              </div>
+              {loadingBenchmarks ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">Loading benchmark comparison...</p>
+              ) : benchmarkPrimaryMetrics.length ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {benchmarkPrimaryMetrics.map((metric) => (
+                    <div key={metric.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">{metric.label}</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">{metric.current_value}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Previous {metric.previous_value}</p>
+                      <p className={`mt-2 text-xs font-semibold ${metric.trend === 'up' ? 'text-emerald-600 dark:text-emerald-400' : metric.trend === 'down' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                        Delta {formatDelta(metric.delta_value)}
+                        {metric.delta_pct !== null ? ` (${formatDelta(metric.delta_pct, { suffix: '%', decimals: 1 })})` : ''}
+                      </p>
+                      {resolveReconciliationPreset({ metricKey: metric.key, metricLabel: metric.label }) ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            aria-label={`Focus benchmark rows for ${metric.label}`}
+                            onClick={() =>
+                              applyReconciliationPreset(
+                                resolveReconciliationPreset({ metricKey: metric.key, metricLabel: metric.label }),
+                                metric.label
+                              )
+                            }
+                          >
+                            Focus rows
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No benchmark data available for the current view.</p>
+              )}
+              {benchmarkMetrics.length ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      <tr>
+                        <th className="pb-2 pr-3 font-medium">Metric</th>
+                        <th className="pb-2 pr-3 font-medium">Current</th>
+                        <th className="pb-2 pr-3 font-medium">Previous</th>
+                        <th className="pb-2 pr-3 font-medium">Delta</th>
+                        <th className="pb-2 font-medium">Direction</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-slate-700 dark:text-slate-200">
+                      {benchmarkMetrics.map((metric) => (
+                        <tr key={metric.key} className="border-t border-slate-200 dark:border-slate-800">
+                          <td className="py-2 pr-3 font-medium">{metric.label}</td>
+                          <td className="py-2 pr-3">{metric.current_value}</td>
+                          <td className="py-2 pr-3">{metric.previous_value}</td>
+                          <td className="py-2 pr-3">
+                            {formatDelta(metric.delta_value)}
+                            {metric.delta_pct !== null ? ` (${formatDelta(metric.delta_pct, { suffix: '%', decimals: 1 })})` : ''}
+                          </td>
+                          <td className="py-2 capitalize">{metric.trend}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          </ResponsiveOpsSection>
+
+          <ResponsiveOpsSection
+            title="Incident History"
+            summary="Review active and recently resolved communication incidents from the anomaly escalation pipeline."
+            badge={<Badge variant={deliveryIncidents.some((item) => item.is_active) ? 'warning' : 'default'}>{loadingIncidents ? 'Loading...' : `${deliveryIncidents.filter((item) => item.is_active).length} Active`}</Badge>}
+            open={reportingPanels.incidents}
+            onToggle={() => toggleReportingPanel('incidents')}
+          >
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+              {loadingIncidents ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">Loading communication incidents...</p>
+              ) : deliveryIncidents.length ? (
+                deliveryIncidents.map((incident) => (
+                  <div key={incident.alert_code} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{incident.alert_code}</p>
+                          <Badge variant={incident.is_active ? 'warning' : 'success'}>{incident.is_active ? 'Active' : 'Resolved'}</Badge>
+                          <Badge variant="default">{incident.level || 'info'}</Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{incident.message}</p>
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Last seen {formatTimestamp(incident.last_seen_at)}
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-4 text-sm text-slate-600 dark:text-slate-300">
+                      <div>Routed {incident.routed_count || 0}</div>
+                      <div>Resolved {incident.resolved_count || 0}</div>
+                      <div>Cooldown hits {incident.cooldown_suppressed_count || 0}</div>
+                      <div>Notifications {incident.notifications_sent_total || 0}</div>
+                    </div>
+                    {incident.history?.length ? (
+                      <div className="mt-3 space-y-2">
+                        {incident.history.slice().reverse().slice(0, 3).map((entry, index) => (
+                          <div key={`${incident.alert_code}-${index}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-semibold uppercase tracking-wide">{entry.action || 'event'}</span>
+                              <span>{entry.timestamp ? formatTimestamp(entry.timestamp) : '-'}</span>
+                            </div>
+                            <p className="mt-1">{entry.message || incident.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {resolveReconciliationPreset({ alertCode: incident.alert_code }) ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          aria-label={`Focus impacted rows for ${incident.alert_code}`}
+                          onClick={() =>
+                            applyReconciliationPreset(resolveReconciliationPreset({ alertCode: incident.alert_code }), incident.alert_code)
+                          }
+                        >
+                          Focus impacted rows
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          aria-label={`Export impacted rows for ${incident.alert_code}`}
+                          onClick={() =>
+                            void exportReconciliationPreset(
+                              resolveReconciliationPreset({ alertCode: incident.alert_code }),
+                              incident.alert_code
+                            )
+                          }
+                        >
+                          Export impacted CSV
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No communication incidents recorded yet.</p>
+              )}
+            </div>
+          </ResponsiveOpsSection>
+
+          <ResponsiveOpsSection
+            title="Comparative Analytics"
+            summary="Compare delivery quality by creator and scope for the active operational view."
+            badge={<Badge variant="info">{activeReportViewKey ? 'Tracked View' : 'Current Filters'}</Badge>}
+            open={reportingPanels.comparisons}
+            onToggle={() => toggleReportingPanel('comparisons')}
+          >
+            <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -1739,9 +2238,17 @@ export default function NotificationsPage() {
                 </div>
               </div>
             </div>
-          </div>
+            </div>
+          </ResponsiveOpsSection>
 
-          <div className="grid gap-3 xl:grid-cols-2">
+          <ResponsiveOpsSection
+            title="Trend Charts"
+            summary="Open the delivery health and engagement trend charts for the active report view."
+            badge={<Badge variant="default">{reportDays}d</Badge>}
+            open={reportingPanels.trends}
+            onToggle={() => toggleReportingPanel('trends')}
+          >
+            <div className="grid gap-3 xl:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -1816,36 +2323,45 @@ export default function NotificationsPage() {
                 )}
               </div>
             </div>
-          </div>
+            </div>
+          </ResponsiveOpsSection>
 
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Rows</p>
-              <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.total_rows || 0}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Sources {deliveryReport?.total_sources || 0}</p>
+          <ResponsiveOpsSection
+            title="Delivery Snapshot"
+            summary="Open the current report totals and breakdowns by status, channel, and scope."
+            badge={<Badge variant="default">{deliveryReport?.total_rows || 0} rows</Badge>}
+            open={reportingPanels.breakdowns}
+            onToggle={() => toggleReportingPanel('breakdowns')}
+          >
+            <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Rows</p>
+                <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.total_rows || 0}</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Sources {deliveryReport?.total_sources || 0}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Sent</p>
+                <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.sent_count || 0}</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Failed {deliveryReport?.failed_count || 0} | Pending {deliveryReport?.pending_count || 0}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Skipped</p>
+                <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.skipped_count || 0}</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Read rows {deliveryReport?.read_count || 0}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Digest Queue</p>
+                <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.digest?.queued_total || 0}</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Sent {deliveryReport?.digest?.sent_total || 0} | Failed {deliveryReport?.digest?.failed_total || 0}
+                </p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Sent</p>
-              <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.sent_count || 0}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Failed {deliveryReport?.failed_count || 0} | Pending {deliveryReport?.pending_count || 0}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Skipped</p>
-              <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.skipped_count || 0}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Read rows {deliveryReport?.read_count || 0}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Digest Queue</p>
-              <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{deliveryReport?.digest?.queued_total || 0}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Sent {deliveryReport?.digest?.sent_total || 0} | Failed {deliveryReport?.digest?.failed_total || 0}
-              </p>
-            </div>
-          </div>
 
-          <div className="grid gap-3 lg:grid-cols-3">
+            <div className="grid gap-3 lg:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
               <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">By Status</p>
               <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
@@ -1892,6 +2408,8 @@ export default function NotificationsPage() {
               </div>
             </div>
           </div>
+            </div>
+          </ResponsiveOpsSection>
         </Card>
       ) : null}
 
@@ -1910,7 +2428,13 @@ export default function NotificationsPage() {
         </Card>
       </div>
 
-      <Card>
+      <section
+        id="notification-filters"
+        ref={filtersSectionRef}
+        tabIndex={-1}
+        className="scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      >
+        <Card>
         <form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" onSubmit={onApplyFilters}>
           <FormInput
             as="select"
@@ -1985,10 +2509,17 @@ export default function NotificationsPage() {
             {submitting ? 'Updating...' : `Mark Visible Read (${stats.unread})`}
           </button>
         </div>
-      </Card>
+        </Card>
+      </section>
 
       {canCreate ? (
-        <Card>
+        <section
+          id="notification-create"
+          ref={createSectionRef}
+          tabIndex={-1}
+          className="scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        >
+          <Card>
           <h2 className="mb-3 text-lg font-semibold">Create Notification</h2>
           <form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={onCreateNotification}>
             <FormInput
@@ -2029,26 +2560,29 @@ export default function NotificationsPage() {
               value={form.message}
               onChange={(event) => setForm((prev) => ({ ...prev, message: event.target.value }))}
             />
-            <FormInput
-              as="select"
-              label="Target User"
-              value={form.target_user_id}
-              onChange={(event) => setForm((prev) => ({ ...prev, target_user_id: event.target.value }))}
-            >
-              <option value="">Global Notification</option>
-              {userOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </FormInput>
+            {canSelectTargetUser ? (
+              <FormInput
+                as="select"
+                label="Target User"
+                value={form.target_user_id}
+                onChange={(event) => setForm((prev) => ({ ...prev, target_user_id: event.target.value }))}
+              >
+                <option value="">Global Notification</option>
+                {userOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </FormInput>
+            ) : null}
             <div className="flex items-end">
               <button type="submit" className="btn-primary w-full" disabled={submitting}>
                 {submitting ? 'Creating...' : 'Create'}
               </button>
             </div>
           </form>
-        </Card>
+          </Card>
+        </section>
       ) : null}
 
       <Card className="space-y-3">
@@ -2157,7 +2691,7 @@ export default function NotificationsPage() {
                       Mark Read
                     </button>
                   ) : null}
-                  {canCreate ? (
+                  {canManageCommunicationOps ? (
                     <button className="btn-secondary" onClick={() => loadDeliveryDetails(item.id, { openModal: true })}>
                       View delivery
                     </button>

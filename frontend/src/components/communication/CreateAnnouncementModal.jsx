@@ -28,6 +28,7 @@ export default function CreateAnnouncementModal({
   onClose,
   onPublish,
   audienceOptions,
+  canPreviewAudience = false,
   initialValues = null,
   templateOptions = [],
   submitting = false,
@@ -98,7 +99,7 @@ export default function CreateAnnouncementModal({
     let alive = true;
 
     async function loadAudiencePreview() {
-      if (!open || !selectedAudience) {
+      if (!open || !selectedAudience || !canPreviewAudience) {
         if (alive) {
           setAudiencePreview(null);
           setPreviewError('');
@@ -129,7 +130,7 @@ export default function CreateAnnouncementModal({
     return () => {
       alive = false;
     };
-  }, [open, selectedAudience]);
+  }, [canPreviewAudience, open, selectedAudience]);
 
   const scheduleError = useMemo(() => {
     if (!scheduleForLater || !scheduledAt) return '';

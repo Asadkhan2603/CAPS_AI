@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
@@ -20,6 +20,8 @@ const FILTERS = [
   { key: 'expired', label: 'Expired' },
   { key: 'mine', label: 'My Published' }
 ];
+
+const COMMUNICATION_OPERATOR_TEACHER_EXTENSIONS = ['year_head', 'class_coordinator', 'club_coordinator'];
 
 function notifyNoticeBadgeRefresh() {
   if (typeof window !== 'undefined') {
@@ -52,6 +54,10 @@ export default function AnnouncementsPage() {
   const highlightedNoticeId = searchParams.get('highlight') || '';
 
   const canCreate = user?.role === 'admin' || user?.role === 'teacher';
+  const canManageCommunicationOps =
+    user?.role === 'admin' ||
+    (user?.role === 'teacher' &&
+      COMMUNICATION_OPERATOR_TEACHER_EXTENSIONS.some((extension) => (user?.extended_roles || []).includes(extension)));
   const isStudent = user?.role === 'student';
   const visibleFilters = useMemo(
     () => FILTERS.filter((item) => !(isStudent && item.key === 'mine')),
@@ -460,7 +466,7 @@ export default function AnnouncementsPage() {
                   audienceText={audienceText}
                   isRead={Boolean(notice?.is_read)}
                   onMarkRead={handleMarkRead}
-                  canInspectDelivery={canCreate}
+                  canInspectDelivery={canManageCommunicationOps}
                   onViewDelivery={(item) => loadDeliveryDetails(item.id, { openModal: true })}
                   highlighted={highlightedNoticeId === notice.id}
                 />
@@ -510,6 +516,7 @@ export default function AnnouncementsPage() {
         onClose={() => setShowCreate(false)}
         onPublish={handlePublish}
         audienceOptions={audienceOptions}
+        canPreviewAudience={canManageCommunicationOps}
         submitting={publishing}
         uploadProgress={uploadProgress}
       />

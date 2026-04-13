@@ -10,6 +10,7 @@ class EvaluationAIInsight(BaseModel):
     suggestions: list[str] = []
     risk_flags: list[str] = []
     confidence: float = Field(ge=0, le=1)
+    confidence_mode: str | None = None
     status: str = "fallback"
     provider: str | None = None
     prompt_version: str | None = None
@@ -84,6 +85,7 @@ class EvaluationOut(BaseModel):
     ai_runtime_snapshot: dict | None = None
     schema_version: int = 1
     ai_confidence: float | None = Field(default=None, ge=0, le=1)
+    ai_confidence_mode: str | None = None
     ai_risk_flags: list[str] = []
     ai_strengths: list[str] = []
     ai_gaps: list[str] = []
@@ -92,5 +94,125 @@ class EvaluationOut(BaseModel):
     is_finalized: bool = False
     finalized_at: datetime | None = None
     finalized_by_user_id: str | None = None
+    result_status: str = "draft"
+    released_at: datetime | None = None
+    released_by_user_id: str | None = None
+    result_version: int = 1
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class OfficialMarksheetItemOut(BaseModel):
+    evaluation_id: str
+    submission_id: str
+    submission_label: str | None = None
+    teacher_user_id: str
+    attendance_percent: int
+    internal_total: float
+    final_exam: int
+    grand_total: float
+    grade: str
+    remarks: str | None = None
+    released_at: datetime | None = None
+    result_version: int = 1
+
+
+class OfficialMarksheetOut(BaseModel):
+    student_user_id: str
+    student_name: str | None = None
+    roll_number: str | None = None
+    email: str | None = None
+    generated_at: datetime
+    released_results_count: int = 0
+    average_score: float = 0
+    items: list[OfficialMarksheetItemOut] = Field(default_factory=list)
+
+
+class SemesterResultItemOut(BaseModel):
+    evaluation_id: str
+    submission_id: str
+    assignment_id: str | None = None
+    assignment_title: str | None = None
+    subject_id: str | None = None
+    subject_name: str | None = None
+    subject_code: str | None = None
+    exam_id: str | None = None
+    exam_title: str | None = None
+    grand_total: float = 0
+    grade: str = "Needs Improvement"
+    grade_point: float = 0
+    released_at: datetime | None = None
+    result_version: int = 1
+
+
+class SemesterResultOut(BaseModel):
+    id: str
+    student_user_id: str
+    student_name: str | None = None
+    roll_number: str | None = None
+    semester_id: str
+    semester_label: str | None = None
+    semester_number: int | None = None
+    class_id: str | None = None
+    class_name: str | None = None
+    batch_id: str | None = None
+    status: str = "released"
+    result_version: int = 1
+    released_at: datetime | None = None
+    released_by_user_id: str | None = None
+    correction_requested_at: datetime | None = None
+    correction_requested_by_user_id: str | None = None
+    correction_reason: str | None = None
+    reopened_at: datetime | None = None
+    reopened_by_user_id: str | None = None
+    reopen_reason: str | None = None
+    result_count: int = 0
+    average_score: float = 0
+    gpa: float = 0
+    items: list[SemesterResultItemOut] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    schema_version: int = 1
+
+
+class TranscriptSemesterOut(BaseModel):
+    result_id: str
+    semester_id: str | None = None
+    semester_label: str | None = None
+    semester_number: int | None = None
+    status: str = "released"
+    result_version: int = 1
+    released_at: datetime | None = None
+    result_count: int = 0
+    average_score: float = 0
+    gpa: float = 0
+    cgpa: float = 0
+
+
+class TranscriptOut(BaseModel):
+    student_user_id: str
+    student_name: str | None = None
+    roll_number: str | None = None
+    email: str | None = None
+    generated_at: datetime
+    semester_count: int = 0
+    cgpa: float = 0
+    semesters: list[TranscriptSemesterOut] = Field(default_factory=list)
+
+
+class GradingPolicyOut(BaseModel):
+    grade_points: dict[str, float] = Field(default_factory=dict)
+    transcript_precision: int = 2
+
+
+class GradingPolicyUpdate(BaseModel):
+    grade_points: dict[str, float] | None = None
+    transcript_precision: int | None = Field(default=None, ge=0, le=4)
+
+
+class SemesterResultReopenRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+
+
+class SemesterResultCorrectionRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)

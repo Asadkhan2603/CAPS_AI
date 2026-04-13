@@ -168,6 +168,8 @@ async def route_operational_alert_notifications(
                 scope=ALERT_NOTIFICATION_SCOPE,
                 target_user_ids=target_user_ids,
                 created_by=None,
+                track_delivery=False,
+                send_email=False,
             )
             notifications_created += sent_count
             routed_alert_codes.append(code)
@@ -226,6 +228,8 @@ async def route_operational_alert_notifications(
             scope=ALERT_NOTIFICATION_SCOPE,
             target_user_ids=target_user_ids,
             created_by=None,
+            track_delivery=False,
+            send_email=False,
         )
         notifications_created += sent_count
         resolved_alert_codes.append(code)

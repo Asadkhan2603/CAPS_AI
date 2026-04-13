@@ -95,6 +95,21 @@ Stop:
 docker compose down
 ```
 
+Docker notes:
+- The backend container now starts through `backend/docker-entrypoint.sh`.
+- On container start, the backend runs `python scripts/seed_default_users.py` before `uvicorn`.
+- Seed behavior is controlled through `backend/.env.docker`:
+  - `SEED_DEFAULT_USERS`
+  - `DEFAULT_USER_PASSWORD`
+  - `DEFAULT_SUPER_ADMIN_NAME`
+  - `DEFAULT_SUPER_ADMIN_EMAIL`
+  - `DEFAULT_TEACHER_NAME`
+  - `DEFAULT_TEACHER_EMAIL`
+  - `DEFAULT_STUDENT_NAME`
+  - `DEFAULT_STUDENT_EMAIL`
+- The frontend container proxies `/api/v1` traffic to the backend through `frontend/nginx.conf`, so the default `VITE_API_BASE_URL=/api/v1` continues to work in Docker without extra frontend env changes.
+- For local Docker runs, keep `OUTBOUND_EMAIL_ENABLED=false` unless you intentionally want SMTP delivery from the containerized stack.
+
 ## Quality Checks
 
 Backend:

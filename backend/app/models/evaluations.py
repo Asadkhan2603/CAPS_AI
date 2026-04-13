@@ -30,6 +30,7 @@ def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
             default=EVALUATION_SCHEMA_VERSION,
         ),
         "ai_confidence": document.get("ai_confidence"),
+        "ai_confidence_mode": document.get("ai_confidence_mode"),
         "ai_risk_flags": list(document.get("ai_risk_flags") or []),
         "ai_strengths": list(document.get("ai_strengths") or []),
         "ai_gaps": list(document.get("ai_gaps") or []),
@@ -38,6 +39,10 @@ def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "is_finalized": document.get("is_finalized", False),
         "finalized_at": document.get("finalized_at"),
         "finalized_by_user_id": document.get("finalized_by_user_id"),
+        "result_status": document.get("result_status", "released" if document.get("released_at") else ("finalized_unreleased" if document.get("is_finalized") else "draft")),
+        "released_at": document.get("released_at"),
+        "released_by_user_id": document.get("released_by_user_id"),
+        "result_version": document.get("result_version", 1),
         "created_at": document.get("created_at"),
         "updated_at": document.get("updated_at"),
     }

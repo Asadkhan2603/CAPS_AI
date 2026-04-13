@@ -10,19 +10,36 @@ from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.classes import class_public
 from app.schemas.class_item import ClassCreate, ClassOut, ClassUpdate
+from app.schemas.section import SectionDashboardResponse, SectionOperationalSummaryOut
 from app.services.academic_hierarchy import validate_batch_specialization_scope
 from app.services.audit import log_destructive_action_event
+from app.services.attendance_summary import build_attendance_section_summary
 from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
 from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.governance import enforce_review_approval
 from app.services.public_ids import persist_public_id, persist_public_id_update
+from app.services.rbac import build_batch_scope_filter, merge_query_with_scope_filter
 from app.services.section_read_models import (
     get_section_read_model,
     hydrate_sections_from_read_models,
     sync_section_read_model,
 )
+from app.services.section_mapping import coordinator_scope_class_id
+from app.api.v1.endpoints.timetables import _compute_sync_snapshot
 
 router = APIRouter()
+
+
+async def _apply_admin_scope_to_query(current_user: dict[str, Any], query: dict[str, Any]) -> dict[str, Any]:
+    if current_user.get("role") != "admin":
+        return query
+    scope_filter = await build_batch_scope_filter(
+        current_user,
+        department_field="department_id",
+        batch_field="batch_id",
+        database=db,
+    )
+    return merge_query_with_scope_filter(query, scope_filter)
 
 
 async def _validate_section_relations(
@@ -83,6 +100,82 @@ async def _validate_section_relations(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='semester_id does not belong to provided batch_id')
 
 
+async def _build_section_dashboard_item(section: dict[str, Any]) -> SectionOperationalSummaryOut:
+    section_id = str(section.get("_id") or "")
+    enrolled_rows = await db.enrollments.find({"class_id": section_id}).to_list(length=5000)
+    enrolled_student_doc_ids = {
+        str(item.get("student_id"))
+        for item in enrolled_rows
+        if item.get("student_id")
+    }
+    student_count = len(enrolled_student_doc_ids)
+
+    legacy_students = await db.students.find({"class_id": section_id, "is_active": True}, {"_id": 1}).to_list(length=5000)
+    legacy_profile_only_count = sum(1 for item in legacy_students if str(item.get("_id")) not in enrolled_student_doc_ids)
+
+    enrolled_student_user_ids: set[str] = set()
+    if enrolled_student_doc_ids:
+        enrolled_student_rows = await db.students.find(
+            {"_id": {"$in": [parse_object_id(student_id) for student_id in sorted(enrolled_student_doc_ids)]}},
+            {"user_id": 1},
+        ).to_list(length=5000)
+        enrolled_student_user_ids = {
+            str(item.get("user_id"))
+            for item in enrolled_student_rows
+            if item.get("user_id")
+        }
+
+    active_offering_rows = await db.course_offerings.find({"section_id": section_id, "is_active": True}, {"_id": 1}).to_list(length=5000)
+    offering_ids = [str(item["_id"]) for item in active_offering_rows if item.get("_id")]
+
+    pending_evaluation_count = 0
+    unreleased_evaluation_count = 0
+    if enrolled_student_user_ids:
+        evaluation_rows = await db.evaluations.find(
+            {"student_user_id": {"$in": sorted(enrolled_student_user_ids)}},
+            {"is_finalized": 1, "result_status": 1},
+        ).to_list(length=10000)
+        pending_evaluation_count = sum(1 for item in evaluation_rows if not item.get("is_finalized"))
+        unreleased_evaluation_count = sum(
+            1 for item in evaluation_rows if item.get("is_finalized") and item.get("result_status") != "released"
+        )
+
+    latest_timetable = await db.timetables.find_one(
+        {"class_id": section_id, "status": "published", "is_active": True},
+        sort=[("version", -1)],
+    )
+    latest_timetable_status = None
+    latest_timetable_sync_status = None
+    latest_timetable_drift_count = 0
+    if latest_timetable:
+        latest_timetable_status = latest_timetable.get("status")
+        sync_snapshot = await _compute_sync_snapshot(latest_timetable)
+        latest_timetable_sync_status = sync_snapshot["sync_status"]
+        latest_timetable_drift_count = sync_snapshot["drift_count"]
+
+    average_attendance_percent = None
+    shortage_risk_count = 0
+    if active_offering_rows and getattr(db, "attendance_records", None) is not None:
+        attendance_summary = await build_attendance_section_summary(section_id=section_id, database=db)
+        average_attendance_percent = attendance_summary.average_attendance_percent
+        shortage_risk_count = attendance_summary.shortage_risk_count
+
+    return SectionOperationalSummaryOut(
+        section_id=section_id,
+        section_name=str(section.get("name") or ""),
+        student_count=student_count,
+        legacy_profile_only_count=legacy_profile_only_count,
+        active_offering_count=len(active_offering_rows),
+        pending_evaluation_count=pending_evaluation_count,
+        unreleased_evaluation_count=unreleased_evaluation_count,
+        latest_timetable_status=latest_timetable_status,
+        latest_timetable_sync_status=latest_timetable_sync_status,
+        latest_timetable_drift_count=latest_timetable_drift_count,
+        average_attendance_percent=average_attendance_percent,
+        shortage_risk_count=shortage_risk_count,
+    )
+
+
 @router.get('/', response_model=List[ClassOut])
 async def list_classes(
     faculty_id: str | None = Query(default=None),
@@ -119,11 +212,69 @@ async def list_classes(
     if current_user.get('role') == 'teacher':
         query['class_coordinator_user_id'] = str(current_user.get('_id'))
         query.setdefault('is_active', True)
+    else:
+        query = await _apply_admin_scope_to_query(current_user, query)
 
     cursor = db.classes.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
     items = await hydrate_sections_from_read_models(source_sections=items, database=db)
     return [ClassOut(**class_public(item)) for item in items]
+
+
+@router.get('/dashboard', response_model=SectionDashboardResponse)
+async def section_dashboard(
+    faculty_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
+    program_id: str | None = Query(default=None),
+    specialization_id: str | None = Query(default=None),
+    batch_id: str | None = Query(default=None),
+    semester_id: str | None = Query(default=None),
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> SectionDashboardResponse:
+    query: dict[str, Any] = {"is_active": True}
+    if faculty_id:
+        query["faculty_id"] = faculty_id
+    if department_id:
+        query["department_id"] = department_id
+    if program_id:
+        query["program_id"] = program_id
+    if specialization_id:
+        query["specialization_id"] = specialization_id
+    if batch_id:
+        query["batch_id"] = batch_id
+    if semester_id:
+        query["semester_id"] = semester_id
+
+    if current_user.get("role") == "teacher":
+        scoped_class_id = coordinator_scope_class_id(current_user)
+        if scoped_class_id:
+            query["_id"] = parse_object_id(scoped_class_id)
+        else:
+            query["class_coordinator_user_id"] = str(current_user.get("_id"))
+    else:
+        query = await _apply_admin_scope_to_query(current_user, query)
+
+    sections = await db.classes.find(query).to_list(length=500)
+    items = [await _build_section_dashboard_item(section) for section in sections]
+
+    global_unmapped_students = await db.students.count_documents(
+        {
+            "is_active": True,
+            "$or": [{"class_id": None}, {"class_id": ""}, {"class_id": {"$exists": False}}],
+        }
+    )
+
+    return SectionDashboardResponse(
+        total_sections=len(items),
+        total_students=sum(item.student_count for item in items),
+        total_active_offerings=sum(item.active_offering_count for item in items),
+        total_pending_evaluations=sum(item.pending_evaluation_count for item in items),
+        total_unreleased_evaluations=sum(item.unreleased_evaluation_count for item in items),
+        sections_with_drift=sum(1 for item in items if item.latest_timetable_drift_count > 0),
+        sections_with_attendance_risk=sum(1 for item in items if item.shortage_risk_count > 0),
+        global_unmapped_students=global_unmapped_students,
+        sections=items,
+    )
 
 
 @router.get('/{class_id}', response_model=ClassOut)

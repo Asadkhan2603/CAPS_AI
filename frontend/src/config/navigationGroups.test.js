@@ -168,8 +168,12 @@ describe('teacher navigation visibility', () => {
 
   it('shows student grievance tracking in the student profile group', () => {
     const user = { role: 'student' };
-    const paths = flattenPaths(getVisibleNavigationGroups(user));
+    const groups = getVisibleNavigationGroups(user);
+    const paths = flattenPaths(groups);
+    const academicsGroup = groups.find((group) => group.key === 'academics');
 
     expect(paths).toContain('/grievances');
+    expect(paths).not.toContain('/academic-structure');
+    expect(academicsGroup.items.some((item) => item.to === '/attendance-records' && item.label === 'Attendance Logs')).toBe(true);
   });
 });

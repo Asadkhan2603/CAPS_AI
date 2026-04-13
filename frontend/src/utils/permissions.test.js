@@ -60,4 +60,12 @@ describe('canAccessFeature', () => {
     expect(canAccessFeature(teacher, FEATURE_ACCESS.sections)).toBe(true);
     expect(canAccessFeature(complianceAdmin, FEATURE_ACCESS.sections)).toBe(false);
   });
+
+  it('removes student access to academic structure while keeping teacher access', () => {
+    const teacher = { role: 'teacher', extended_roles: [] };
+    const student = { role: 'student' };
+
+    expect(canAccessFeature(teacher, FEATURE_ACCESS.academicStructure)).toBe(true);
+    expect(canAccessFeature(student, FEATURE_ACCESS.academicStructure)).toBe(false);
+  });
 });
