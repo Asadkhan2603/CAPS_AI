@@ -1,0 +1,163 @@
+{
+  "generated_at": "2026-04-13T05:44:42.946034+00:00",
+  "scope": {
+    "sample_limit": 5000,
+    "status_inference": "Uses review_status as the real reviewer outcome signal. `fixed` is treated as resolved-positive evidence, while `reopened` is a conservative drift-negative proxy."
+  },
+  "summary": {
+    "logs_considered": 0,
+    "semantic_coverage_count": 0,
+    "reviewed_final_count": 0,
+    "fixed_count": 0,
+    "reopened_count": 0,
+    "status_counts": {
+      "open": 0,
+      "in_progress": 0,
+      "fixed": 0,
+      "reopened": 0
+    },
+    "latest_reviewed_at": null
+  },
+  "status_breakdown": [
+    {
+      "review_status": "open",
+      "count": 0,
+      "semantic_coverage_count": 0,
+      "flagged_count": 0,
+      "avg_lexical_similarity": null,
+      "avg_semantic_shadow_score": null,
+      "avg_semantic_drift": null,
+      "lexical_p90": null,
+      "semantic_p90": null,
+      "drift_p90": null
+    },
+    {
+      "review_status": "in_progress",
+      "count": 0,
+      "semantic_coverage_count": 0,
+      "flagged_count": 0,
+      "avg_lexical_similarity": null,
+      "avg_semantic_shadow_score": null,
+      "avg_semantic_drift": null,
+      "lexical_p90": null,
+      "semantic_p90": null,
+      "drift_p90": null
+    },
+    {
+      "review_status": "fixed",
+      "count": 0,
+      "semantic_coverage_count": 0,
+      "flagged_count": 0,
+      "avg_lexical_similarity": null,
+      "avg_semantic_shadow_score": null,
+      "avg_semantic_drift": null,
+      "lexical_p90": null,
+      "semantic_p90": null,
+      "drift_p90": null
+    },
+    {
+      "review_status": "reopened",
+      "count": 0,
+      "semantic_coverage_count": 0,
+      "flagged_count": 0,
+      "avg_lexical_similarity": null,
+      "avg_semantic_shadow_score": null,
+      "avg_semantic_drift": null,
+      "lexical_p90": null,
+      "semantic_p90": null,
+      "drift_p90": null
+    }
+  ],
+  "calibration_window": {
+    "fixed_low_semantic": null,
+    "reopened_high_semantic": null,
+    "fixed_low_drift": null,
+    "reopened_high_drift": null
+  },
+  "recommendations": {
+    "keep_shadow_only": true,
+    "assist_only_semantic_advantage_threshold": 0.15,
+    "promotion_thresholds": null,
+    "requires_manual_rollout_approval": true,
+    "next_focus": "Expand reviewer-confirmed outcomes before semantic signals influence any automated flagging."
+  },
+  "gates": {
+    "promotion_ready": false,
+    "failures": [
+      "Need at least 3 fixed reviewer outcomes with semantic shadow scores; found 0.",
+      "Need at least 2 reopened reviewer outcomes with semantic shadow scores; found 0."
+    ]
+  },
+  "analytics": {
+    "review_status_counts": {
+      "open": 0,
+      "in_progress": 0,
+      "fixed": 0,
+      "reopened": 0
+    },
+    "drift_buckets": [
+      {
+        "label": "<0.00",
+        "count": 0,
+        "fixed_count": 0,
+        "reopened_count": 0,
+        "status_counts": {
+          "open": 0,
+          "in_progress": 0,
+          "fixed": 0,
+          "reopened": 0
+        }
+      },
+      {
+        "label": "0.00-0.05",
+        "count": 0,
+        "fixed_count": 0,
+        "reopened_count": 0,
+        "status_counts": {
+          "open": 0,
+          "in_progress": 0,
+          "fixed": 0,
+          "reopened": 0
+        }
+      },
+      {
+        "label": "0.05-0.15",
+        "count": 0,
+        "fixed_count": 0,
+        "reopened_count": 0,
+        "status_counts": {
+          "open": 0,
+          "in_progress": 0,
+          "fixed": 0,
+          "reopened": 0
+        }
+      },
+      {
+        "label": "0.15-0.30",
+        "count": 0,
+        "fixed_count": 0,
+        "reopened_count": 0,
+        "status_counts": {
+          "open": 0,
+          "in_progress": 0,
+          "fixed": 0,
+          "reopened": 0
+        }
+      },
+      {
+        "label": ">=0.30",
+        "count": 0,
+        "fixed_count": 0,
+        "reopened_count": 0,
+        "status_counts": {
+          "open": 0,
+          "in_progress": 0,
+          "fixed": 0,
+          "reopened": 0
+        }
+      }
+    ],
+    "top_reopened_reasons": [],
+    "threshold_trend": []
+  }
+}

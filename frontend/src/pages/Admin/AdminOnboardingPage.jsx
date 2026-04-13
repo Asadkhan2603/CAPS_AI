@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
 import Card from '../../components/ui/Card';
-import AdminDomainNav from '../../components/admin/AdminDomainNav';
 import { apiClient } from '../../services/apiClient';
 import { formatApiError } from '../../utils/apiError';
 
@@ -46,7 +45,6 @@ export default function AdminOnboardingPage() {
           Follow the minimum academic setup path from university root to active course delivery.
         </p>
       </Card>
-      <AdminDomainNav />
 
       {loading ? (
         <Card>

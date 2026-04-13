@@ -8,6 +8,7 @@ from app.services.ai_chat_service import generate_evaluation_chat_reply as defau
 from app.services.ai_chat_workflow import normalize_chat_result, upsert_evaluation_chat_thread
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
+from app.services.evaluation_ai_module import normalize_rubric_criteria
 
 from .ai_common import get_ai_db, resolve_submission, teacher_can_access_assignment_in_scope
 
@@ -48,12 +49,25 @@ async def evaluate_with_ai(
         default_generate_evaluation_chat_reply,
     )
     runtime_settings = await get_ai_runtime_settings()
+    normalized_rubric_criteria = normalize_rubric_criteria([item.model_dump() for item in payload.rubric_criteria])
+    rubric_text = payload.rubric or ""
+    if normalized_rubric_criteria:
+        rubric_text = "\n".join(
+            [
+                rubric_text.strip(),
+                *[
+                    f"- {item['label']} (max {item['max_score']})"
+                    + (f": {item['notes']}" if item.get("notes") else "")
+                    for item in normalized_rubric_criteria
+                ],
+            ]
+        ).strip()
     ai_result = await run_in_threadpool(
         chat_generator,
         teacher_message=payload.teacher_message,
         question_text=payload.question_text,
         student_answer=student_answer,
-        rubric=payload.rubric,
+        rubric=rubric_text,
         runtime_settings=runtime_settings,
     )
     ai_response, ai_error, ai_metadata = normalize_chat_result(ai_result)

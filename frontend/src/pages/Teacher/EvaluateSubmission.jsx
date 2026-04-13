@@ -68,6 +68,26 @@ function formatConfidenceMode(mode, status) {
   return '';
 }
 
+function buildRubricCriteria(rubricText) {
+  const rawItems = String(rubricText || '')
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const labels = rawItems.length ? rawItems : ['Concept clarity', 'Correctness', 'Depth', 'Structure'];
+  const weight = Number((10 / Math.max(labels.length, 1)).toFixed(2));
+  return labels.map((label) => ({
+    label,
+    max_score: weight,
+    keywords: label
+      .toLowerCase()
+      .split(/\s+/)
+      .map((token) => token.replace(/[^a-z0-9]/gi, '').trim())
+      .filter(Boolean)
+      .slice(0, 4),
+    notes: ''
+  }));
+}
+
 export default function EvaluateSubmissionPage() {
   const { submissionId } = useParams();
   const navigate = useNavigate();
@@ -102,6 +122,7 @@ export default function EvaluateSubmissionPage() {
   });
 
   const questions = useMemo(() => questionCandidatesFromAssignment(assignment), [assignment]);
+  const rubricCriteria = useMemo(() => buildRubricCriteria(rubric), [rubric]);
   const selectedQuestion = useMemo(
     () => questions.find((question) => question.id === selectedQuestionId) || questions[0],
     [questions, selectedQuestionId]
@@ -205,12 +226,16 @@ export default function EvaluateSubmissionPage() {
     try {
       let savedEvaluation = null;
       if (evaluationId) {
-        const response = await apiClient.put(`/evaluations/${evaluationId}`, marks);
+        const response = await apiClient.put(`/evaluations/${evaluationId}`, {
+          ...marks,
+          rubric_criteria: rubricCriteria
+        });
         savedEvaluation = response.data || null;
       } else {
         const created = await apiClient.post('/evaluations/', {
           submission_id: submission.id,
           ...marks,
+          rubric_criteria: rubricCriteria,
           is_finalized: false
         });
         savedEvaluation = created.data || null;
@@ -231,7 +256,8 @@ export default function EvaluateSubmissionPage() {
     try {
       const response = await apiClient.post('/evaluations/ai-preview', {
         submission_id: submission.id,
-        ...marks
+        ...marks,
+        rubric_criteria: rubricCriteria
       });
       setAiPreview(response.data || null);
       pushToast({ title: 'AI preview ready', description: 'Review AI insight before saving marks.', variant: 'success' });
@@ -278,6 +304,7 @@ export default function EvaluateSubmissionPage() {
         question_text: selectedQuestion.text,
         student_answer: submission.extracted_text || submission.notes || '',
         rubric,
+        rubric_criteria: rubricCriteria,
         submission_id: submission.id
       };
       const response = await sendEvaluationChatMessage(payload);
@@ -335,7 +362,10 @@ export default function EvaluateSubmissionPage() {
               typeof submission.extraction_quality === 'number' &&
               submission.extraction_quality < 0.2 ? (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-                  Low text extraction detected for this PDF. AI review may be incomplete. Consider re-uploading a clearer file.
+                  Low text extraction detected for this PDF. AI review may be incomplete. {submission.ocr_attempted
+                    ? `OCR ${submission.ocr_provider || 'adapter'} added ${submission.ocr_chars_added ?? 0} chars with confidence ${submission.extraction_confidence ?? 0}.`
+                    : 'OCR has not been applied yet.'}{' '}
+                  Consider re-uploading a clearer file.
                 </p>
               ) : null}
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
@@ -370,6 +400,17 @@ export default function EvaluateSubmissionPage() {
                 value={rubric}
                 onChange={(event) => setRubric(event.target.value)}
               />
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rubric Checklist</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {rubricCriteria.map((criterion) => (
+                    <div key={criterion.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/40">
+                      <p className="font-medium text-slate-700 dark:text-slate-200">{criterion.label}</p>
+                      <p className="text-xs text-slate-500">Max {criterion.max_score}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </Card>
 
             <Card className="space-y-3">
@@ -442,6 +483,25 @@ export default function EvaluateSubmissionPage() {
                       Suggestions: {(evaluation.ai_suggestions || []).join(' | ')}
                     </p>
                   ) : null}
+                  {(evaluation.ai_criterion_scores || []).length ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {(evaluation.ai_criterion_scores || []).map((criterion) => (
+                        <div key={criterion.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/50">
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                            {criterion.label}: {criterion.awarded_score}/{criterion.max_score}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Coverage {Math.round((criterion.evidence_coverage || 0) * 100)}% | {criterion.rationale}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {(evaluation.ai_academic_rationale || []).length ? (
+                    <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                      Academic rationale: {(evaluation.ai_academic_rationale || []).join(' | ')}
+                    </p>
+                  ) : null}
                   {(evaluation.ai_risk_flags || []).length ? (
                     <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300">
                       Student Risk Signals: {(evaluation.ai_risk_flags || []).join(' | ')}. These are context signals, not grading justification.
@@ -471,6 +531,20 @@ export default function EvaluateSubmissionPage() {
                   ) : null}
                   {(aiPreview.ai_insight?.suggestions || []).length ? (
                     <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">Suggestions: {(aiPreview.ai_insight?.suggestions || []).join(' | ')}</p>
+                  ) : null}
+                  {(aiPreview.ai_criterion_scores || []).length ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {(aiPreview.ai_criterion_scores || []).map((criterion) => (
+                        <div key={criterion.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900/30">
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                            {criterion.label}: {criterion.awarded_score}/{criterion.max_score}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Coverage {Math.round((criterion.evidence_coverage || 0) * 100)}% | {criterion.rationale}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -517,6 +591,11 @@ export default function EvaluateSubmissionPage() {
                         {formatHeuristicConfidence(item.ai_confidence, item.ai_confidence_mode, item.ai_status)}
                         {(item.ai_confidence_mode || item.ai_status) ? ` (${formatConfidenceMode(item.ai_confidence_mode, item.ai_status)})` : ''}
                       </p>
+                      {(item.ai_criterion_rationales || []).length ? (
+                        <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                          Criterion rationale: {(item.ai_criterion_rationales || []).join(' | ')}
+                        </p>
+                      ) : null}
                       {(item.ai_risk_flags || []).length ? (
                         <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">
                           Risk Flags: {(item.ai_risk_flags || []).join(' | ')}

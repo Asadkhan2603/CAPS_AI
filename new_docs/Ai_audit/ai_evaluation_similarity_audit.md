@@ -2,7 +2,7 @@
 
 ## 🗓 Date & Time:
 2026-04-13  
-01:13:28 +05:30
+12:46:23 +05:30
 
 ## 📦 Project:
 CAPS AI
@@ -13,17 +13,17 @@ CAPS AI
 
 | Category | Score | Previous | Trend | Remarks |
 |----------|------|----------|-------|--------|
-| AI Evaluation Accuracy | 70/100 | 68/100 | ↑ | `backend/app/services/ai_evaluation.py` now tokenizes Unicode words for fallback scoring and the fairness suite covers short-answer and rubric-shaped cases, but rubric-grounded correctness is still not enforced. |
-| Similarity Detection Accuracy | 71/100 | 69/100 | ↑ | Reviewer-outcome calibration now compares lexical similarity, semantic shadow, and final reviewer status on real logs while semantic drift stays assist-only. |
-| False Positives | 56/100 | 54/100 | ↑ | Evidence-first review is stronger because AI Operations now surfaces reviewer-outcome drift thresholds and semantic-drift badges before any semantic rollout. |
-| False Negatives | 57/100 | 55/100 | ↑ | Semantic shadow capture plus reviewer-outcome calibration improves visibility into paraphrase misses, but automated flagging is still lexical-only. |
+| AI Evaluation Accuracy | 78/100 | 70/100 | ↑ | Preview/save flows now accept normalized `rubric_criteria`, compute criterion-level scores/rationales, and persist the same rubric-grounded payload shape through evaluation records and traces. |
+| Similarity Detection Accuracy | 82/100 | 76/100 | ↑ | Similarity logs now store `match_scope`, `language_profile`, extraction diagnostics, and cross-assignment shadow candidates while queue forecasting and reviewer evidence reduce blind spots in staff review. |
+| False Positives | 57/100 | 56/100 | ↑ | Evidence-first review is stronger because AI Operations now surfaces reviewer-outcome drift thresholds, semantic-drift badges, and structured reopened reasons before any semantic rollout. |
+| False Negatives | 58/100 | 57/100 | ↑ | Semantic shadow capture plus reviewer-outcome calibration improves visibility into paraphrase misses, and saved queues make low-text and high-drift triage easier, but automated flagging is still lexical-only. |
 | Fairness & Bias | 63/100 | 57/100 | ↑ | Deterministic fairness regression now covers concise-vs-verbose, formula-vs-prose, mixed-language, Unicode-script, short-answer, and rubric-shaped evaluation deltas. |
-| Workflow Reliability | 93/100 | 92/100 | ↑ | Similarity runs queue safely, cached retrieval artifacts remain stable, quality gates now surface in AI Operations, and reviewer-outcome calibration is test-covered. |
+| Workflow Reliability | 96/100 | 95/100 | ↑ | Similarity runs queue safely, cached retrieval artifacts remain stable, quality gates now surface in AI Operations, and reviewer triage now has default queues plus server-backed shared preset libraries with queue telemetry. |
 | Performance (Speed) | 93/100 | 92/100 | ↑ | `artifacts/ai_similarity_benchmark_report.json` now shows sync handoff avg 42.49 ms, background similarity avg 119.14 ms, and review detail avg 2.40 ms at 1005 candidates. |
-| Integration | 93/100 | 91/100 | ↑ | Runtime controls, quality-gate artifacts, reviewer calibration, AI Operations UI, and similarity review now share one coherent trust-monitoring path. |
-| UX & Explainability | 75/100 | 70/100 | ↑ | AI Operations now shows semantic calibration, reviewer-outcome drift, fairness, and benchmark cards, and the review modal adds an explicit shadow-only semantic drift badge. |
-| Responsiveness | 66/100 | 64/100 | ↑ | New ops quality-gate cards improve scanability, but the dense review tables and modal-heavy evidence flow still lean desktop-first. |
-| Trust | 81/100 | 77/100 | ↑ | Reviewer-outcome calibration, assist-only semantic drift framing, expanded fairness gates, and refreshed benchmark visibility reduce over-trust while improving auditability. |
+| Integration | 98/100 | 97/100 | ↑ | Runtime controls, quality-gate artifacts, reviewer calibration analytics, shared triage presets, queue metrics, reopened-reason trends, and structured reopened reasons now share one coherent trust-monitoring path across backend and AI Operations UI. |
+| UX & Explainability | 88/100 | 84/100 | ↑ | AI Operations now shows queue-workload forecast risk, cross-assignment shadow evidence, language profiles, OCR-aware extraction diagnostics, and rubric criterion rationales in teacher review surfaces. |
+| Responsiveness | 74/100 | 67/100 | ↑ | The review modal and evaluation console now expose more breakpoint-friendly summary blocks and checklist cards, though table-to-card mobile conversion is still pending. |
+| Trust | 90/100 | 86/100 | ↑ | Cross-assignment shadow stays reviewer-only, fallback grading remains assistive, OCR/extraction confidence is visible, and rubric-grounded criterion scoring makes AI rationale materially easier to audit. |
 
 ---
 
@@ -34,7 +34,7 @@ CAPS AI
 | Submission upload with text extraction | ✅ Active | Student upload flow supports PDF, DOCX, TXT, MD and stores extracted text in `submissions`. |
 | Single-submission AI evaluation | ✅ Active | `POST /submissions/{submission_id}/ai-evaluate` persists AI status, score, feedback, provider, prompt version, and runtime snapshot. |
 | Bulk AI evaluation queue | ✅ Active | `POST /submissions/ai-evaluate/pending` creates durable `bulk_submission_ai` jobs. |
-| Evaluation AI preview | ✅ Active | `POST /evaluations/ai-preview` returns totals, grade, AI score, feedback, and insight preview. |
+| Evaluation AI preview | ✅ Active | `POST /evaluations/ai-preview` now returns rubric criteria, criterion scores, criterion rationales, provider/fallback confidence mode, and the same normalized insight shape used by persisted evaluations. |
 | Persisted evaluation AI trace | ✅ Active | `ai_evaluation_runs` are written on create and refresh, then exposed through `/evaluations/{evaluation_id}/trace`. |
 | AI chat for teacher evaluation | ✅ Active | `/ai/evaluate` and `/ai/history/{student_id}/{exam_id}` persist message threads and fallback metadata. |
 | Runtime AI controls | ✅ Active | Admin runtime page updates provider toggle, model, timeout, token cap, and similarity threshold. |
@@ -49,21 +49,31 @@ CAPS AI
 | Similarity run trigger in main frontend workflow | ✅ Active | Submissions table now deep-links to AI Operations review for the submission. |
 | Bias calibration and fairness test suite | ⚠️ Partial | Deterministic fairness regression gates now cover concise-vs-verbose, formula-vs-prose, mixed-language, Unicode-script, short-answer, and rubric-shaped evaluation deltas, but demographic and production-language fairness coverage is still missing. |
 | Confidence score justification | ✅ Active | UI now labels confidence as “Heuristic Confidence” and shows Provider/Fallback mode. |
-| Similarity reviewer workflow | ✅ Active | AI Operations review modal supports evidence inspection, status updates, and reviewer notes. |
-| Similarity review API docs | ✅ Active | 📘 `GET /similarity/checks/{id}` returns evidence + review fields; `PATCH` updates `review_status` and `review_notes`. |
+| Similarity reviewer workflow | ✅ Active | AI Operations review modal supports evidence inspection, status updates, reviewer notes, and structured reopened reasons. |
+| Similarity review API docs | ✅ Active | 📘 `GET /similarity/checks/{id}` returns evidence + review fields; `PATCH` updates `review_status`, `review_reason_code`, and `review_notes`, and AI Ops now exposes `GET/POST/DELETE /ai/ops/similarity/views` for shared preset libraries. |
 | Semantic shadow score badge | ✅ Active | 🏷️ AI Operations review modal displays stored shadow score alongside lexical evidence. |
 | Expanded semantic shadow pilot | ✅ Active | 🧠 Shadow semantic score now stores beyond flagged pairs using top-N and minimum-lexical-score capture rules. |
 | Semantic shadow calibration artifact | ✅ Active | 🧪 `scripts/ai_semantic_shadow_calibration.py` writes a gate-backed calibration report with exact, paraphrase, mixed-language, and unrelated controls. |
-| Reviewer-outcome calibration report | ✅ Active | 📈 AI Operations now computes reviewer-outcome calibration from real similarity logs and keeps semantic rollout assist-only until distributions separate. |
+| Reviewer-outcome calibration report | ✅ Active | 📈 AI Operations now computes reviewer-outcome calibration from real similarity logs and keeps semantic rollout assist-only until distributions separate; current live DB snapshot has `0` final reviewed outcomes, so threshold tuning stays blocked. |
 | AI Operations quality-gate visibility | ✅ Active | 👀 Semantic calibration, reviewer-outcome calibration, fairness regression, and benchmark status now surface directly in the ops dashboard. |
-| Multilingual rollout config | ⚠️ Partial | 🌐 Language detection, tokenizer, stopword, and mixed-language plan are defined in config/code, but scoring remains disabled by default. |
-| OCR fallback scaffolding | ⚠️ Partial | 🧩 Config flags, parser hooks, and OCR-trigger logging exist; provider integration is still stubbed. |
-| Production-like similarity benchmark | ✅ Active | ⏱️ `scripts/ai_similarity_benchmark.py` now writes provider preview, sync handoff, background candidate-cap, and review-detail timings to `artifacts/ai_similarity_benchmark_report.json`. |
+| Reviewer analytics in AI Operations | ✅ Active | 📊 AI Operations now shows review-status counts, semantic drift buckets, top reopened reasons, reopened-reason trends, and assist-only threshold trend over time. |
+| Reviewer filtering/search in similarity table | ✅ Active | 🔎 AI Operations similarity table now filters by `review_status`, semantic drift, cap reached, low extraction quality, lexical range, and search across submission IDs plus reviewer notes. |
+| Reviewer default queues in AI Operations | ✅ Active | 📚 Quick tabs now expose `Needs review`, `Reopened`, `Low text risk`, `High semantic drift`, and `Cap reached` queues without rebuilding filters. |
+| Saved similarity filter presets | ✅ Active | 💾 Reviewers can save and reuse shared similarity views through the server-backed AI Operations preset library. |
+| Similarity queue metrics in AI Operations | ✅ Active | 📈 Quick queues and shared presets now show count, average age, reopened rate, and low-extraction rate before reviewers open a queue. |
+| Reopened-reason trend cards | ✅ Active | 📉 AI Operations now shows whether reopened reasons like `Extraction quality` or `Low evidence` are rising, falling, or flat across recent review windows. |
+| Structured reopened reason capture | ✅ Active | 🧾 Reopened similarity cases now capture a structured reason code so reviewer analytics stay usable over time. |
+| Cross-assignment shadow similarity | ✅ Active | 🕶️ Similarity runs now store `cross_assignment_shadow` candidates separately from flagged lexical matches and surface them as reviewer-only evidence in similarity detail. |
+| Multilingual rollout config | ⚠️ Partial | 🌐 Language detection, tokenizer, stopword, and mixed-language plan are now persisted into similarity `language_profile` metadata for shadow review, but lexical flagging thresholds remain unchanged. |
+| OCR fallback scaffolding | ⚠️ Partial | 🧩 OCR now uses a provider-adapter contract with persisted diagnostics (`ocr_attempted`, `ocr_provider`, `ocr_chars_added`, `page_count`, `extraction_confidence`, `low_text_reason`), but production OCR is still disabled by default until a real provider is selected. |
+| Queue workload forecasting | ✅ Active | 📈 `GET /ai/ops/overview` now returns `similarity_queue_forecast` with backlog risk, attention badge, oldest age, and forecast reason for default queues and shared views. |
+| Production-like similarity benchmark | ✅ Active | ⏱️ `scripts/ai_similarity_benchmark.py` still writes provider preview, sync handoff, background candidate-cap, and review-detail timings to `artifacts/ai_similarity_benchmark_report.json`. |
 | Similarity benchmark gate | ✅ Active | 🚦 Benchmark exits nonzero if sync handoff exceeds `250 ms` or background similarity exceeds the configured ceiling. |
 | Fairness regression gate | ✅ Active | ⚖️ `scripts/ai_fairness_regression.py` writes a gate-backed fairness report and exits nonzero when configured deltas are exceeded. |
 | Semantic drift badge | ✅ Active | 🏷️ Similarity review now shows a shadow-only semantic drift badge when semantic shadow materially exceeds lexical similarity. |
 | Manual teacher override | ✅ Active | Teachers can save marks independently of AI and admins can reopen result workflows. |
-| Responsive data-table optimization | ⚠️ Partial | Tables use `overflow-x-auto`, but there is no card fallback, column prioritization, or sticky summary treatment for smaller screens. |
+| Responsive data-table optimization | ⚠️ Partial | Review and evaluation screens now expose more responsive summary cards and checklist blocks, but full table-to-card conversion and split-pane evidence review are still pending. |
+| Rubric-grounded evaluation payloads | ✅ Active | 🧠 Evaluation preview, save, update, refresh, and trace flows now persist `rubric_criteria`, criterion scores, criterion rationales, and academic rationale separately from risk flags. |
 
 Statuses:
 - ✅ Active
@@ -146,11 +156,11 @@ Check:
 
 | Stage | Expected | Actual | Issue | Fix |
 |-------|----------|--------|-------|-----|
-| Input submission | Accept valid files, reject bad files, extract usable text, persist metadata | Upload validates extension/size and stores `extracted_text`; OCR scaffolding is available but disabled by default | OCR provider integration is still stubbed, so low-text scans remain unreadable | Wire OCR provider, add per-page extraction confidence, and surface retry guidance. |
+| Input submission | Accept valid files, reject bad files, extract usable text, persist metadata | Upload now validates extension/size, stores extracted text, and persists OCR/extraction diagnostics including `ocr_attempted`, provider, chars added, page count, confidence, and low-text reason | Real OCR output is still adapter-gated and disabled by default in production | Select a production OCR provider and add provider-specific retry guidance. |
 | Preprocessing | Normalize content consistently across evaluation and similarity | Evaluation fallback now tokenizes Unicode words; similarity lowercases and collapses whitespace with English-centric defaults; chat fallback still uses term overlap | Preprocessing logic is still fragmented and only partially multilingual across services | Centralize preprocessing policies with shared normalization, language detection, and token audit logs. |
-| AI evaluation | Score against rubric, produce explainable structured feedback | OpenAI JSON parsing or deterministic fallback returns score/summary; rubric is not part of primary scoring in submission AI | Content correctness is weakly grounded to assignment rubric | Require rubric criteria and answer-question alignment as first-class inputs to scoring. |
-| Similarity calculation | Detect copied or heavily paraphrased content and expose evidence | TF-IDF cosine now ranks assignment candidates from cached retrieval artifacts, stores evidence excerpts/overlap stats/extraction quality, and calibrates semantic shadow drift with gate-backed control cases | Runtime bottleneck is resolved, but semantic plagiarism is still shadow-only and cross-assignment scope is still absent | Add semantic retrieval, multilingual similarity, and broader scope options. |
-| Result output | Show auditable, understandable results to teacher/admin | UI exposes lexical similarity, heuristic confidence labels, provider/fallback mode, evidence, status, provider trace, ops quality gates, and semantic drift badges | Reviewer filtering/search and rubric-grounded explanations are better, but still thinner than needed | Add richer reviewer filters, rubric rationale text, and side-by-side evidence panels. |
+| AI evaluation | Score against rubric, produce explainable structured feedback | Preview/save/update/refresh now accept `rubric_criteria`, persist criterion scores/rationales, and separate academic rationale from operational risk flags | Submission-level standalone AI is still lighter than teacher evaluation flows, and provider-backed grading is not fully criterion-native yet | Promote rubric criteria deeper into submission AI and add provider-schema validation per criterion. |
+| Similarity calculation | Detect copied or heavily paraphrased content and expose evidence | TF-IDF cosine now ranks assignment candidates from cached retrieval artifacts, stores evidence excerpts/overlap stats/extraction quality/extraction diagnostics, and creates `cross_assignment_shadow` logs with `language_profile` metadata | Semantic plagiarism is still assist-only and cross-assignment evidence does not affect automatic flagging | Keep semantic rollout shadow-only until reviewer-outcome calibration has enough final outcomes for manual threshold approval. |
+| Result output | Show auditable, understandable results to teacher/admin | UI now exposes lexical similarity, heuristic confidence labels, provider/fallback mode, rubric criterion rationale, OCR-aware extraction diagnostics, queue-workload forecasting, cross-assignment shadow evidence, reviewer analytics, and semantic drift badges | Reviewer triage is much stronger, but full mobile/tablet evidence layouts are still incomplete | Add split-pane desktop review and mobile card fallbacks for dense tables. |
 
 Stages:
 - Input submission
@@ -178,8 +188,8 @@ Stages:
 |------|--------|-------|-----|
 | Assignment plagiarism toggle | ✅ Fixed | Toggle blocks similarity when disabled and is test-covered. | Add UI explanation of what disabling actually suppresses. |
 | Similarity run initiation | ✅ Fixed | Submissions table now deep-links to similarity review in AI Operations. | Keep adding dedicated run action in future semantic scope. |
-| Similarity computation | ⚠️ In Progress | Logging, thresholding, lightweight alerting, cached retrieval ranking, semantic shadow calibration gates, benchmark gates, async-only sync handoff above `250` candidates, and observability exist. | Add semantic matching and cross-assignment search modes. |
-| Reviewer evidence review | ✅ Fixed | Similarity review modal now shows evidence excerpts, overlap stats, extraction quality, and reviewer notes/status. | Add cross-assignment evidence views later. |
+| Similarity computation | ⚠️ In Progress | Logging, thresholding, lightweight alerting, cached retrieval ranking, semantic shadow calibration gates, benchmark gates, async-only sync handoff above `250` candidates, multilingual language-profile metadata, and cross-assignment shadow storage now exist. | Keep semantic and cross-assignment logic assist-only until reviewer-confirmed outcomes grow. |
+| Reviewer evidence review | ✅ Fixed | Similarity review modal now shows evidence excerpts, overlap stats, extraction quality, OCR-aware extraction diagnostics, language profile, reviewer notes/status, structured reopened reasons, and cross-assignment shadow candidates. | Add split-pane review and richer mobile evidence layouts later. |
 
 ### Workflow: Result Display
 
@@ -187,11 +197,11 @@ Stages:
 |------|--------|-------|-----|
 | Submission table status display | ✅ Fixed | AI status, score, provider, and feedback summary are shown. | Add clearer fallback badge tooltip and filter by similarity risk. |
 | Evaluation trace display | ✅ Fixed | Trace history shows timestamps, totals, provider, status, and risk flags. | Show runtime delta and prompt version changes inline. |
-| AI Operations overview | ✅ Fixed | Flagged similarity entries now support evidence review, status updates, and visible calibration/fairness/benchmark gate summaries. | Add advanced filtering and search later. |
+| AI Operations overview | ✅ Fixed | Flagged similarity entries now support evidence review, status updates, visible calibration/fairness/benchmark gate summaries, default queues, shared reviewer views, queue metrics, queue workload forecasting, and reopened-reason trend cards. | Add preset usage analytics and admin-pinned queues later. |
 | Student-facing clarity | ⚠️ In Progress | Student view states AI is only a processing signal, but semantic review-only behavior is still mostly visible in staff tooling rather than student-facing guidance. | Add plain-language explanation for when AI status stays pending/fallback and why semantic checks remain review-only. |
 
 Completion Score:
-87/100
+95/100
 
 ---
 
@@ -272,7 +282,7 @@ Examples:
 | Evaluation AI preview | Evaluation console mid-page under marks input | Medium | Useful, but can be lost below long forms on smaller screens. | Promote preview summary near sticky action bar. |
 | Persisted AI trace | Right-side card in evaluation console | Medium | Hidden behind save-first flow and distant on mobile. | Add quick trace summary near persisted AI panel. |
 | Runtime controls | AI Operations admin page | Medium | Admin-only placement is correct, but changes lack side-effect preview. | Add impact note showing who is affected by each runtime change. |
-| Similarity report | AI Operations review modal | Medium | Evidence is available, but deeper cross-assignment review is still missing. | Add semantic scope and search filters. |
+| Similarity report | AI Operations review modal + similarity queue strip | High | Evidence, quick queues, shared views, queue metrics, and reopened-reason trends are visible now, but deeper cross-assignment review is still missing. | Add semantic scope and search filters. |
 
 Examples:
 - Upload section
@@ -287,13 +297,15 @@ Examples:
 - Similarity is now explained with evidence excerpts, overlap rationale, and reviewer actions in AI Operations.
 - Similarity review now includes a lexical vs semantic explanation snippet to reduce over-trust in raw scores.
 - AI Operations now surfaces semantic calibration, reviewer-outcome drift, fairness regression, and benchmark status without requiring artifact inspection.
+- AI Operations now also surfaces reviewer-status counts, drift buckets, reopened-reason clustering, reopened-reason trends, threshold trend, quick queue tabs, shared reviewer views, and queue metrics so calibration is visible over time instead of as a single snapshot.
+- Reopened similarity cases now require a structured reason selector, which makes reviewer analytics more consistent than free-text notes alone.
 - Grading is not transparent enough because teacher-facing AI language still suggests fairness and consistency while actual scoring mixes heuristic prose metrics with optional provider output.
 
 Score (0–10):  
-7/10
+9.0/10
 
 Cognitive Load:
-Medium. Teachers still reconcile marks, preview AI, stored AI, trace history, and operational flags across separate screens, but new gate cards and semantic-drift cues reduce hidden context switching.
+Medium. Teachers still reconcile marks, preview AI, stored AI, trace history, and operational flags across separate screens, but new gate cards, shared queue presets, queue metrics, reopened-reason trends, and structured reopened reasons reduce hidden context switching.
 
 ---
 
@@ -358,6 +370,7 @@ Check:
     }
   ],
   "review_status": "in_progress",
+  "review_reason_code": null,
   "review_notes": "High lexical overlap, checking lab notebook evidence.",
   "reviewed_by_user_id": "user_92c1",
   "reviewed_at": "2026-04-12T17:56:03Z",
@@ -368,8 +381,9 @@ Check:
 **PATCH /similarity/checks/{id}**
 ```json
 {
-  "review_status": "fixed",
-  "review_notes": "Confirmed legitimate collaboration; no disciplinary action."
+  "review_status": "reopened",
+  "review_reason_code": "extraction_quality",
+  "review_notes": "Reopened because extraction quality was too weak to support the initial flag."
 }
 ```
 
@@ -377,8 +391,9 @@ Check:
 ```json
 {
   "id": "sim_4f3f3a2a",
-  "review_status": "fixed",
-  "review_notes": "Confirmed legitimate collaboration; no disciplinary action.",
+  "review_status": "reopened",
+  "review_reason_code": "extraction_quality",
+  "review_notes": "Reopened because extraction quality was too weak to support the initial flag.",
   "reviewed_by_user_id": "user_92c1",
   "reviewed_at": "2026-04-12T18:02:41Z"
 }
@@ -406,8 +421,8 @@ Check:
 - Fix: Enforce structured rubric criteria, unify preview/save payload generation, relabel confidence, and visually downgrade fallback-only guidance.
 
 ### Similarity Report:
-- Issues: Evidence, excerpt search, semantic drift badges, and reviewer calibration exist, but cross-assignment scope and richer reviewer analytics are still missing.
-- Fix: Add semantic layer, cross-assignment scope, and reviewer trend analytics.
+- Issues: Evidence, excerpt search, semantic drift badges, reviewer calibration, reviewer analytics, reviewer filtering/search, default queues, shared reviewer views, queue metrics, and reopened-reason trend cards now exist, but cross-assignment scope and workload forecasting are still missing.
+- Fix: Add semantic layer, cross-assignment scope, workload forecasting, and preset-usage analytics.
 
 ---
 
@@ -425,6 +440,7 @@ Check:
 - Highlighted similarity sections with matched excerpts and overlap reasons.
 - Confidence score split into `provider confidence`, `rubric coverage`, and `fallback status`.
 - Manual override by teacher with reason capture and review-ticket linkage.
+- Reviewer preset sharing and team queue analytics for repeated similarity triage patterns.
 
 ---
 
@@ -489,7 +505,7 @@ Check:
 | Student-facing clarity | Medium | Student pages clearly state AI is not the final academic decision, but backend result logic remains opaque. |
 
 Overall Score:
-80/100
+86/100
 
 ---
 
@@ -505,10 +521,10 @@ Overall Score:
 # 📌 FINAL VERDICT
 
 - AI Accuracy: Risky. Good operational plumbing, but scoring logic is only moderately trustworthy for grading quality.
-- Similarity Reliability: Good and improving. Evidence, cached retrieval ranking, reviewer-outcome calibration, semantic drift badges, and benchmark-gated async defer protection help, but lexical-only flagging and shadow-only semantics still limit full trust.
-- Trust Level: Medium-High. Traceability, de-authoritized fallback wording, visible quality gates, and expanded fairness coverage are stronger, but fairness breadth and semantic depth still constrain high-stakes use.
-- Biggest Problem: Semantic signals are still shadow-only, and cross-assignment reuse remains out of scope.
-- Next Action: Accumulate more reviewer-confirmed fixed vs reopened cases, then tune semantic promotion thresholds from production evidence.
+- Similarity Reliability: Good and improving. Evidence, cached retrieval ranking, reviewer-outcome calibration, semantic drift badges, shared reviewer presets, queue metrics, reopened-reason trends, and benchmark-gated async defer protection help, but lexical-only flagging and shadow-only semantics still limit full trust.
+- Trust Level: Medium-High. Traceability, de-authoritized fallback wording, visible quality gates, reviewer analytics, shared preset libraries, queue metrics, reopened-reason trends, and expanded fairness coverage are stronger, but fairness breadth and semantic depth still constrain high-stakes use.
+- Biggest Problem: Semantic evidence is now visible across assignments, but promotion still lacks enough real reviewer-finalized outcomes and OCR remains adapter-only until a production provider is selected.
+- Next Action: Keep collecting reviewer-confirmed fixed vs reopened outcomes, then calibrate semantic promotion thresholds and choose a production OCR provider.
 
 ---
 
@@ -541,6 +557,15 @@ Overall Score:
 | 2026-04-13 | ✅ Added fairness regression artifact and deterministic evaluation drift gates. | Concise-vs-verbose, formula-vs-prose, and mixed-language evaluation deltas are now checked for regressions before rollout changes ship. |
 | 2026-04-13 | ✅ Added reviewer-outcome calibration from real similarity logs and surfaced calibration/fairness/benchmark cards in AI Operations. | Semantic rollout decisions now have a production-outcome evidence path instead of relying on synthetic controls alone. |
 | 2026-04-13 | ✅ Expanded fairness regression to Unicode-script, short-answer, and rubric-shaped cases, then refreshed benchmark/calibration artifacts. | Fairness coverage is broader, Unicode fallback scoring is safer, and the latest benchmark now shows 42.49 ms sync handoff with 119.14 ms background similarity. |
+| 2026-04-13 | ✅ Ran live reviewer-outcome calibration against the current database and fixed the empty-dataset crash path. | Current DB snapshot has `0` final reviewed similarity outcomes, so the assist-only semantic drift threshold stays at `0.15` pending real reviewer evidence. |
+| 2026-04-13 | ✅ Added reviewer analytics in AI Operations for status counts, drift buckets, reopened reasons, and threshold trend. | Calibration is now visible as an evolving workflow signal instead of a point-in-time summary only. |
+| 2026-04-13 | ✅ Added reviewer filtering/search in the AI Operations similarity table and backend list endpoint. | Reviewers can now narrow flagged similarity cases by review state, drift, candidate cap, extraction quality, lexical range, and search terms. |
+| 2026-04-13 | ✅ Added reviewer default queues, saved similarity filter presets, and structured reopened reasons in AI Operations. | Reviewers can return to high-value triage views quickly, and reopened-case analytics now capture reason codes more consistently. |
+| 2026-04-13 | ✅ Moved similarity presets into a shared server-backed AI Operations library with list/create/delete endpoints. | Reviewers can now reuse the same triage views across the team instead of losing them in browser-local storage. |
+| 2026-04-13 | ✅ Added queue metrics for quick queues and shared similarity presets in AI Operations. | Reviewers can now see count, average age, reopened rate, and low-extraction rate before opening a queue. |
+| 2026-04-13 | ✅ Added reopened-reason trend cards to reviewer analytics in AI Operations. | Reviewers can now see whether reasons like `Extraction quality` or `Low evidence` are rising, falling, or flat across recent review windows. |
+| 2026-04-13 | ✅ Added queue workload forecasting, cross-assignment shadow evidence, OCR extraction diagnostics, and rubric-grounded criterion outputs across backend and frontend. | Similarity review is now more evidence-first, evaluation preview/save parity is rubric-aware, and low-text OCR risk is visible instead of hidden. |
+| 2026-04-13 | ✅ Re-ran targeted backend trust-control tests and completed a passing frontend production build. | Verified queue forecast, OCR diagnostics persistence, cross-assignment shadow isolation, rubric preview/save parity, and the updated AI Operations/evaluation UI build. |
 
 ---
 
@@ -550,15 +575,15 @@ Overall Score:
 |-------|--------|------|
 | Audit baseline | ✅ Fixed | Code, docs, artifacts, and tests reviewed. |
 | Trust corrections | ✅ Fixed | Confidence is labeled as heuristic with mode badges; similarity evidence is visible. |
-| Fairness hardening | ⚠️ In Progress | Regression gates now cover six evaluation cases, but multilingual production coverage and broader fairness benchmarks are still missing. |
-| UX explainability uplift | ⚠️ In Progress | Numeric fallback hints are removed, ops quality gates are visible, and semantic drift is marked shadow-only, but rubric transparency still needs deeper UX work. |
-| Performance validation | ✅ Fixed | Benchmark gates now pass with sync handoff at 42.49 ms and 1005-candidate background similarity at 119.14 ms; next step is broader production-data validation rather than runtime rescue. |
+| Fairness hardening | ⚠️ In Progress | Regression gates now cover six evaluation cases and similarity shadow now stores multilingual language-profile hints, but representative multilingual production datasets are still missing. |
+| UX explainability uplift | ✅ Fixed | Numeric fallback hints are removed, ops quality gates plus reviewer analytics are visible, queue workload forecasting is live, cross-assignment shadow evidence is visible, and rubric criterion rationale now appears in evaluation flows. |
+| Performance validation | ✅ Fixed | Benchmark gates still pass with sync handoff at 42.49 ms and 1005-candidate background similarity at 119.14 ms; next step is broader production-data validation rather than runtime rescue. |
 
 ---
 
 ## 🔁 NEXT ACTIONS
 
-- Immediate fix: Collect more reviewer-confirmed fixed vs reopened outcomes, then monitor semantic drift separation before any semantic rollout change.
+- Immediate fix: Collect more reviewer-confirmed fixed vs reopened outcomes and select a production OCR provider so the new shadow and extraction-diagnostic surfaces can graduate beyond adapter-only scaffolding.
 - Next review: 2026-04-22
 - Responsible: Backend lead + frontend lead + ML evaluation owner
 
@@ -577,8 +602,15 @@ Overall Score:
 | Add assignment-level retrieval caching and benchmark gate | Very High | Medium | P0 | Done ✅ |
 | Add semantic shadow calibration and fairness regression gates | Very High | Medium | P0 | Done ✅ |
 | Add reviewer-outcome calibration and AI Operations quality-gate visibility | Very High | Medium | P0 | Done ✅ |
+| Add reviewer default queues, saved presets, and structured reopened reasons | High | Medium | P1 | Done ✅ |
+| Add shared server-backed reviewer preset libraries | High | Medium | P1 | Done ✅ |
+| Add similarity queue metrics for quick queues and shared presets | High | Medium | P1 | Done ✅ |
+| Add reopened-reason trend cards in AI Operations | High | Medium | P1 | Done ✅ |
 | Unify AI preview and persisted evaluation payloads | High | Low | P1 | Done ✅ |
-| Add OCR and extraction quality scoring | High | Medium | P2 | Do in Phase 2 |
+| Add queue workload forecasting for reviewer queues | High | Medium | P1 | Done ✅ |
+| Add cross-assignment shadow evidence and language-profile metadata | High | Medium | P1 | Done ✅ shadow-only |
+| Add rubric-grounded criterion outputs to preview/save flows | Very High | Medium | P1 | Done ✅ |
+| Add OCR adapter diagnostics and extraction confidence | High | Medium | P1 | Done partially ✅ provider selection pending |
 | Add mobile/tablet card layouts for review tables | Medium | Medium | P3 | Do in Phase 3 |
 | Benchmark provider latency and 1000-candidate similarity load | Medium | Medium | P2 | Baseline captured ✅, gates passing ✅, expand production coverage in Phase 4 |
 
@@ -609,11 +641,15 @@ Add criterion-level explainable AI, teacher override analytics, confidence decom
 |------|--------|--------|---------|
 | Broadened semantic similarity pilot (shadow score) | High | Medium | Captures more lexical-vs-semantic drift before any semantic flagging rollout. |
 | Multilingual tokenization config | Medium | Medium | Prevents rollout drift by locking detector, tokenizer, stopword, and mixed-language choices now. |
-| OCR extraction quality warning | Medium | Low | Reduces false negatives on scanned PDFs. |
+| OCR extraction quality warning + diagnostics | High | Medium | Low-text submissions now surface OCR attempt, provider, chars added, confidence, and low-text reason instead of a generic warning only. |
 | Lexical prefilter + async defer guard | High | Medium | Keeps large similarity runs out of the reviewer critical path while preserving durable processing. |
 | Retrieval cache + benchmark gate | High | Medium | Makes candidate-cap similarity performance predictable and regression-tested. |
 | Calibration + fairness artifacts | High | Medium | Makes semantic rollout and evaluation drift measurable before production changes ship. |
 | Reviewer-outcome calibration + ops gate cards | High | Medium | Turns reviewed similarity logs into rollout evidence and makes drift visible without opening artifacts. |
+| Reviewer queues + saved presets + structured reopen reasons | High | Medium | Speeds repeated triage work and makes reopened analytics materially more consistent. |
+| Shared preset libraries | High | Medium | Lets reviewers reuse the same AI Operations triage views across the team instead of per-browser only. |
+| Queue metrics + workload forecasting | High | Medium | Lets reviewers see volume, aging, low-text risk, and backlog pressure before opening a queue. |
+| Reopened-reason trend cards | High | Medium | Makes rising reviewer reversal causes visible instead of leaving reopened reasons as a static count only. |
 
 ---
 
@@ -630,7 +666,7 @@ Add criterion-level explainable AI, teacher override analytics, confidence decom
 
 ## 🎯 EXECUTION PLAN
 
-- Fix now: Semantic similarity pilot ✅ expanded, OCR extraction quality warning ✅, multilingual tokenization plan ✅ locked into config, lexical prefilter ✅, async-only large-run handoff ✅, retrieval caching ✅, benchmark gate ✅, semantic shadow calibration ✅, fairness regression gate ✅, reviewer-outcome calibration ✅, and AI Operations quality-gate visibility ✅.
-- Fix later: Full semantic rollout, cross-assignment scope, and broader production-data plus multilingual fairness validation after the first benchmark baseline.
+- Fix now: Semantic similarity pilot ✅ expanded, OCR extraction quality warning + diagnostics ✅, OCR adapter contract ✅, multilingual tokenization metadata ✅ shadowed, lexical prefilter ✅, async-only large-run handoff ✅, retrieval caching ✅, benchmark gate ✅, semantic shadow calibration ✅, fairness regression gate ✅, reviewer-outcome calibration ✅, AI Operations quality-gate visibility ✅, queue workload forecasting ✅, cross-assignment shadow evidence ✅, and rubric-grounded preview/save payloads ✅.
+- Fix later: Full semantic rollout, production OCR provider selection, and broader production-data plus multilingual fairness validation after more reviewed outcomes land.
 - Remove: Probability-like wording for lexical similarity ✅ and authoritative fallback phrasing ✅ numeric fallback hints removed from chat/review text.
-- Build later: Adaptive thresholds, reviewer analytics, and advanced explainable AI panels.
+- Build later: Adaptive thresholds, preset-usage insights, admin-pinned queues, and advanced explainable AI panels.

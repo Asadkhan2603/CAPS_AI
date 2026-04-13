@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import Card from '../../components/ui/Card';
-import AdminDomainNav from '../../components/admin/AdminDomainNav';
 import { apiClient } from '../../services/apiClient';
 import { formatApiError } from '../../utils/apiError';
 
@@ -53,7 +52,6 @@ export default function AdminAnalyticsPage() {
           <div>Snapshot date: {metrics.date || '-'}</div>
         </div>
       </Card>
-      <AdminDomainNav />
       {error ? <Card><p className="text-sm text-rose-600">{error}</p></Card> : null}
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Total Users" value={overview.total_users} />

@@ -26,6 +26,12 @@ def submission_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'similarity_score': document.get('similarity_score'),
         'extracted_text': document.get('extracted_text'),
         'extraction_quality': document.get('extraction_quality'),
+        'ocr_attempted': document.get('ocr_attempted'),
+        'ocr_provider': document.get('ocr_provider'),
+        'ocr_chars_added': document.get('ocr_chars_added'),
+        'page_count': document.get('page_count'),
+        'extraction_confidence': document.get('extraction_confidence'),
+        'low_text_reason': document.get('low_text_reason'),
         'created_at': document.get('created_at'),
     }
     return apply_public_identity(payload, kind="submission", document=document, display_name=document.get("original_filename"))

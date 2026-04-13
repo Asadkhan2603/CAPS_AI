@@ -57,19 +57,23 @@ async def update_evaluation(
     update_data["internal_total"] = internal
     update_data["grand_total"] = total
     update_data["grade"] = grade
+    if "rubric_criteria" in update_data and update_data["rubric_criteria"] is None:
+        update_data["rubric_criteria"] = []
 
     if any(
         key in update_data
-        for key in ["attendance_percent", "skill", "behavior", "report", "viva", "final_exam"]
+        for key in ["attendance_percent", "skill", "behavior", "report", "viva", "final_exam", "rubric_criteria"]
     ):
         submission = await database.submissions.find_one({"_id": parse_object_id(item.get("submission_id"))})
         submission_text = submission.get("extracted_text") if submission else ""
+        rubric_criteria = update_data.get("rubric_criteria", item.get("rubric_criteria") or [])
         ai_payload = await build_ai_insight_async(
             submission_text=submission_text or "",
             attendance_percent=int(merged["attendance_percent"]),
             internal_total_value=internal,
             grand_total_value=total,
             grade=grade,
+            rubric_criteria=rubric_criteria,
             runtime_settings=await get_ai_runtime_settings(),
         )
         update_data.update(ai_payload_update_fields(ai_payload))

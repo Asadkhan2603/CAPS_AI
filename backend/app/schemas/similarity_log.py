@@ -18,16 +18,21 @@ class SimilarityLogOut(BaseModel):
     evidence_excerpts: list[dict] = Field(default_factory=list)
     overlap_stats: dict | None = None
     extraction_quality: dict | None = None
+    extraction_diagnostics: dict | None = None
     semantic_shadow_score: float | None = Field(default=None, ge=0, le=1)
+    match_scope: str | None = None
+    language_profile: dict | None = None
     candidate_count: int | None = None
     cap_reached: bool = False
     review_status: str | None = None
+    review_reason_code: str | None = None
     review_notes: str | None = None
     reviewed_by_user_id: str | None = None
     reviewed_at: datetime | None = None
     engine_version: str | None = None
     created_at: datetime | None = None
     schema_version: int = 1
+    related_shadow_candidates: list[dict] = Field(default_factory=list)
 
 
 class SimilarityRunQueuedResponse(BaseModel):

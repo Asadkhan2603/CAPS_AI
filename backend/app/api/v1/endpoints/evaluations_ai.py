@@ -38,7 +38,10 @@ async def preview_evaluation_ai(
     payload_data = payload.model_dump()
     internal, total, grade = compute_evaluation_totals(payload_data)
     runtime_settings = await get_ai_runtime_settings()
-    ai_payload = build_submission_reuse_ai_payload(submission)
+    ai_payload = build_submission_reuse_ai_payload(
+        submission,
+        rubric_criteria=payload.rubric_criteria,
+    )
     if ai_payload is None:
         ai_payload = await build_ai_insight_async(
             submission_text=submission.get("extracted_text") or "",
@@ -46,6 +49,7 @@ async def preview_evaluation_ai(
             internal_total_value=internal,
             grand_total_value=total,
             grade=grade,
+            rubric_criteria=payload.rubric_criteria,
             runtime_settings=runtime_settings,
         )
 
@@ -56,6 +60,13 @@ async def preview_evaluation_ai(
         grade=grade,
         ai_score=ai_payload.get("ai_score"),
         ai_feedback=ai_payload.get("ai_feedback"),
+        ai_status=ai_payload.get("ai_status"),
+        ai_provider=ai_payload.get("ai_provider"),
+        ai_confidence=ai_payload.get("ai_confidence"),
+        ai_confidence_mode=ai_payload.get("ai_confidence_mode"),
+        rubric_criteria=ai_payload.get("rubric_criteria") or [],
+        ai_criterion_scores=ai_payload.get("ai_criterion_scores") or [],
+        ai_criterion_rationales=ai_payload.get("ai_criterion_rationales") or [],
         ai_insight=ai_payload.get("insight"),
     )
 
@@ -78,7 +89,10 @@ async def create_evaluation(
     payload_data = payload.model_dump()
     internal, total, grade = compute_evaluation_totals(payload_data)
     runtime_settings = await get_ai_runtime_settings()
-    ai_payload = build_submission_reuse_ai_payload(submission)
+    ai_payload = build_submission_reuse_ai_payload(
+        submission,
+        rubric_criteria=payload.rubric_criteria,
+    )
     if ai_payload is None:
         ai_payload = await build_ai_insight_async(
             submission_text=submission.get("extracted_text") or "",
@@ -86,6 +100,7 @@ async def create_evaluation(
             internal_total_value=internal,
             grand_total_value=total,
             grade=grade,
+            rubric_criteria=payload.rubric_criteria,
             runtime_settings=runtime_settings,
         )
     now = datetime.now(timezone.utc)
@@ -103,6 +118,7 @@ async def create_evaluation(
         "internal_total": internal,
         "grand_total": total,
         "grade": grade,
+        "rubric_criteria": ai_payload.get("rubric_criteria") or payload.rubric_criteria,
         "remarks": payload.remarks,
         "is_finalized": payload.is_finalized,
         "result_status": "finalized_unreleased" if payload.is_finalized else "draft",
@@ -166,6 +182,7 @@ async def refresh_evaluation_ai(
         internal_total_value=float(item.get("internal_total") or 0),
         grand_total_value=float(item.get("grand_total") or 0),
         grade=str(item.get("grade") or "Needs Improvement"),
+        rubric_criteria=item.get("rubric_criteria") or [],
         runtime_settings=await get_ai_runtime_settings(),
     )
 

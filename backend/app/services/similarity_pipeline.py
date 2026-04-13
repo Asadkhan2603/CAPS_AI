@@ -24,7 +24,7 @@ from app.services.similarity_engine import (
     shortlist_similarity_candidate_ids,
     tokenize_text,
 )
-from app.services.similarity_rollout import should_capture_semantic_shadow
+from app.services.similarity_rollout import detect_language_profile, should_capture_semantic_shadow
 
 
 async def _notify_similarity_alert(
@@ -172,6 +172,79 @@ async def _load_assignment_similarity_candidates(
     return filtered_candidate_ids, artifact_by_id, max(0, total_candidates - 1)
 
 
+async def _load_cross_assignment_similarity_candidates(
+    *,
+    source: dict[str, Any],
+    source_submission_id: str,
+    source_assignment_id: str,
+    source_text: str,
+) -> tuple[list[str], int]:
+    if not settings.similarity_cross_assignment_enabled:
+        return [], 0
+
+    query = {
+        "_id": {"$ne": parse_object_id(source_submission_id)},
+        "assignment_id": {"$ne": source_assignment_id},
+    }
+    total_candidates = await db.submissions.count_documents(query)
+    if total_candidates <= 0:
+        return [], 0
+
+    candidate_rows = await db.submissions.find(
+        query,
+        {
+            "_id": 1,
+            "similarity_retrieval_artifact": 1,
+            "extracted_text": 1,
+        },
+    ).to_list(length=max(1, total_candidates))
+    candidate_artifacts = [
+        (
+            str(item["_id"]),
+            ensure_similarity_retrieval_artifact(
+                item.get("extracted_text", ""),
+                item.get("similarity_retrieval_artifact"),
+            ),
+        )
+        for item in candidate_rows
+        if item.get("_id")
+    ]
+    cross_limit = max(3, min(int(settings.semantic_shadow_capture_top_n), 12))
+    ranked_candidates = await run_in_threadpool(
+        lambda: shortlist_similarity_candidate_ids(source_text, candidate_artifacts, limit=cross_limit),
+    )
+    ranked_candidate_ids = [submission_id for submission_id, _score in ranked_candidates]
+    return ranked_candidate_ids, max(0, total_candidates)
+
+
+def _build_language_profile(source_text: str, matched_text: str) -> dict[str, Any]:
+    source_profile = detect_language_profile(source_text)
+    matched_profile = detect_language_profile(matched_text)
+    return {
+        "source": source_profile,
+        "matched": matched_profile,
+        "mixed_or_non_latin": bool(
+            source_profile.get("mixed_script")
+            or matched_profile.get("mixed_script")
+            or source_profile.get("primary_script") != "latin"
+            or matched_profile.get("primary_script") != "latin"
+        ),
+    }
+
+
+def _build_submission_extraction_diagnostics(submission: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(submission, dict):
+        return None
+    return {
+        "ocr_attempted": submission.get("ocr_attempted"),
+        "ocr_provider": submission.get("ocr_provider"),
+        "ocr_chars_added": submission.get("ocr_chars_added"),
+        "page_count": submission.get("page_count"),
+        "extraction_confidence": submission.get("extraction_confidence"),
+        "low_text_reason": submission.get("low_text_reason"),
+    }
+
+
 async def run_similarity_pipeline(
     *,
     submission_id: str,
@@ -199,6 +272,12 @@ async def run_similarity_pipeline(
                 "extracted_text": 1,
                 "assignment_id": 1,
                 "schema_version": 1,
+                "ocr_attempted": 1,
+                "ocr_provider": 1,
+                "ocr_chars_added": 1,
+                "page_count": 1,
+                "extraction_confidence": 1,
+                "low_text_reason": 1,
             },
         ).to_list(length=len(filtered_candidate_ids))
     id_to_submission = {str(item.get("_id")): item for item in shortlisted_candidates if item.get("_id")}
@@ -223,6 +302,7 @@ async def run_similarity_pipeline(
         else []
     )
     source_extraction_quality = extraction_quality_score(source_text)
+    source_language_profile = detect_language_profile(source_text)
     similarity_alert_recipient_user_ids = await _resolve_similarity_alert_recipients(source_assignment)
     existing_logs = []
     if filtered_candidate_ids:
@@ -269,6 +349,9 @@ async def run_similarity_pipeline(
             semantic_shadow_score = compute_semantic_shadow_score(source_text, matched_text)
         if is_flagged:
             flagged_count += 1
+        match_scope = "same_assignment_lexical" if is_flagged else (
+            "same_assignment_shadow" if semantic_shadow_score is not None else "same_assignment_lexical"
+        )
 
         existing = existing_by_matched_submission_id.get(matched_submission_id)
         document = {
@@ -288,7 +371,22 @@ async def run_similarity_pipeline(
                 "source": source_extraction_quality,
                 "matched": matched_extraction_quality,
             },
+            "extraction_diagnostics": {
+                "source": _build_submission_extraction_diagnostics(source),
+                "matched": _build_submission_extraction_diagnostics(matched_submission),
+            },
             "semantic_shadow_score": semantic_shadow_score,
+            "match_scope": match_scope,
+            "language_profile": {
+                "source": source_language_profile,
+                "matched": detect_language_profile(matched_text),
+                "mixed_or_non_latin": bool(
+                    source_language_profile.get("mixed_script")
+                    or detect_language_profile(matched_text).get("mixed_script")
+                    or source_language_profile.get("primary_script") != "latin"
+                    or detect_language_profile(matched_text).get("primary_script") != "latin"
+                ),
+            },
             "candidate_count": candidate_count,
             "cap_reached": cap_reached,
             "review_status": "open" if is_flagged else None,
@@ -332,6 +430,122 @@ async def run_similarity_pipeline(
                 threshold=threshold_value,
                 created_by=actor_user_id,
             )
+
+    cross_assignment_candidate_ids, cross_assignment_candidate_count = await _load_cross_assignment_similarity_candidates(
+        source=source,
+        source_submission_id=submission_id,
+        source_assignment_id=source_assignment_id,
+        source_text=source_text,
+    )
+    if cross_assignment_candidate_ids:
+        cross_assignment_candidates = await db.submissions.find(
+            {"_id": {"$in": [parse_object_id(item) for item in cross_assignment_candidate_ids]}},
+            {
+                "_id": 1,
+                "assignment_id": 1,
+                "extracted_text": 1,
+                "ocr_attempted": 1,
+                "ocr_provider": 1,
+                "ocr_chars_added": 1,
+                "page_count": 1,
+                "extraction_confidence": 1,
+                "low_text_reason": 1,
+            },
+        ).to_list(length=len(cross_assignment_candidate_ids))
+        cross_by_id = {
+            str(item.get("_id")): item
+            for item in cross_assignment_candidates
+            if item.get("_id")
+        }
+        cross_texts = [
+            (candidate_id, cross_by_id[candidate_id].get("extracted_text", ""))
+            for candidate_id in cross_assignment_candidate_ids
+            if candidate_id in cross_by_id
+        ]
+        cross_scores = await run_in_threadpool(compute_similarity_scores, source_text, cross_texts)
+        existing_cross_logs = await db.similarity_logs.find(
+            {
+                "source_submission_id": submission_id,
+                "matched_submission_id": {"$in": [candidate_id for candidate_id, _score in cross_scores]},
+                "match_scope": "cross_assignment_shadow",
+                "engine_version": AI_SIMILARITY_ENGINE_VERSION,
+            }
+        ).to_list(length=len(cross_scores))
+        existing_cross_by_match = {
+            str(item.get("matched_submission_id")): item
+            for item in existing_cross_logs
+            if item.get("matched_submission_id")
+        }
+        for rank, (matched_submission_id, lexical_score) in enumerate(cross_scores, start=1):
+            matched_submission = cross_by_id.get(matched_submission_id)
+            if not matched_submission:
+                continue
+            matched_text = matched_submission.get("extracted_text", "")
+            semantic_shadow_score = compute_semantic_shadow_score(source_text, matched_text)
+            if semantic_shadow_score is None:
+                continue
+            numeric_lexical = round(float(lexical_score), 4)
+            matched_extraction_quality = extraction_quality_score(matched_text)
+            prompt_terms = set(
+                tokenize_text(f"{source_assignment.get('title', '')} {source_assignment.get('description', '')}")
+                if source_assignment
+                else []
+            )
+            evidence_excerpts = extract_top_sentence_overlaps(
+                source_text,
+                matched_text,
+                prompt_terms=prompt_terms,
+                max_pairs=2,
+            )
+            document = {
+                "source_submission_id": submission_id,
+                "matched_submission_id": matched_submission_id,
+                "source_assignment_id": source_assignment_id,
+                "matched_assignment_id": matched_submission.get("assignment_id"),
+                "source_class_id": source_assignment.get("class_id") if source_assignment else None,
+                "matched_class_id": None,
+                "visible_to_extensions": ["year_head", "class_coordinator"],
+                "score": numeric_lexical,
+                "threshold": threshold_value,
+                "is_flagged": False,
+                "evidence_excerpts": evidence_excerpts,
+                "overlap_stats": compute_overlap_stats(source_text, matched_text, prompt_terms=prompt_terms),
+                "extraction_quality": {
+                    "source": source_extraction_quality,
+                    "matched": matched_extraction_quality,
+                },
+                "extraction_diagnostics": {
+                    "source": _build_submission_extraction_diagnostics(source),
+                    "matched": _build_submission_extraction_diagnostics(matched_submission),
+                },
+                "semantic_shadow_score": semantic_shadow_score,
+                "match_scope": "cross_assignment_shadow",
+                "language_profile": _build_language_profile(source_text, matched_text),
+                "candidate_count": len(cross_texts),
+                "cap_reached": cross_assignment_candidate_count > len(cross_assignment_candidate_ids),
+                "review_status": None,
+                "review_notes": None,
+                "reviewed_by_user_id": None,
+                "reviewed_at": None,
+                "engine_version": AI_SIMILARITY_ENGINE_VERSION,
+                "updated_at": datetime.now(timezone.utc),
+                "schema_version": SIMILARITY_LOG_SCHEMA_VERSION,
+            }
+            existing = existing_cross_by_match.get(matched_submission_id)
+            if existing:
+                await db.similarity_logs.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": document},
+                )
+                created = await db.similarity_logs.find_one({"_id": existing["_id"]})
+                updated_count += 1
+            else:
+                payload = {**document, "created_at": datetime.now(timezone.utc)}
+                result = await db.similarity_logs.insert_one(payload)
+                created = await db.similarity_logs.find_one({"_id": result.inserted_id})
+                created_count += 1
+            if created:
+                created_items.append(created)
 
     await db.submissions.update_one(
         {"_id": parse_object_id(submission_id)},

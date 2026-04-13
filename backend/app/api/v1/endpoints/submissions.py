@@ -16,7 +16,7 @@ from app.schemas.submission import SubmissionOut, SubmissionUpdate
 from app.services.ai_jobs import AI_JOB_TYPE_BULK_SUBMISSION, queue_ai_job, schedule_ai_job_processing, serialize_ai_job
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
-from app.services.file_parser import parse_file_content
+from app.services.file_parser import parse_file_content_with_diagnostics
 from app.services.similarity_engine import build_similarity_retrieval_artifact, extraction_quality_score
 from app.services.public_ids import build_public_id, persist_public_id, persist_public_id_update
 from app.services.submission_access_policy import teacher_accessible_assignment_ids, teacher_can_access_submission
@@ -115,7 +115,8 @@ async def upload_submission(
     if size > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='File exceeds 10MB limit')
 
-    extracted_text = await run_in_threadpool(parse_file_content, file.filename or 'submission', content)
+    parsed_file = await run_in_threadpool(parse_file_content_with_diagnostics, file.filename or 'submission', content)
+    extracted_text = parsed_file.text
 
     await run_in_threadpool(UPLOAD_DIR.mkdir, parents=True, exist_ok=True)
     stored_name = f"{uuid4().hex}{suffix}"
@@ -143,6 +144,12 @@ async def upload_submission(
         'similarity_score': None,
         'extracted_text': extracted_text,
         'extraction_quality': extraction_quality,
+        'ocr_attempted': parsed_file.extraction_diagnostics.get('ocr_attempted'),
+        'ocr_provider': parsed_file.extraction_diagnostics.get('ocr_provider'),
+        'ocr_chars_added': parsed_file.extraction_diagnostics.get('ocr_chars_added'),
+        'page_count': parsed_file.extraction_diagnostics.get('page_count'),
+        'extraction_confidence': parsed_file.extraction_diagnostics.get('extraction_confidence'),
+        'low_text_reason': parsed_file.extraction_diagnostics.get('low_text_reason'),
         'similarity_retrieval_artifact': similarity_retrieval_artifact,
         'created_at': now,
         'updated_at': now,

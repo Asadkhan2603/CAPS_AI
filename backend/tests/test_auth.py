@@ -324,6 +324,7 @@ class FakeDB:
         self.ai_evaluation_chats = FakeUsersCollection()
         self.ai_evaluation_runs = FakeUsersCollection()
         self.ai_jobs = FakeUsersCollection()
+        self.ai_similarity_views = FakeUsersCollection()
         self.evaluations = FakeUsersCollection()
         self.semester_results = FakeUsersCollection()
         self.exams = FakeUsersCollection()

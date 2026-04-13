@@ -1,17 +1,23 @@
 import { useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import EntityManager from '../components/ui/EntityManager';
 
-const filters = [
-  { name: 'actor_user_id', label: 'Actor' },
-  { name: 'entity_type', label: 'Entity Type' },
-  { name: 'resource_type', label: 'Resource Type' },
-  { name: 'action', label: 'Action' },
-  { name: 'severity', label: 'Severity', placeholder: 'low / medium / high' },
-  { name: 'created_from', label: 'Created From', type: 'datetime' },
-  { name: 'created_to', label: 'Created To', type: 'datetime' }
-];
-
 export default function AuditLogsPage() {
+  const [searchParams] = useSearchParams();
+
+  const filters = useMemo(
+    () => [
+      { name: 'actor_user_id', label: 'Actor', defaultValue: searchParams.get('actor_user_id') || '' },
+      { name: 'entity_type', label: 'Entity Type', defaultValue: searchParams.get('entity_type') || '' },
+      { name: 'resource_type', label: 'Resource Type', defaultValue: searchParams.get('resource_type') || '' },
+      { name: 'action', label: 'Action', defaultValue: searchParams.get('action') || '' },
+      { name: 'severity', label: 'Severity', placeholder: 'low / medium / high', defaultValue: searchParams.get('severity') || '' },
+      { name: 'created_from', label: 'Created From', type: 'datetime', defaultValue: searchParams.get('created_from') || '' },
+      { name: 'created_to', label: 'Created To', type: 'datetime', defaultValue: searchParams.get('created_to') || '' }
+    ],
+    [searchParams]
+  );
+
   const columns = useMemo(
     () => [
       { key: 'actor_label', label: 'Actor', render: (row) => row.actor_label || row.actor_user_id || '-' },

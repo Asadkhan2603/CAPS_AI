@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Table from '../../components/ui/Table';
 import EmptyState from '../../components/ui/EmptyState';
-import AdminDomainNav from '../../components/admin/AdminDomainNav';
 import { formatApiError } from '../../utils/apiError';
 import { useToast } from '../../hooks/useToast';
 import {
@@ -14,6 +14,7 @@ import {
   fetchGovernanceSessions,
   updateGovernancePolicy
 } from '../../services/adminGovernanceApi';
+import { buildGovernanceResultLinks, buildGovernanceReviewFollowUp, buildGovernanceSessionFollowUp, buildRbacPath } from './adminWorkflowLinks';
 
 const reviewTypeOptions = [
   { value: 'destructive', label: 'Destructive Action' },
@@ -45,6 +46,7 @@ export default function AdminGovernancePage() {
     entity_id: '',
     reason: ''
   });
+  const [lastOutcome, setLastOutcome] = useState(null);
 
   const metrics = useMemo(
     () => [
@@ -125,6 +127,15 @@ export default function AdminGovernancePage() {
       });
       setPolicy((prev) => ({ ...prev, ...next }));
       pushToast({ title: 'Policy updated', description: 'Governance policy saved.', variant: 'success' });
+      setLastOutcome({
+        title: 'Policy saved',
+        description: 'Open Audit Logs to verify the policy mutation trail or RBAC to continue access-control follow-up.',
+        ...buildGovernanceResultLinks({
+          action: 'update',
+          entityType: 'governance_policy',
+          resourceType: 'governance_policy',
+        }),
+      });
       await reloadDashboard();
     } catch (err) {
       pushToast({ title: 'Policy update failed', description: formatApiError(err, 'Failed to save policy'), variant: 'error' });
@@ -165,6 +176,16 @@ export default function AdminGovernancePage() {
         description: `Review ${row.public_id || row.id} updated.`,
         variant: 'success'
       });
+      setLastOutcome({
+        title: approve ? 'Review approved' : 'Review rejected',
+        description: 'Continue with RBAC for role-related follow-up or use Audit Logs to verify the decision trail.',
+        ...buildGovernanceResultLinks({
+          reviewType: row.review_type,
+          action: row.action,
+          entityType: row.entity_type,
+          resourceType: row.entity_type,
+        }),
+      });
       await Promise.all([loadReviews(), reloadDashboard()]);
     } catch (err) {
       pushToast({ title: 'Decision failed', description: formatApiError(err, 'Failed to update review'), variant: 'error' });
@@ -182,6 +203,23 @@ export default function AdminGovernancePage() {
       key: 'created_at',
       label: 'Created',
       render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-')
+    },
+    {
+      key: 'follow_up',
+      label: 'Follow-up',
+      render: (row) => {
+        const followUp = buildGovernanceReviewFollowUp(row);
+        return (
+          <div className="flex flex-wrap gap-2">
+            <Link className="btn-secondary !px-3 !py-1.5 text-xs" to={followUp.primaryTo}>
+              {followUp.primaryLabel}
+            </Link>
+            <Link className="btn-secondary !px-3 !py-1.5 text-xs" to={followUp.secondaryTo}>
+              {followUp.secondaryLabel}
+            </Link>
+          </div>
+        );
+      }
     }
   ];
 
@@ -212,6 +250,18 @@ export default function AdminGovernancePage() {
       key: 'last_seen_at',
       label: 'Last Seen',
       render: (row) => (row.last_seen_at ? new Date(row.last_seen_at).toLocaleString() : '-')
+    },
+    {
+      key: 'follow_up',
+      label: 'Follow-up',
+      render: (row) => {
+        const followUp = buildGovernanceSessionFollowUp(row);
+        return (
+          <Link className="btn-secondary !px-3 !py-1.5 text-xs" to={followUp.primaryTo}>
+            {followUp.primaryLabel}
+          </Link>
+        );
+      }
     }
   ];
 
@@ -221,7 +271,6 @@ export default function AdminGovernancePage() {
         <h1 className="text-2xl font-semibold">Governance</h1>
         <p className="text-sm text-slate-500">Review queue, policy controls, and session monitoring.</p>
       </Card>
-      <AdminDomainNav />
       {error ? (
         <Card>
           <p className="text-sm text-rose-600">{error}</p>
@@ -234,6 +283,34 @@ export default function AdminGovernancePage() {
             <p className="text-2xl font-semibold">{loading ? '...' : metric.value}</p>
           </Card>
         ))}
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <Card className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">Related Actions</h2>
+            <p className="text-sm text-slate-500">
+              Governance decisions usually need an access-control follow-up in RBAC or a final verification pass in Audit Logs.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link className="btn-secondary" to={buildRbacPath({ context: 'governance_follow_up' })}>Open RBAC</Link>
+            <Link className="btn-secondary" to="/audit-logs">Open Audit Logs</Link>
+          </div>
+        </Card>
+
+        {lastOutcome ? (
+          <Card className="space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold">{lastOutcome.title}</h2>
+              <p className="text-sm text-slate-500">{lastOutcome.description}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link className="btn-secondary" to={lastOutcome.auditTo}>Open Audit Logs</Link>
+              <Link className="btn-secondary" to={lastOutcome.rbacTo}>Open RBAC</Link>
+            </div>
+          </Card>
+        ) : null}
       </div>
 
       <Card className="space-y-4">
@@ -286,7 +363,10 @@ export default function AdminGovernancePage() {
       </Card>
 
       <Card className="space-y-4">
-        <h2 className="text-lg font-semibold">Admin Action Review Queue</h2>
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold">Admin Action Review Queue</h2>
+          <p className="text-sm text-slate-500">Approve here, then use the follow-up links to jump straight into the access or audit surface that closes the loop.</p>
+        </div>
         <form className="grid gap-3 md:grid-cols-5" onSubmit={onCreateReview}>
           <label className="space-y-1 md:col-span-1">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Type</span>
@@ -392,7 +472,10 @@ export default function AdminGovernancePage() {
 
       <Card className="space-y-4">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Device Session Monitor</h2>
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold">Device Session Monitor</h2>
+            <p className="text-sm text-slate-500">Use session follow-up links to verify suspicious activity in Audit Logs without rebuilding the filter set.</p>
+          </div>
           <div className="flex items-center gap-2">
             <select
               className="input max-w-[200px]"

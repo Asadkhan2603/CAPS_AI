@@ -3,10 +3,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.security import require_roles
+from app.schemas.ai_similarity_views import AISimilarityViewCreate, AISimilarityViewOut
 from app.services.ai_jobs import get_ai_job
 from app.services.ai_ops_workflow import build_ai_operations_overview_payload, list_ai_jobs_payload
 from app.services.ai_ops_workflow import get_ai_job_detail_payload
 from app.services.ai_runtime import get_ai_runtime_settings
+from app.services.ai_similarity_views import delete_shared_similarity_view, list_shared_similarity_views, save_shared_similarity_view
 from app.services.ai_runtime_workflow import build_provider_mode_payload
 
 from .ai_common import distinct_strings, get_ai_db, serialize_dt, teacher_assignment_scope_ids
@@ -38,6 +40,47 @@ async def get_ai_operations_overview(
         serialize_dt=serialize_dt,
         distinct_strings=distinct_strings,
     )
+
+
+@router.get("/ops/similarity/views", response_model=list[AISimilarityViewOut])
+async def list_similarity_views(
+    current_user=Depends(require_roles(["teacher", "admin"])),
+) -> list[AISimilarityViewOut]:
+    active_db = get_ai_db()
+    rows = await list_shared_similarity_views(database=active_db)
+    return [AISimilarityViewOut(**row) for row in rows]
+
+
+@router.post("/ops/similarity/views", response_model=AISimilarityViewOut, status_code=status.HTTP_201_CREATED)
+async def create_similarity_view(
+    payload: AISimilarityViewCreate,
+    current_user=Depends(require_roles(["teacher", "admin"])),
+) -> AISimilarityViewOut:
+    active_db = get_ai_db()
+    created = await save_shared_similarity_view(
+        name=payload.name,
+        filters=payload.filters.model_dump(),
+        current_user_id=str(current_user["_id"]),
+        database=active_db,
+    )
+    return AISimilarityViewOut(**created)
+
+
+@router.delete("/ops/similarity/views/{view_id}")
+async def delete_similarity_view(
+    view_id: str,
+    current_user=Depends(require_roles(["teacher", "admin"])),
+) -> dict[str, Any]:
+    active_db = get_ai_db()
+    deleted = await delete_shared_similarity_view(
+        view_id=view_id,
+        current_user_id=str(current_user["_id"]),
+        is_admin=str(current_user.get("role") or "") == "admin",
+        database=active_db,
+    )
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared similarity view not found")
+    return {"deleted": True, "view_id": view_id}
 
 
 @router.get("/jobs")

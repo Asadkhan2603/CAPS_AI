@@ -81,7 +81,9 @@ export default function SubmissionsPage() {
                 <span>{truncated}</span>
                 {lowExtraction ? (
                   <span className="block text-xs text-amber-700 dark:text-amber-300">
-                    Low text extraction detected. Consider re-uploading with a clearer PDF.
+                    Low text extraction detected. {row.ocr_attempted
+                      ? `OCR ${row.ocr_provider || 'adapter'} added ${row.ocr_chars_added ?? 0} chars with confidence ${row.extraction_confidence ?? 0}.`
+                      : 'OCR not applied yet.'} Consider re-uploading with a clearer PDF.
                   </span>
                 ) : null}
               </div>
@@ -440,6 +442,11 @@ export default function SubmissionsPage() {
         {(user?.role === 'teacher' || user?.role === 'admin') ? (
           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
             `fallback` means the system returned deterministic backup guidance because the primary AI provider was unavailable or not used. Review those cases before finalizing marks.
+          </p>
+        ) : null}
+        {(user?.role === 'teacher' || user?.role === 'admin') ? (
+          <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200">
+            Low-text PDFs now include OCR diagnostics and extraction confidence so review teams can separate weak evidence from genuine similarity risk.
           </p>
         ) : null}
         <div className="grid gap-3 sm:grid-cols-3">

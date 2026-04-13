@@ -5,7 +5,6 @@ import Table from '../../components/ui/Table';
 import Modal from '../../components/ui/Modal';
 import FormInput from '../../components/ui/FormInput';
 import EmptyState from '../../components/ui/EmptyState';
-import AdminDomainNav from '../../components/admin/AdminDomainNav';
 import { useToast } from '../../hooks/useToast';
 import { apiClient } from '../../services/apiClient';
 import {
@@ -23,6 +22,7 @@ import {
   updateRbacRole,
 } from '../../services/adminRbacApi';
 import { formatApiError } from '../../utils/apiError';
+import { buildGovernancePath, buildRbacAuditLogPath, buildRbacResultLinks } from './adminWorkflowLinks';
 
 const emptyAdmin = () => ({
   id: '',
@@ -74,6 +74,7 @@ export default function AdminRbacPage() {
   const [savingRole, setSavingRole] = useState(false);
   const [adminForm, setAdminForm] = useState(emptyAdmin());
   const [roleForm, setRoleForm] = useState(emptyRole());
+  const [lastAction, setLastAction] = useState(null);
 
   const permissionGroups = useMemo(() => {
     const groups = new Map();
@@ -208,16 +209,21 @@ export default function AdminRbacPage() {
     } catch (err) {
       const message = formatApiError(err, 'Failed to load RBAC control panel');
       setError(message);
-      pushToast({ type: 'error', message });
+      pushToast({ title: 'RBAC load failed', description: message, variant: 'error' });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }
 
-  async function refreshWithToast(message) {
+  async function refreshWithToast({ title, description, auditContext }) {
     await loadData(true);
-    pushToast({ type: 'success', message });
+    pushToast({ title, description, variant: 'success' });
+    setLastAction({
+      title,
+      description,
+      ...buildRbacResultLinks(auditContext),
+    });
   }
 
   function updateAdminField(field, value) {
@@ -249,7 +255,7 @@ export default function AdminRbacPage() {
       });
       setAdminModalOpen(true);
     } catch (err) {
-      pushToast({ type: 'error', message: formatApiError(err, 'Failed to load admin details') });
+      pushToast({ title: 'Admin load failed', description: formatApiError(err, 'Failed to load admin details'), variant: 'error' });
     }
   }
 
@@ -340,18 +346,34 @@ export default function AdminRbacPage() {
       };
       if (adminForm.id) {
         await updateAdminUser(adminForm.id, payload);
-        await refreshWithToast('Admin account updated.');
+        await refreshWithToast({
+          title: 'Admin account updated',
+          description: 'Open Governance for approval follow-up or Audit Logs to verify the mutation trail.',
+          auditContext: {
+            action: 'update',
+            entity_type: 'admin_user',
+            resource_type: 'admin_user',
+          },
+        });
       } else {
         await createAdminUser({
           ...payload,
           email: adminForm.email.trim(),
           password: adminForm.password,
         });
-        await refreshWithToast('Admin account created.');
+        await refreshWithToast({
+          title: 'Admin account created',
+          description: 'Use Governance for approval follow-up and Audit Logs for final verification.',
+          auditContext: {
+            action: 'create',
+            entity_type: 'admin_user',
+            resource_type: 'admin_user',
+          },
+        });
       }
       closeAdminModal();
     } catch (err) {
-      pushToast({ type: 'error', message: formatApiError(err, 'Failed to save admin account') });
+      pushToast({ title: 'Admin save failed', description: formatApiError(err, 'Failed to save admin account'), variant: 'error' });
     } finally {
       setSavingAdmin(false);
     }
@@ -375,14 +397,30 @@ export default function AdminRbacPage() {
           permission_keys: payload.permission_keys,
           is_active: payload.is_active,
         });
-        await refreshWithToast('Role updated.');
+        await refreshWithToast({
+          title: 'Role updated',
+          description: 'Continue in Governance if this role needs approval, then verify the change in Audit Logs.',
+          auditContext: {
+            action: 'rbac_role_updated',
+            entity_type: 'rbac_role',
+            resource_type: 'rbac_role',
+          },
+        });
       } else {
         await createRbacRole(payload);
-        await refreshWithToast('Role created.');
+        await refreshWithToast({
+          title: 'Role created',
+          description: 'Use Governance for approval follow-up and Audit Logs to confirm role creation details.',
+          auditContext: {
+            action: 'rbac_role_created',
+            entity_type: 'rbac_role',
+            resource_type: 'rbac_role',
+          },
+        });
       }
       closeRoleModal();
     } catch (err) {
-      pushToast({ type: 'error', message: formatApiError(err, 'Failed to save role') });
+      pushToast({ title: 'Role save failed', description: formatApiError(err, 'Failed to save role'), variant: 'error' });
     } finally {
       setSavingRole(false);
     }
@@ -391,9 +429,17 @@ export default function AdminRbacPage() {
   async function toggleAdminStatus(admin) {
     try {
       await updateAdminUserStatus(admin.id, { is_active: !admin.is_active });
-      await refreshWithToast(!admin.is_active ? 'Admin activated.' : 'Admin deactivated.');
+      await refreshWithToast({
+        title: !admin.is_active ? 'Admin activated' : 'Admin deactivated',
+        description: 'Review the compliance trail in Audit Logs or continue the approval flow in Governance.',
+        auditContext: {
+          action: 'status_update',
+          entity_type: 'admin_user',
+          resource_type: 'admin_user',
+        },
+      });
     } catch (err) {
-      pushToast({ type: 'error', message: formatApiError(err, 'Failed to update admin status') });
+      pushToast({ title: 'Status update failed', description: formatApiError(err, 'Failed to update admin status'), variant: 'error' });
     }
   }
 
@@ -401,23 +447,39 @@ export default function AdminRbacPage() {
     if (!window.confirm(`Soft delete admin ${admin.email}?`)) return;
     try {
       await deleteAdminUser(admin.id);
-      await refreshWithToast('Admin soft deleted.');
+      await refreshWithToast({
+        title: 'Admin soft deleted',
+        description: 'Open Audit Logs to confirm the soft delete trail or Governance for the next approval step.',
+        auditContext: {
+          action: 'delete',
+          entity_type: 'admin_user',
+          resource_type: 'admin_user',
+        },
+      });
     } catch (err) {
-      pushToast({ type: 'error', message: formatApiError(err, 'Failed to delete admin') });
+      pushToast({ title: 'Delete failed', description: formatApiError(err, 'Failed to delete admin'), variant: 'error' });
     }
   }
 
   async function removeRole(role) {
     if (role.is_system) {
-      pushToast({ type: 'error', message: 'System roles cannot be deleted.' });
+      pushToast({ title: 'Delete blocked', description: 'System roles cannot be deleted.', variant: 'error' });
       return;
     }
     if (!window.confirm(`Delete role ${role.code}?`)) return;
     try {
       await deleteRbacRole(role.id);
-      await refreshWithToast('Role deleted.');
+      await refreshWithToast({
+        title: 'Role deleted',
+        description: 'Use Audit Logs to verify the destructive action and Governance for any follow-up approvals.',
+        auditContext: {
+          action: 'rbac_role_deleted',
+          entity_type: 'rbac_role',
+          resource_type: 'rbac_role',
+        },
+      });
     } catch (err) {
-      pushToast({ type: 'error', message: formatApiError(err, 'Failed to delete role') });
+      pushToast({ title: 'Role delete failed', description: formatApiError(err, 'Failed to delete role'), variant: 'error' });
     }
   }
 
@@ -464,6 +526,15 @@ export default function AdminRbacPage() {
     { key: 'detail', label: 'Detail' },
     { key: 'actor_user_id', label: 'Actor' },
     { key: 'created_at', label: 'Created', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') },
+    {
+      key: 'follow_up',
+      label: 'Follow-up',
+      render: (row) => (
+        <Link className="btn-secondary !px-3 !py-1.5 text-xs" to={buildRbacAuditLogPath(row)}>
+          Open Audit Logs
+        </Link>
+      ),
+    },
   ];
 
   return (
@@ -490,12 +561,46 @@ export default function AdminRbacPage() {
         </div>
       </Card>
 
-      <AdminDomainNav />
-
       {error ? <Card><p className="text-sm text-rose-600">{error}</p></Card> : null}
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         {summary.map((item) => <Metric key={item.label} label={item.label} value={loading ? '...' : item.value} />)}
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <Card className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Related Actions</h2>
+              <p className="text-sm text-slate-500">
+                Move from access changes to approval and verification without re-entering the same context.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              Compliance handoff
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link className="btn-secondary" to={buildGovernancePath({ context: 'rbac_follow_up' })}>Open Governance</Link>
+            <Link className="btn-secondary" to={buildRbacAuditLogPath({ resource_type: 'admin_user' })}>Open Audit Logs</Link>
+          </div>
+          <p className="text-xs text-slate-500">
+            Use Governance for approval and policy follow-up, then switch to Audit Logs to confirm the recorded mutation trail.
+          </p>
+        </Card>
+
+        {lastAction ? (
+          <Card className="space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold">{lastAction.title}</h2>
+              <p className="text-sm text-slate-500">{lastAction.description}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link className="btn-secondary" to={lastAction.auditTo}>Open Audit Logs</Link>
+              <Link className="btn-secondary" to={lastAction.governanceTo}>Open Governance</Link>
+            </div>
+          </Card>
+        ) : null}
       </div>
 
       <Card className="space-y-3">
@@ -601,8 +706,8 @@ export default function AdminRbacPage() {
             <p className="text-sm text-slate-500">Recent RBAC mutations and admin lifecycle changes before drilling into the full compliance explorer.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link className="btn-secondary" to="/audit-logs">Open Audit Logs</Link>
-            <Link className="btn-secondary" to="/admin/governance">Open Governance</Link>
+            <Link className="btn-secondary" to={buildRbacAuditLogPath({ resource_type: 'admin_user' })}>Open Audit Logs</Link>
+            <Link className="btn-secondary" to={buildGovernancePath({ context: 'rbac_audit' })}>Open Governance</Link>
           </div>
         </div>
         {auditRows.length ? <Table columns={auditColumns} data={auditRows.slice(0, 12)} /> : <EmptyState title="No RBAC audit events yet" description="RBAC and admin management actions will appear here after the first mutation." />}

@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.schemas.evaluation import RubricCriterion
+
 
 class AIChatEvaluateRequest(BaseModel):
     teacher_id: str | None = None
@@ -12,6 +14,7 @@ class AIChatEvaluateRequest(BaseModel):
     question_text: str | None = Field(default=None, max_length=4000)
     student_answer: str | None = None
     rubric: str | None = Field(default=None, max_length=4000)
+    rubric_criteria: list[RubricCriterion] = Field(default_factory=list)
     submission_id: str | None = None
 
 

@@ -1,335 +1,245 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import React from 'react';
+import { Link } from 'react-router-dom';
+import Badge from '../../components/ui/Badge';
 import Card from '../../components/ui/Card';
-import AdminDomainNav from '../../components/admin/AdminDomainNav';
-import AlertRoutingHistorySection from './system/AlertRoutingHistorySection';
-import SafeResponsiveContainer from '../../components/charts/SafeResponsiveContainer';
+import { useToast } from '../../hooks/useToast';
 import ClubObservabilityTrendSection from './system/ClubObservabilityTrendSection';
-import { apiClient } from '../../services/apiClient';
-import { formatApiError } from '../../utils/apiError';
-
-const AUTO_REFRESH_MS = 30000;
+import SystemHealthHistoryCharts from './system/SystemHealthHistoryCharts';
+import { AUTO_REFRESH_MS, useAdminSystemHealth } from './system/useAdminSystemHealth';
+import { buildObservabilityDiagnosticsModel } from './system/adminOperationsViewModel';
 
 export default function AdminObservabilityPage() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { pushToast } = useToast();
+  const {
+    clubsObservability,
+    clearSnapshots,
+    data,
+    error,
+    exportSnapshots,
+    historyData,
+    isAutoRefresh,
+    isRefreshing,
+    loadHealth,
+    localHistoryData,
+    localSnapshots,
+    persistedHistoryData,
+    setIsAutoRefresh,
+    snapshotStore,
+  } = useAdminSystemHealth({ pushToast });
 
-  const requestMetrics = data?.observability?.request_metrics || {};
-  const clubsMetrics = data?.observability?.clubs_metrics || {};
-  const aiMetrics = data?.observability?.ai_metrics || {};
-  const snapshotStore = data?.snapshot_store || {};
-  const clubsObservability = useMemo(() => {
-    const source = data?.clubs_observability || {};
-    const mapPoint = (point, formatOptions) => ({
-      bucketStart: point.bucket_start,
-      label: point.bucket_start ? new Date(point.bucket_start).toLocaleString([], formatOptions) : '-',
-      clubRequestsAvg: point.club_requests_avg ?? 0,
-      clubRequestsPeak: point.club_requests_peak ?? 0,
-      clubP95Avg: point.club_p95_duration_ms_avg ?? 0,
-      clubP95Peak: point.club_p95_duration_ms_peak ?? 0,
-      clubSlowTotal: point.club_slow_requests_total ?? 0,
-      clubServerErrorsTotal: point.club_server_errors_total ?? 0,
-      pressureLevel: point.pressure_level || 'ok',
-      pressureSignal:
-        point.pressure_level === 'critical'
-          ? 2
-          : point.pressure_level === 'warning'
-            ? 1
-            : 0,
-    });
-    return {
-      summary: source.summary || {},
-      hourly24h: (source.hourly_24h || []).map((point) => mapPoint(point, { hour: '2-digit', minute: '2-digit' })),
-      daily14d: (source.daily_14d || []).map((point) => mapPoint(point, { month: 'short', day: 'numeric' })),
-      recentPressureWindows: (source.recent_pressure_windows || []).map((point) =>
-        mapPoint(point, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-      ),
-    };
-  }, [data?.clubs_observability]);
-  const alertRouting = data?.alert_routing || {};
-  const alertRouteHistory = data?.alert_route_history || [];
-
-  const liveHistoryData = useMemo(
-    () =>
-      (aiMetrics.history_15m || []).map((point) => ({
-        label: point.timestamp ? new Date(point.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-',
-        queuedJobs: point.queued_jobs ?? 0,
-        fallbackRatePct: point.fallback_rate_pct_15m ?? 0,
-        similarityCandidates: point.similarity_candidate_count ?? 0,
-      })),
-    [aiMetrics.history_15m]
-  );
-
-  const persistedHistoryData = useMemo(
-    () =>
-      (data?.snapshot_history || []).map((point) => ({
-        label: point.bucket_minute ? new Date(point.bucket_minute).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
-        queuedJobs: point.queued_jobs ?? 0,
-        fallbackRatePct: point.fallback_rate_pct_15m ?? 0,
-        similarityCandidates: point.similarity_candidate_count ?? 0,
-        retainedRows: point.retained_rows ?? 0,
-        prunedDeletedCount: point.last_pruned_deleted_count ?? 0,
-      })),
-    [data?.snapshot_history]
-  );
-
-  useEffect(() => {
-    void loadObservability();
-  }, []);
-
-  useEffect(() => {
-    const handle = window.setInterval(() => {
-      void loadObservability({ silent: true });
-    }, AUTO_REFRESH_MS);
-    return () => window.clearInterval(handle);
-  }, []);
-
-  async function loadObservability({ silent = false } = {}) {
-    if (!silent) {
-      setError('');
-    }
-    setIsRefreshing(true);
-    try {
-      const response = await apiClient.get('/admin/system/health');
-      setData(response.data || null);
-      setError('');
-    } catch (err) {
-      setError(formatApiError(err, 'Failed to load observability dashboard'));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }
+  const model = buildObservabilityDiagnosticsModel({
+    data,
+    historyData,
+    persistedHistoryData,
+    localHistoryData,
+    localSnapshots,
+    snapshotStore,
+  });
 
   return (
     <div className="space-y-4 page-fade">
       <Card className="space-y-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Observability</h1>
-            <p className="text-sm text-slate-500">Dedicated runtime dashboard for request pressure, AI capacity, and snapshot retention.</p>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-2">
+            <div>
+              <h1 className="text-2xl font-semibold">Observability</h1>
+              <p className="text-sm text-slate-500">
+                Deep diagnostics for history, endpoint breakdowns, club pressure trends, and snapshot retention.
+              </p>
+            </div>
+            <Link className="btn-secondary w-fit" to="/admin/system">
+              Back to system overview
+            </Link>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => void loadObservability()}
+              onClick={() => void loadHealth({ silent: false, forceRefresh: true })}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               {isRefreshing ? 'Refreshing...' : 'Refresh Now'}
             </button>
-            <span className="text-xs text-slate-500">Auto-refresh {AUTO_REFRESH_MS / 1000}s</span>
+            <button
+              type="button"
+              onClick={() => setIsAutoRefresh((value) => !value)}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Auto Refresh: {isAutoRefresh ? 'On' : 'Off'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void exportSnapshots()}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Export JSON
+            </button>
+            <button
+              type="button"
+              onClick={clearSnapshots}
+              className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-950/40"
+            >
+              Clear Local History
+            </button>
           </div>
         </div>
+        <div className="grid gap-2 text-xs text-slate-500 md:grid-cols-4">
+          <div>Auto refresh cadence: {AUTO_REFRESH_MS / 1000}s</div>
+          <div>Live samples: {historyData.length}</div>
+          <div>Persisted snapshots: {persistedHistoryData.length}</div>
+          <div>Local snapshots retained: {localSnapshots.length}</div>
+        </div>
       </Card>
-      <AdminDomainNav />
-      {error ? <Card><p className="text-sm text-rose-600">{error}</p></Card> : null}
-      <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Requests (15m)" value={requestMetrics.requests_15m ?? 0} />
-        <Metric label="5xx Rate (15m)" value={formatPercent(requestMetrics.server_error_rate_pct_15m)} />
-        <Metric label="P95 (15m)" value={formatDuration(requestMetrics.p95_duration_ms_15m)} />
-        <Metric label="Slow Requests (15m)" value={requestMetrics.slow_requests_15m ?? 0} />
-      </div>
-      <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Club Requests (15m)" value={clubsMetrics.requests_15m ?? 0} />
-        <Metric label="Club P95 (15m)" value={formatDuration(clubsMetrics.p95_duration_ms_15m)} />
-        <Metric label="Club Slow (15m)" value={clubsMetrics.slow_requests_15m ?? 0} />
-        <Metric label="Club 5xx (15m)" value={clubsMetrics.server_errors_15m ?? 0} />
-      </div>
-      <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="AI Queued Jobs" value={aiMetrics.queued_jobs ?? 0} />
-        <Metric label="Oldest AI Job Age" value={formatSeconds(aiMetrics.oldest_queued_age_seconds)} />
-        <Metric label="Fallback Rate (15m)" value={formatPercent(aiMetrics.fallback_rate_pct_15m)} />
-        <Metric label="Similarity Candidates" value={aiMetrics.last_similarity_candidate_count ?? 0} />
-      </div>
-      <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Snapshot Rows" value={snapshotStore.retained_rows ?? 0} />
-        <Metric label="Snapshot Cap" value={snapshotStore.max_retained_rows ?? '-'} />
-        <Metric label="Last Prune Deleted" value={snapshotStore.last_pruned_deleted_count ?? 0} />
-        <Metric label="Retention Bound" value={snapshotStore.is_within_retention_bound === false ? 'Drifted' : 'Within Bound'} />
-      </div>
-      <Card className="space-y-2">
-        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Operational Alerts</p>
-        {data?.alerts?.length ? (
-          <div className="space-y-2">
-            {data.alerts.map((alert) => (
-              <div
-                key={alert.code}
-                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
-              >
-                <div className="font-medium">{alert.level?.toUpperCase() || 'INFO'} | {alert.code}</div>
-                <div>{alert.message}</div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-emerald-600 dark:text-emerald-400">No active operational alerts.</p>
-        )}
-      </Card>
-      <AlertRoutingHistorySection alertRouting={alertRouting} alertRouteHistory={alertRouteHistory} />
-      <ClubObservabilityTrendSection clubsObservability={clubsObservability} />
-      <div className="grid gap-3 xl:grid-cols-3">
-        <ChartCard title="Live Queue Depth" empty={!liveHistoryData.length}>
-          <SafeResponsiveContainer>
-            <AreaChart data={liveHistoryData}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis allowDecimals={false} width={42} />
-              <Tooltip />
-              <Area type="monotone" dataKey="queuedJobs" stroke="#2563eb" fill="#93c5fd" fillOpacity={0.35} strokeWidth={2} />
-            </AreaChart>
-          </SafeResponsiveContainer>
-        </ChartCard>
-        <ChartCard title="Live Fallback Rate" empty={!liveHistoryData.length}>
-          <SafeResponsiveContainer>
-            <AreaChart data={liveHistoryData}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis width={42} domain={[0, 'dataMax + 5']} />
-              <Tooltip formatter={(value) => [`${Number(value).toFixed(2)}%`, 'Fallback Rate']} />
-              <Area type="monotone" dataKey="fallbackRatePct" stroke="#d97706" fill="#fcd34d" fillOpacity={0.35} strokeWidth={2} />
-            </AreaChart>
-          </SafeResponsiveContainer>
-        </ChartCard>
-        <ChartCard title="Live Similarity Candidates" empty={!liveHistoryData.length}>
-          <SafeResponsiveContainer>
-            <AreaChart data={liveHistoryData}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis allowDecimals={false} width={42} />
-              <Tooltip />
-              <Area type="monotone" dataKey="similarityCandidates" stroke="#7c3aed" fill="#c4b5fd" fillOpacity={0.35} strokeWidth={2} />
-            </AreaChart>
-          </SafeResponsiveContainer>
-        </ChartCard>
-      </div>
-      <div className="grid gap-3 xl:grid-cols-3">
-        <ChartCard title="Persisted Queue Depth" empty={!persistedHistoryData.length}>
-          <SafeResponsiveContainer>
-            <AreaChart data={persistedHistoryData}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis allowDecimals={false} width={42} />
-              <Tooltip />
-              <Area type="monotone" dataKey="queuedJobs" stroke="#0f766e" fill="#5eead4" fillOpacity={0.35} strokeWidth={2} />
-            </AreaChart>
-          </SafeResponsiveContainer>
-        </ChartCard>
-        <ChartCard title="Persisted Fallback Rate" empty={!persistedHistoryData.length}>
-          <SafeResponsiveContainer>
-            <AreaChart data={persistedHistoryData}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis width={42} domain={[0, 'dataMax + 5']} />
-              <Tooltip formatter={(value) => [`${Number(value).toFixed(2)}%`, 'Fallback Rate']} />
-              <Area type="monotone" dataKey="fallbackRatePct" stroke="#be123c" fill="#fda4af" fillOpacity={0.35} strokeWidth={2} />
-            </AreaChart>
-          </SafeResponsiveContainer>
-        </ChartCard>
-        <ChartCard title="Persisted Snapshot Rows" empty={!persistedHistoryData.length}>
-          <SafeResponsiveContainer>
-            <AreaChart data={persistedHistoryData}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis allowDecimals={false} width={42} />
-              <Tooltip />
-              <Area type="monotone" dataKey="retainedRows" stroke="#15803d" fill="#86efac" fillOpacity={0.35} strokeWidth={2} />
-            </AreaChart>
-          </SafeResponsiveContainer>
-        </ChartCard>
-      </div>
-      <div className="grid gap-3 xl:grid-cols-2">
-        <ChartCard title="Persisted Prune Activity" empty={!persistedHistoryData.length}>
-          <SafeResponsiveContainer>
-            <AreaChart data={persistedHistoryData}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis allowDecimals={false} width={42} />
-              <Tooltip />
-              <Area type="monotone" dataKey="prunedDeletedCount" stroke="#b91c1c" fill="#fca5a5" fillOpacity={0.35} strokeWidth={2} />
-            </AreaChart>
-          </SafeResponsiveContainer>
-        </ChartCard>
-        <Card className="space-y-2">
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Current Observability Notes</p>
-          <div className="grid gap-2 text-xs text-slate-500">
-            <div>Latest payload: {formatDateTime(data?.timestamp)}</div>
-            <div>Last queue sample: {formatDateTime(aiMetrics.last_queue_sample_at)}</div>
-            <div>Last prune at: {formatDateTime(snapshotStore.last_pruned_at)}</div>
-            <div>Last prune bucket: {snapshotStore.last_pruned_bucket || '-'}</div>
-          </div>
+
+      {error ? (
+        <Card>
+          <p className="text-sm text-rose-600">{error}</p>
         </Card>
-      </div>
-      <Card className="space-y-2">
-        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Clubs Workspace Pressure</p>
-        <div className="grid gap-2 text-xs text-slate-500 md:grid-cols-3 xl:grid-cols-6">
-          <div>Club requests: {clubsMetrics.requests_15m ?? 0}</div>
-          <div>Club P95: {formatDuration(clubsMetrics.p95_duration_ms_15m)}</div>
-          <div>Club slow requests: {clubsMetrics.slow_requests_15m ?? 0}</div>
-          <div>Club 5xx: {clubsMetrics.server_errors_15m ?? 0}</div>
-          <div>`/clubs`: {clubsMetrics.clubs_requests_15m ?? 0}</div>
-          <div>`/club-events` + `/event-registrations`: {(clubsMetrics.club_events_requests_15m ?? 0) + (clubsMetrics.event_registrations_requests_15m ?? 0)}</div>
+      ) : null}
+
+      <SectionCard
+        title="Diagnostics Overview"
+        description="Quick context for how much telemetry is available before diving into charts and details."
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {model.summaryCards.map((card) => (
+            <MetricCard key={card.label} {...card} />
+          ))}
         </div>
-        {clubsMetrics.top_paths_15m?.length ? (
-          <div className="space-y-2">
-            {clubsMetrics.top_paths_15m.map((row) => (
-              <div key={row.path} className="rounded-xl border border-slate-200 px-3 py-2 text-xs dark:border-slate-700">
-                <div className="font-medium">{row.path}</div>
-                <div className="text-slate-600 dark:text-slate-300">
-                  requests={row.requests} | 5xx={row.server_errors} | slow={row.slow_requests}
-                </div>
-                <div className="text-slate-500">
-                  avg={formatDuration(row.avg_duration_ms)} | p95={formatDuration(row.p95_duration_ms)}
-                </div>
-              </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Historical Trends"
+        description="Trend charts for live, persisted, and locally retained health snapshots."
+      >
+        <SystemHealthHistoryCharts
+          historyData={historyData}
+          persistedHistoryData={persistedHistoryData}
+          localHistoryData={localHistoryData}
+        />
+      </SectionCard>
+
+      <SectionCard
+        title="Clubs Diagnostics"
+        description="Longer-horizon clubs pressure trends and retained pressure windows."
+      >
+        <ClubObservabilityTrendSection clubsObservability={clubsObservability} />
+      </SectionCard>
+
+      <SectionCard
+        title="Endpoint Diagnostics"
+        description="Path-level traffic breakdowns and the recent endpoint mix across general and club traffic."
+      >
+        <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {model.endpointSummaryCards.map((card) => (
+              <MetricCard key={card.label} {...card} />
             ))}
           </div>
-        ) : (
-          <p className="text-sm text-slate-500">No recent clubs workspace traffic yet.</p>
-        )}
-      </Card>
+          <div className="grid gap-3 xl:grid-cols-2">
+            <PathListCard
+              title="Top Paths (15m)"
+              rows={model.topPaths}
+              emptyMessage="No recent endpoint activity is available in the latest health payload."
+            />
+            <PathListCard
+              title="Clubs Workspace Paths (15m)"
+              rows={model.clubTopPaths}
+              emptyMessage="No recent clubs workspace path activity is available in the latest health payload."
+            />
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Snapshot Retention"
+        description="Retention health, prune behavior, and browser-retained snapshot context."
+      >
+        <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {model.snapshotCards.map((card) => (
+              <MetricCard key={card.label} {...card} />
+            ))}
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+            Export the current telemetry set for offline analysis or clear browser-retained snapshots when local diagnostics drift from the server history.
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Scheduler Detail"
+        description="Operational scheduler metadata and dispatch state from the current health payload."
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {model.schedulerRows.map((row) => (
+            <CompactStat key={row.label} label={row.label} value={row.value} />
+          ))}
+        </div>
+      </SectionCard>
     </div>
   );
 }
 
-function formatDuration(value) {
-  if (value === null || value === undefined) return '-';
-  return `${value} ms`;
-}
-
-function formatPercent(value) {
-  if (value === null || value === undefined) return '-';
-  return `${Number(value).toFixed(2)}%`;
-}
-
-function formatSeconds(value) {
-  if (value === null || value === undefined) return '-';
-  if (value < 60) return `${value}s`;
-  const minutes = Math.floor(value / 60);
-  const seconds = value % 60;
-  return `${minutes}m ${seconds}s`;
-}
-
-function formatDateTime(value) {
-  if (!value) return '-';
-  return new Date(value).toLocaleString();
-}
-
-function ChartCard({ title, children, empty }) {
+function SectionCard({ title, description, children }) {
   return (
     <Card className="space-y-3">
-      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{title}</p>
-      <div className="h-56 min-w-0">
-        {empty ? <p className="text-sm text-slate-500">No recent history yet.</p> : children}
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
+        <p className="text-sm text-slate-500">{description}</p>
       </div>
+      {children}
     </Card>
   );
 }
 
-function Metric({ label, value }) {
+function MetricCard({ label, value, detail, tone = 'default' }) {
   return (
-    <Card>
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/60">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+        {tone !== 'default' ? <Badge variant={tone}>{String(value)}</Badge> : null}
+      </div>
+      {tone === 'default' ? <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{value}</p> : null}
+      <p className="mt-2 text-sm text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function CompactStat({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="text-2xl font-semibold">{value}</p>
+      <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function PathListCard({ title, rows, emptyMessage }) {
+  return (
+    <Card className="space-y-3">
+      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{title}</p>
+      {rows?.length ? (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <div
+              key={row.path}
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900/60"
+            >
+              <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                <p className="font-medium text-slate-900 dark:text-slate-100">{row.path}</p>
+                <p className="text-xs text-slate-500">
+                  requests={row.requests ?? 0} | 5xx={row.server_errors ?? 0} | slow={row.slow_requests ?? 0}
+                </p>
+              </div>
+              <p className="text-xs text-slate-500">
+                avg={row.avg_duration_ms ?? '-'} ms | p95={row.p95_duration_ms ?? '-'} ms
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">{emptyMessage}</p>
+      )}
     </Card>
   );
 }

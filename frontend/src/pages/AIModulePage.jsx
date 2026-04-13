@@ -17,15 +17,45 @@ import Modal from '../components/ui/Modal';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import {
+  createSharedSimilarityView,
+  deleteSharedSimilarityView,
   getAiOperationsOverview,
   getAiRuntimeConfig,
   getSimilarityCheck,
   listAiJobs,
   listSimilarityChecks,
+  listSharedSimilarityViews,
   updateSimilarityCheck,
   updateAiRuntimeConfig
 } from '../services/aiService';
 import { formatApiError } from '../utils/apiError';
+
+const REVIEW_REASON_OPTIONS = [
+  { value: '', label: 'Select reopened reason' },
+  { value: 'low_evidence', label: 'Low evidence' },
+  { value: 'extraction_quality', label: 'Extraction quality' },
+  { value: 'common_prompt_language', label: 'Common prompt language' },
+  { value: 'allowed_collaboration', label: 'Allowed collaboration' },
+  { value: 'multilingual_mismatch', label: 'Multilingual mismatch' },
+  { value: 'assignment_context_mismatch', label: 'Assignment context mismatch' },
+  { value: 'other', label: 'Other' }
+];
+const DEFAULT_SIMILARITY_FILTERS = {
+  search: '',
+  review_status: '',
+  semantic_drift_present: false,
+  cap_reached: false,
+  low_extraction_quality: false,
+  min_score: '',
+  max_score: ''
+};
+const DEFAULT_QUEUE_PRESETS = [
+  { id: 'needs-review', label: 'Needs review', filters: { ...DEFAULT_SIMILARITY_FILTERS, review_status: 'open' } },
+  { id: 'reopened', label: 'Reopened', filters: { ...DEFAULT_SIMILARITY_FILTERS, review_status: 'reopened' } },
+  { id: 'low-text-risk', label: 'Low text risk', filters: { ...DEFAULT_SIMILARITY_FILTERS, low_extraction_quality: true } },
+  { id: 'high-drift', label: 'High semantic drift', filters: { ...DEFAULT_SIMILARITY_FILTERS, semantic_drift_present: true, review_status: 'open' } },
+  { id: 'cap-reached', label: 'Cap reached', filters: { ...DEFAULT_SIMILARITY_FILTERS, cap_reached: true } }
+];
 
 function formatTimestamp(value) {
   if (!value) return '-';
@@ -47,11 +77,47 @@ function formatNumeric(value, digits = 2) {
   return numeric.toFixed(digits);
 }
 
+function formatPercent(value) {
+  if (value == null) return '-';
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return '-';
+  return `${Math.round(numeric * 100)}%`;
+}
+
+function formatAgeHours(value) {
+  if (value == null) return '-';
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return '-';
+  if (numeric >= 48) return `${Math.round(numeric / 24)}d`;
+  if (numeric >= 24) return `${(numeric / 24).toFixed(1)}d`;
+  return `${Math.round(numeric)}h`;
+}
+
+function formatMatchScope(scope) {
+  if (scope === 'cross_assignment_shadow') return 'Cross-assignment shadow';
+  if (scope === 'same_assignment_shadow') return 'Same-assignment shadow';
+  if (scope === 'same_assignment_lexical') return 'Same-assignment lexical';
+  return scope || '-';
+}
+
+function trendVariant(value) {
+  if (value === 'up') return 'warning';
+  if (value === 'down') return 'success';
+  return 'default';
+}
+
 function gateVariant(status) {
   if (status === 'passed') return 'success';
   if (status === 'failed') return 'danger';
   if (status === 'assist_only') return 'info';
   if (status === 'missing') return 'warning';
+  return 'default';
+}
+
+function reviewStatusVariant(status) {
+  if (status === 'fixed') return 'success';
+  if (status === 'reopened') return 'danger';
+  if (status === 'in_progress') return 'warning';
   return 'default';
 }
 
@@ -83,7 +149,14 @@ export default function AIModulePage() {
   const [similarityDetail, setSimilarityDetail] = useState(null);
   const [similarityDetailOpen, setSimilarityDetailOpen] = useState(false);
   const [similarityDetailLoading, setSimilarityDetailLoading] = useState(false);
+  const [similarityRows, setSimilarityRows] = useState([]);
+  const [similarityRowsLoading, setSimilarityRowsLoading] = useState(false);
+  const [similarityFilters, setSimilarityFilters] = useState(DEFAULT_SIMILARITY_FILTERS);
+  const [savedSimilarityPresets, setSavedSimilarityPresets] = useState([]);
+  const [similarityPresetName, setSimilarityPresetName] = useState('');
+  const [activeQueueId, setActiveQueueId] = useState('all');
   const [reviewStatus, setReviewStatus] = useState('open');
+  const [reviewReasonCode, setReviewReasonCode] = useState('');
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewSaving, setReviewSaving] = useState(false);
   const [excerptQuery, setExcerptQuery] = useState('');
@@ -93,13 +166,14 @@ export default function AIModulePage() {
   async function loadPageData() {
     setLoading(true);
     try {
-      const requests = [getAiOperationsOverview({ limit: 8 }), listAiJobs({ limit: 8 })];
+      const requests = [getAiOperationsOverview({ limit: 8 }), listAiJobs({ limit: 8 }), listSharedSimilarityViews()];
       if (isAdmin) {
         requests.push(getAiRuntimeConfig());
       }
-      const [overviewResponse, jobsResponse, runtimeResponse] = await Promise.all(requests);
+      const [overviewResponse, jobsResponse, similarityViewsResponse, runtimeResponse] = await Promise.all(requests);
       setOverview(overviewResponse || null);
       setJobs(jobsResponse?.items || []);
+      setSavedSimilarityPresets(similarityViewsResponse || []);
       if (isAdmin && runtimeResponse?.effective) {
         setRuntimeConfig({
           provider_enabled: Boolean(runtimeResponse.effective.provider_enabled),
@@ -109,9 +183,12 @@ export default function AIModulePage() {
           similarity_threshold: String(runtimeResponse.effective.similarity_threshold ?? 0.8)
         });
       }
+      await loadSimilarityRows();
     } catch (err) {
       setOverview(null);
       setJobs([]);
+      setSimilarityRows([]);
+      setSavedSimilarityPresets([]);
       pushToast({
         title: 'AI module load failed',
         description: formatApiError(err, 'Unable to load AI operations overview'),
@@ -119,6 +196,87 @@ export default function AIModulePage() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadSimilarityRows(activeFilters = similarityFilters) {
+    setSimilarityRowsLoading(true);
+    try {
+      const params = {
+        is_flagged: true,
+        limit: 50
+      };
+      if (activeFilters.review_status) params.review_status = activeFilters.review_status;
+      if (activeFilters.semantic_drift_present) params.semantic_drift_present = true;
+      if (activeFilters.cap_reached) params.cap_reached = true;
+      if (activeFilters.low_extraction_quality) params.low_extraction_quality = true;
+      if (activeFilters.min_score !== '') params.min_score = Number(activeFilters.min_score);
+      if (activeFilters.max_score !== '') params.max_score = Number(activeFilters.max_score);
+      if (activeFilters.search.trim()) params.search = activeFilters.search.trim();
+      const rows = await listSimilarityChecks(params);
+      setSimilarityRows(rows || []);
+    } catch (err) {
+      setSimilarityRows([]);
+      pushToast({
+        title: 'Similarity filters failed',
+        description: formatApiError(err, 'Unable to load filtered similarity checks'),
+        variant: 'error'
+      });
+    } finally {
+      setSimilarityRowsLoading(false);
+    }
+  }
+
+  async function applySimilarityFilters(nextFilters, queueId = 'custom') {
+    setSimilarityFilters(nextFilters);
+    setActiveQueueId(queueId);
+    await loadSimilarityRows(nextFilters);
+  }
+
+  async function saveCurrentSimilarityPreset() {
+    const label = similarityPresetName.trim();
+    if (!label) {
+      pushToast({
+        title: 'Preset name required',
+        description: 'Enter a short preset name before saving the current similarity view.',
+        variant: 'error'
+      });
+      return;
+    }
+    try {
+      const created = await createSharedSimilarityView({
+        name: label,
+        filters: { ...similarityFilters }
+      });
+      setSavedSimilarityPresets((current) => {
+        const next = [created, ...current.filter((item) => item.id !== created.id && item.name !== created.name)];
+        return next.slice(0, 20);
+      });
+      setSimilarityPresetName('');
+      pushToast({
+        title: 'Shared preset saved',
+        description: `Saved shared similarity view "${label}".`,
+        variant: 'success'
+      });
+    } catch (err) {
+      pushToast({
+        title: 'Save failed',
+        description: formatApiError(err, 'Unable to save shared similarity view'),
+        variant: 'error'
+      });
+    }
+  }
+
+  async function deleteSimilarityPreset(presetId) {
+    try {
+      await deleteSharedSimilarityView(presetId);
+      setSavedSimilarityPresets((current) => current.filter((item) => item.id !== presetId));
+    } catch (err) {
+      pushToast({
+        title: 'Delete failed',
+        description: formatApiError(err, 'Unable to delete shared similarity view'),
+        variant: 'error'
+      });
     }
   }
 
@@ -130,6 +288,7 @@ export default function AIModulePage() {
       const detail = await getSimilarityCheck(logId);
       setSimilarityDetail(detail);
       setReviewStatus(detail?.review_status || 'open');
+      setReviewReasonCode(detail?.review_reason_code || '');
       setReviewNotes(detail?.review_notes || '');
     } catch (err) {
       pushToast({
@@ -206,8 +365,24 @@ export default function AIModulePage() {
   const qualityGates = overview?.quality_gates || {};
   const semanticCalibration = qualityGates.semantic_calibration || {};
   const reviewerCalibration = qualityGates.reviewer_outcome_calibration || {};
+  const reviewerAnalytics = reviewerCalibration.analytics || {};
   const fairnessGate = qualityGates.fairness_regression || {};
   const benchmarkGate = qualityGates.benchmark || {};
+  const similarityQueueMetrics = overview?.similarity_queue_metrics || {};
+  const similarityQueueForecast = overview?.similarity_queue_forecast || {};
+  const defaultQueueMetrics = similarityQueueMetrics.default_queues || [];
+  const defaultQueueForecastById = useMemo(
+    () => new Map((similarityQueueForecast.default_queues || []).map((item) => [item.id, item])),
+    [similarityQueueForecast.default_queues]
+  );
+  const sharedQueueMetricsById = useMemo(
+    () => new Map((similarityQueueMetrics.shared_views || []).map((item) => [item.id, item])),
+    [similarityQueueMetrics.shared_views]
+  );
+  const sharedQueueForecastById = useMemo(
+    () => new Map((similarityQueueForecast.shared_views || []).map((item) => [item.id, item])),
+    [similarityQueueForecast.shared_views]
+  );
   const semanticDriftThreshold = Number(
     reviewerCalibration?.recommendations?.assist_only_semantic_advantage_threshold ??
       semanticCalibration?.recommended_semantic_advantage_trigger ??
@@ -243,11 +418,25 @@ export default function AIModulePage() {
       { key: 'source_submission_id', label: 'Source Submission' },
       { key: 'matched_submission_id', label: 'Matched Submission' },
       { key: 'score', label: 'Lexical Similarity', render: (row) => (row.score != null ? Number(row.score).toFixed(2) : '-') },
+      { key: 'review_status', label: 'Review Status', render: (row) => <Badge variant={reviewStatusVariant(row.review_status)}>{row.review_status || 'open'}</Badge> },
+      { key: 'semantic_shadow_score', label: 'Semantic Drift', render: (row) => {
+        if (row.semantic_shadow_score == null || row.score == null) return '-';
+        const drift = Number(row.semantic_shadow_score) - Number(row.score);
+        return drift >= semanticDriftThreshold ? `+${formatNumeric(drift, 2)}` : formatNumeric(drift, 2);
+      }},
+      { key: 'cap_reached', label: 'Cap', render: (row) => <Badge variant={row.cap_reached ? 'warning' : 'default'}>{row.cap_reached ? 'Reached' : 'OK'}</Badge> },
+      { key: 'extraction_quality', label: 'Extraction', render: (row) => {
+        const source = row.extraction_quality?.source;
+        const matched = row.extraction_quality?.matched;
+        const low = [source, matched].some((value) => typeof value === 'number' && value < 0.5);
+        if (source == null && matched == null) return '-';
+        return <Badge variant={low ? 'warning' : 'default'}>{low ? 'Low' : 'OK'}</Badge>;
+      }},
       { key: 'threshold', label: 'Threshold', render: (row) => (row.threshold != null ? Number(row.threshold).toFixed(2) : '-') },
       { key: 'engine_version', label: 'Engine', render: (row) => row.engine_version || '-' },
       { key: 'created_at', label: 'Flagged At', render: (row) => formatTimestamp(row.created_at) }
     ],
-    []
+    [semanticDriftThreshold]
   );
 
   const similarityActions = useMemo(
@@ -589,6 +778,116 @@ export default function AIModulePage() {
             </div>
           </Card>
 
+          <Card className="space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold">Reviewer Analytics</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Review status counts, semantic drift buckets, reopened reasons, and assist-only threshold trend over time.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="default">Open {reviewerAnalytics.review_status_counts?.open ?? 0}</Badge>
+              <Badge variant="warning">In Progress {reviewerAnalytics.review_status_counts?.in_progress ?? 0}</Badge>
+              <Badge variant="success">Fixed {reviewerAnalytics.review_status_counts?.fixed ?? 0}</Badge>
+              <Badge variant="danger">Reopened {reviewerAnalytics.review_status_counts?.reopened ?? 0}</Badge>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <h3 className="text-sm font-semibold">Drift Buckets</h3>
+                <div className="mt-3 space-y-2">
+                  {(reviewerAnalytics.drift_buckets || []).length ? (
+                    reviewerAnalytics.drift_buckets.map((bucket) => (
+                      <div key={bucket.label} className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/40">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{bucket.label}</span>
+                          <span className="font-medium">{bucket.count ?? 0}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Fixed {bucket.fixed_count ?? 0} | Reopened {bucket.reopened_count ?? 0}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No final reviewed semantic drift buckets yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <h3 className="text-sm font-semibold">Top Reopened Reasons</h3>
+                <div className="mt-3 space-y-2">
+                  {(reviewerAnalytics.top_reopened_reasons || []).length ? (
+                    reviewerAnalytics.top_reopened_reasons.map((reason) => (
+                      <div key={reason.reason} className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/40">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{reason.reason}</span>
+                          <span className="font-medium">{reason.count ?? 0}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {reason.example_note || 'No reviewer note sample available.'}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No reopened reviewer notes yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <h3 className="text-sm font-semibold">Reopened Reason Trends</h3>
+                <div className="mt-3 space-y-2">
+                  {(reviewerAnalytics.reopened_reason_trends || []).length ? (
+                    reviewerAnalytics.reopened_reason_trends.map((reason) => (
+                      <div key={reason.reason} className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/40">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{reason.reason}</span>
+                          <Badge variant={trendVariant(reason.trend)}>
+                            {reason.trend_symbol} {reason.delta > 0 ? `+${reason.delta}` : reason.delta}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Recent {reason.recent_count ?? 0} | Previous {reason.previous_count ?? 0} | Window {reason.window_days ?? 7}d
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {reason.example_note || 'No reviewer note sample available.'}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No reopened reason trends yet because final reviewed outcomes are still limited.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <h3 className="text-sm font-semibold">Threshold Trend</h3>
+                <div className="mt-3 space-y-2">
+                  {(reviewerAnalytics.threshold_trend || []).length ? (
+                    reviewerAnalytics.threshold_trend
+                      .slice(-5)
+                      .reverse()
+                      .map((point) => (
+                        <div key={point.date} className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>{point.date}</span>
+                            <span className="font-medium">{formatNumeric(point.assist_only_semantic_advantage_threshold, 2)}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Reviewed {point.reviewed_final_count ?? 0} | Fixed {point.fixed_count ?? 0} | Reopened {point.reopened_count ?? 0}
+                          </p>
+                        </div>
+                      ))
+                  ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No threshold trend yet because final reviewed outcomes are still missing.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Card>
+
           <Card className="space-y-3">
             <div>
               <h2 className="text-lg font-semibold">AI Job Queue</h2>
@@ -617,10 +916,219 @@ export default function AIModulePage() {
               <div>
                 <h2 className="text-lg font-semibold">Flagged Similarity Checks</h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Most recent flagged similarity records in the current scope.
+                  Filter flagged similarity records by review state, drift, candidate cap, extraction quality, and lexical range.
                 </p>
               </div>
-              <Table columns={similarityColumns} data={overview.recent_similarity_flags || []} rowActions={similarityActions} />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className={activeQueueId === 'all' ? 'btn-primary' : 'btn-secondary'}
+                  type="button"
+                  onClick={() => applySimilarityFilters(DEFAULT_SIMILARITY_FILTERS, 'all')}
+                >
+                  All flagged
+                </button>
+                {DEFAULT_QUEUE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    className={activeQueueId === preset.id ? 'btn-primary' : 'btn-secondary'}
+                    type="button"
+                    onClick={() => applySimilarityFilters(preset.filters, preset.id)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              {(defaultQueueMetrics || []).length ? (
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {defaultQueueMetrics.map((metric) => (
+                    <button
+                      key={metric.id}
+                      type="button"
+                      className={`rounded-xl border p-3 text-left transition ${
+                        activeQueueId === metric.id
+                          ? 'border-brand-500 bg-brand-50 dark:border-brand-400 dark:bg-brand-900/20'
+                          : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-slate-600'
+                      }`}
+                      onClick={() => applySimilarityFilters(metric.filters || DEFAULT_SIMILARITY_FILTERS, metric.id)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{metric.label}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={metric.count > 0 ? 'info' : 'default'}>{metric.count ?? 0}</Badge>
+                          {defaultQueueForecastById.get(metric.id)?.attention_badge ? (
+                            <Badge variant={defaultQueueForecastById.get(metric.id).backlog_risk === 'high' ? 'danger' : 'warning'}>
+                              {defaultQueueForecastById.get(metric.id).backlog_risk}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span>Avg age {formatAgeHours(metric.average_age_hours)}</span>
+                        <span>Reopened {formatPercent(metric.reopened_rate)}</span>
+                        <span>Low text {formatPercent(metric.low_extraction_rate)}</span>
+                      </div>
+                      {defaultQueueForecastById.get(metric.id) ? (
+                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                          Forecast: {defaultQueueForecastById.get(metric.id).backlog_risk} risk | Oldest {formatAgeHours(defaultQueueForecastById.get(metric.id).oldest_age_hours)} | {defaultQueueForecastById.get(metric.id).reason}
+                        </p>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    className="input min-w-[220px] flex-1"
+                    placeholder="Preset name"
+                    value={similarityPresetName}
+                    onChange={(e) => setSimilarityPresetName(e.target.value)}
+                  />
+                  <button className="btn-secondary" type="button" onClick={saveCurrentSimilarityPreset}>
+                    Save Shared View
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={() => applySimilarityFilters(DEFAULT_SIMILARITY_FILTERS, 'all')}
+                    disabled={similarityRowsLoading}
+                  >
+                    Show All
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(savedSimilarityPresets || []).length ? (
+                    savedSimilarityPresets.map((preset) => (
+                      <div key={preset.id} className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 dark:border-slate-700">
+                        <button
+                          className="text-sm font-medium text-slate-700 dark:text-slate-200"
+                          type="button"
+                          onClick={() => applySimilarityFilters(preset.filters, preset.id)}
+                        >
+                          {preset.name || preset.label}
+                        </button>
+                        {preset.created_by_label ? (
+                          <span className="text-xs text-slate-500 dark:text-slate-400">by {preset.created_by_label}</span>
+                        ) : null}
+                        {sharedQueueMetricsById.get(preset.id) ? (
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {sharedQueueMetricsById.get(preset.id).count ?? 0} cases • Avg age {formatAgeHours(sharedQueueMetricsById.get(preset.id).average_age_hours)} • Reopened {formatPercent(sharedQueueMetricsById.get(preset.id).reopened_rate)} • Low text {formatPercent(sharedQueueMetricsById.get(preset.id).low_extraction_rate)}
+                          </span>
+                        ) : null}
+                        <button
+                          className="text-xs text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-300"
+                          type="button"
+                          onClick={() => deleteSimilarityPreset(preset.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No shared reviewer presets yet.</p>
+                  )}
+                </div>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-3">
+                <label className="space-y-1 lg:col-span-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Search</span>
+                  <input
+                    className="input"
+                    placeholder="Submission ID or reviewer note"
+                    value={similarityFilters.search}
+                    onChange={(e) => setSimilarityFilters((prev) => ({ ...prev, search: e.target.value }))}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Review status</span>
+                  <select
+                    className="input"
+                    value={similarityFilters.review_status}
+                    onChange={(e) => setSimilarityFilters((prev) => ({ ...prev, review_status: e.target.value }))}
+                  >
+                    <option value="">All</option>
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="fixed">Fixed</option>
+                    <option value="reopened">Reopened</option>
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Min lexical</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={similarityFilters.min_score}
+                    onChange={(e) => setSimilarityFilters((prev) => ({ ...prev, min_score: e.target.value }))}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Max lexical</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={similarityFilters.max_score}
+                    onChange={(e) => setSimilarityFilters((prev) => ({ ...prev, max_score: e.target.value }))}
+                  />
+                </label>
+                <div className="flex flex-wrap items-end gap-2 lg:col-span-3">
+                  <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={similarityFilters.semantic_drift_present}
+                      onChange={(e) => setSimilarityFilters((prev) => ({ ...prev, semantic_drift_present: e.target.checked }))}
+                    />
+                    <span>Semantic drift present</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={similarityFilters.cap_reached}
+                      onChange={(e) => setSimilarityFilters((prev) => ({ ...prev, cap_reached: e.target.checked }))}
+                    />
+                    <span>Cap reached</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={similarityFilters.low_extraction_quality}
+                      onChange={(e) => setSimilarityFilters((prev) => ({ ...prev, low_extraction_quality: e.target.checked }))}
+                    />
+                    <span>Low extraction quality</span>
+                  </label>
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={() => applySimilarityFilters(similarityFilters)}
+                    disabled={similarityRowsLoading}
+                  >
+                    {similarityRowsLoading ? 'Filtering...' : 'Apply Filters'}
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={() => {
+                      const resetFilters = {
+                        ...DEFAULT_SIMILARITY_FILTERS
+                      };
+                      applySimilarityFilters(resetFilters, 'all');
+                    }}
+                    disabled={similarityRowsLoading}
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              {similarityRowsLoading ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">Loading filtered similarity checks...</p>
+              ) : null}
+              <Table columns={similarityColumns} data={similarityRows} rowActions={similarityActions} />
             </Card>
 
             <Card className="space-y-3">
@@ -655,6 +1163,7 @@ export default function AIModulePage() {
               <Badge variant={similarityDetail.is_flagged ? 'danger' : 'default'}>
                 {similarityDetail.is_flagged ? 'Flagged' : 'Unflagged'}
               </Badge>
+              <Badge variant="default">{formatMatchScope(similarityDetail.match_scope)}</Badge>
               <Badge variant="default">Lexical similarity {Number(similarityDetail.score || 0).toFixed(2)}</Badge>
               <Badge variant="default">Threshold {Number(similarityDetail.threshold || 0).toFixed(2)}</Badge>
               <Badge variant="default">Engine {similarityDetail.engine_version || '-'}</Badge>
@@ -699,6 +1208,35 @@ export default function AIModulePage() {
                 </p>
                 <p className="text-xs text-slate-500">
                   Candidates evaluated: {similarityDetail.candidate_count ?? '-'}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Source OCR {similarityDetail.extraction_diagnostics?.source?.ocr_attempted ? 'yes' : 'no'} ({similarityDetail.extraction_diagnostics?.source?.ocr_provider || '-'}) |
+                  Matched OCR {similarityDetail.extraction_diagnostics?.matched?.ocr_attempted ? 'yes' : 'no'} ({similarityDetail.extraction_diagnostics?.matched?.ocr_provider || '-'})
+                </p>
+                <p className="text-xs text-slate-500">
+                  Extraction confidence {formatNumeric(similarityDetail.extraction_diagnostics?.source?.extraction_confidence, 2)} → {formatNumeric(similarityDetail.extraction_diagnostics?.matched?.extraction_confidence, 2)} |
+                  Low-text reason {similarityDetail.extraction_diagnostics?.source?.low_text_reason || similarityDetail.extraction_diagnostics?.matched?.low_text_reason || '-'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Language Profile</p>
+                <p className="text-sm text-slate-700 dark:text-slate-200">
+                  Source {similarityDetail.language_profile?.source?.primary_script || '-'} | Matched {similarityDetail.language_profile?.matched?.primary_script || '-'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Mixed/non-Latin: {similarityDetail.language_profile?.mixed_or_non_latin ? 'yes' : 'no'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Shadow Scope</p>
+                <p className="text-sm text-slate-700 dark:text-slate-200">
+                  {formatMatchScope(similarityDetail.match_scope)}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Cross-assignment shadow evidence is reviewer-only and never changes automatic flagging.
                 </p>
               </div>
             </div>
@@ -752,6 +1290,30 @@ export default function AIModulePage() {
               )}
             </div>
 
+            {(similarityDetail.related_shadow_candidates || []).length ? (
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Cross-Assignment Shadow Candidates</p>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {(similarityDetail.related_shadow_candidates || []).map((candidate) => (
+                    <div key={candidate.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                          {candidate.matched_submission_id}
+                        </p>
+                        <Badge variant="info">{formatMatchScope(candidate.match_scope)}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Semantic {formatNumeric(candidate.semantic_shadow_score, 2)} | Lexical {formatNumeric(candidate.score, 2)}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Assignment {candidate.matched_assignment_id || '-'} | Script {candidate.language_profile?.matched?.primary_script || '-'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-wide text-slate-500">Reviewer Actions</p>
               <div className="grid gap-3 lg:grid-cols-2">
@@ -760,7 +1322,13 @@ export default function AIModulePage() {
                   <select
                     className="input"
                     value={reviewStatus}
-                    onChange={(e) => setReviewStatus(e.target.value)}
+                    onChange={(e) => {
+                      const nextStatus = e.target.value;
+                      setReviewStatus(nextStatus);
+                      if (nextStatus !== 'reopened') {
+                        setReviewReasonCode('');
+                      }
+                    }}
                   >
                     <option value="open">Open</option>
                     <option value="in_progress">In Progress</option>
@@ -768,6 +1336,22 @@ export default function AIModulePage() {
                     <option value="reopened">Reopened</option>
                   </select>
                 </label>
+                {reviewStatus === 'reopened' ? (
+                  <label className="space-y-1">
+                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Reopened reason</span>
+                    <select
+                      className="input"
+                      value={reviewReasonCode}
+                      onChange={(e) => setReviewReasonCode(e.target.value)}
+                    >
+                      {REVIEW_REASON_OPTIONS.map((option) => (
+                        <option key={option.value || 'blank'} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <label className="space-y-1 lg:col-span-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Notes</span>
                   <textarea
@@ -780,13 +1364,23 @@ export default function AIModulePage() {
               <button
                 className="btn-primary"
                 onClick={async () => {
+                  if (reviewStatus === 'reopened' && !reviewReasonCode) {
+                    pushToast({
+                      title: 'Reopened reason required',
+                      description: 'Pick a structured reopened reason so reviewer analytics stay useful.',
+                      variant: 'error'
+                    });
+                    return;
+                  }
                   setReviewSaving(true);
                   try {
                     const updated = await updateSimilarityCheck(similarityDetail.id, {
                       review_status: reviewStatus,
+                      review_reason_code: reviewStatus === 'reopened' ? reviewReasonCode : '',
                       review_notes: reviewNotes
                     });
                     setSimilarityDetail(updated);
+                    setReviewReasonCode(updated?.review_reason_code || '');
                     pushToast({ title: 'Similarity updated', description: 'Review status saved.', variant: 'success' });
                     await loadPageData();
                   } catch (err) {

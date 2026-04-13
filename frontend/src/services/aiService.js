@@ -25,6 +25,21 @@ export async function getAiOperationsOverview(params = {}) {
   return response.data;
 }
 
+export async function listSharedSimilarityViews() {
+  const response = await apiClient.get('/ai/ops/similarity/views');
+  return response.data;
+}
+
+export async function createSharedSimilarityView(payload) {
+  const response = await apiClient.post('/ai/ops/similarity/views', payload);
+  return response.data;
+}
+
+export async function deleteSharedSimilarityView(viewId) {
+  const response = await apiClient.delete(`/ai/ops/similarity/views/${viewId}`);
+  return response.data;
+}
+
 export async function getAiRuntimeConfig() {
   const response = await apiClient.get('/ai/admin/runtime-config');
   return response.data;

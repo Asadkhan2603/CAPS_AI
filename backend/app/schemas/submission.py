@@ -26,6 +26,12 @@ class SubmissionOut(BaseModel):
     similarity_score: float | None = None
     extracted_text: str | None = None
     extraction_quality: float | None = Field(default=None, ge=0, le=1)
+    ocr_attempted: bool | None = None
+    ocr_provider: str | None = None
+    ocr_chars_added: int | None = None
+    page_count: int | None = None
+    extraction_confidence: float | None = Field(default=None, ge=0, le=1)
+    low_text_reason: str | None = None
     created_at: datetime | None = None
 
 
