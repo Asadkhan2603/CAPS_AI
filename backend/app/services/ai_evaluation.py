@@ -26,9 +26,15 @@ ACADEMIC_TERMS = {
     "testing",
     "tradeoff",
     "validation",
+    "gradient",
+    "gradients",
+    "loss",
+    "regularization",
+    "weights",
 }
 
 _TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
+_TECHNICAL_TOKEN_RE = re.compile(r"(=|->|=>|\+|-|\*|/|mse|loss|gradient|backprop|lambda|theta|sigma|wx|y_hat)", flags=re.IGNORECASE)
 
 
 def _tokenize(text: str) -> list[str]:
@@ -49,19 +55,40 @@ def _heuristic_evaluation(text: str, max_score: float) -> dict[str, float | int]
     lexical_diversity = (unique_words / words) if words else 0.0
     term_hits = sum(1 for token in tokens if token in ACADEMIC_TERMS)
     term_density = (term_hits / words) if words else 0.0
+    technical_hits = len(_TECHNICAL_TOKEN_RE.findall(text or ""))
+    technical_density = min(technical_hits / max(words, 1), 0.18)
+    concise_correct_signal = min(
+        1.0,
+        (
+            min(term_hits / 2.0, 1.0)
+            + min(technical_hits / 2.0, 1.0)
+            + min(max(avg_sentence_len, 1.0) / 10.0, 1.0)
+        ) / 3.0,
+    )
 
-    coverage_component = min(words / 220.0, 1.0)
-    structure_component = min(sentences / 8.0, 1.0)
-    clarity_component = min(max(avg_sentence_len, 1.0) / 18.0, 1.0)
+    coverage_component = min(words / 160.0, 1.0)
+    structure_component = min(sentences / 6.0, 1.0)
+    clarity_component = min(max(avg_sentence_len, 1.0) / 14.0, 1.0)
     vocabulary_component = min(lexical_diversity / 0.55, 1.0)
     academic_component = min(term_density / 0.05, 1.0)
+    if 8 <= words < 25:
+        coverage_component = max(coverage_component, round(0.3 + 0.2 * concise_correct_signal, 3))
+        brevity_quality_component = max(0.72, round(0.72 + 0.18 * concise_correct_signal, 3))
+    elif 5 <= words < 8:
+        coverage_component = max(coverage_component, round(0.18 + 0.14 * concise_correct_signal, 3))
+        brevity_quality_component = max(0.45, round(0.45 + 0.2 * concise_correct_signal, 3))
+    else:
+        brevity_quality_component = 1.0 if 25 <= words <= 170 else (0.85 if 12 <= words < 25 else min(words / 220.0, 0.85))
+    technical_component = min(technical_density / 0.06, 1.0)
 
     weighted = (
-        0.30 * coverage_component
-        + 0.20 * structure_component
-        + 0.20 * clarity_component
+        0.18 * coverage_component
+        + 0.12 * structure_component
+        + 0.18 * clarity_component
         + 0.15 * vocabulary_component
         + 0.15 * academic_component
+        + 0.12 * brevity_quality_component
+        + 0.10 * technical_component
     )
     score = round(max(0.0, min(weighted, 1.0)) * max_score, 2)
     return {
@@ -75,6 +102,10 @@ def _heuristic_evaluation(text: str, max_score: float) -> dict[str, float | int]
         "clarity_component": round(clarity_component, 3),
         "vocabulary_component": round(vocabulary_component, 3),
         "academic_component": round(academic_component, 3),
+        "concise_correct_signal": round(concise_correct_signal, 3),
+        "brevity_quality_component": round(brevity_quality_component, 3),
+        "technical_component": round(technical_component, 3),
+        "technical_hits": technical_hits,
     }
 
 

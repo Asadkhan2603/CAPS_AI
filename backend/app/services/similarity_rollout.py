@@ -10,6 +10,23 @@ _ASCII_TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 _UNICODE_WORD_RE = re.compile(r"\w+", flags=re.UNICODE)
 _LATIN_RE = re.compile(r"[A-Za-z]")
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+_ROMANIZED_HINDI_HINTS = {
+    "aur",
+    "bhi",
+    "hain",
+    "ho",
+    "kar",
+    "karte",
+    "ki",
+    "ko",
+    "mein",
+    "par",
+    "se",
+    "tha",
+    "thi",
+    "wala",
+    "wali",
+}
 
 _VALID_TOKENIZER_MODES = {"ascii_legacy", "unicode_words"}
 _VALID_STOPWORD_STRATEGIES = {"english_only", "disabled", "language_aware_planned"}
@@ -27,12 +44,17 @@ def detect_language_profile(text: str) -> dict[str, int | str | bool]:
     devanagari_chars = len(_DEVANAGARI_RE.findall(raw))
     digit_chars = sum(1 for char in raw if char.isdigit())
     alpha_chars = sum(1 for char in raw if char.isalpha())
+    lowered_tokens = [token.lower() for token in _UNICODE_WORD_RE.findall(raw) if any(char.isalpha() for char in token)]
+    romanized_hindi_hint_count = sum(1 for token in lowered_tokens if token in _ROMANIZED_HINDI_HINTS)
+    mixed_language_hint = bool(latin_chars and romanized_hindi_hint_count >= 2)
     primary_script = "unknown"
     if latin_chars or devanagari_chars:
         primary_script = "latin" if latin_chars >= devanagari_chars else "devanagari"
     return {
         "primary_script": primary_script,
         "mixed_script": sum(1 for count in (latin_chars, devanagari_chars) if count > 0) > 1,
+        "mixed_language_hint": mixed_language_hint,
+        "romanized_hindi_hint_count": romanized_hindi_hint_count,
         "latin_chars": latin_chars,
         "devanagari_chars": devanagari_chars,
         "digit_chars": digit_chars,
@@ -40,12 +62,18 @@ def detect_language_profile(text: str) -> dict[str, int | str | bool]:
     }
 
 
-def tokenize_for_similarity(text: str) -> list[str]:
-    tokenizer_mode = _normalize_choice(
-        settings.similarity_tokenizer_mode,
-        _VALID_TOKENIZER_MODES,
-        "ascii_legacy",
-    )
+def resolve_tokenizer_mode_for_texts(texts: Iterable[str]) -> str:
+    tokenizer_mode = _normalize_choice(settings.similarity_tokenizer_mode, _VALID_TOKENIZER_MODES, "ascii_legacy")
+    profiles = [detect_language_profile(text) for text in texts if text]
+    mixed_script = any(bool(profile["mixed_script"]) or bool(profile.get("mixed_language_hint")) for profile in profiles)
+    any_non_latin = any(profile["primary_script"] != "latin" for profile in profiles if profile["alpha_chars"])
+    if mixed_script or any_non_latin:
+        return "unicode_words"
+    return tokenizer_mode
+
+
+def tokenize_for_similarity(text: str, tokenizer_mode: str | None = None) -> list[str]:
+    tokenizer_mode = tokenizer_mode or resolve_tokenizer_mode_for_texts([text])
     if tokenizer_mode == "unicode_words":
         return [
             token.lower()
@@ -63,14 +91,11 @@ def resolve_similarity_stop_words(texts: Iterable[str]) -> str | None:
     )
     if strategy == "disabled":
         return None
-    if strategy == "english_only" and not settings.similarity_language_detection_enabled:
-        return "english"
-
     profiles = [detect_language_profile(text) for text in texts if text]
     if not profiles:
         return "english" if strategy == "english_only" else None
 
-    mixed_script = any(bool(profile["mixed_script"]) for profile in profiles)
+    mixed_script = any(bool(profile["mixed_script"]) or bool(profile.get("mixed_language_hint")) for profile in profiles)
     any_non_latin = any(profile["primary_script"] != "latin" for profile in profiles if profile["alpha_chars"])
     if mixed_script or any_non_latin:
         return None

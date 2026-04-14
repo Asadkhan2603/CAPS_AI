@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
 import Card from '../../components/ui/Card';
 import EmptyState from '../../components/ui/EmptyState';
+import InlineErrorState from '../../components/ui/InlineErrorState';
 import Modal from '../../components/ui/Modal';
 import Skeleton from '../../components/ui/Skeleton';
 import Table from '../../components/ui/Table';
@@ -125,6 +126,7 @@ export default function AdminRecoveryPage() {
     {
       key: 'item',
       label: 'Item',
+      priority: 'high',
       render: (row) => (
         <div className="space-y-1">
           <div className="font-medium text-slate-900 dark:text-slate-100">{row.display_name}</div>
@@ -135,6 +137,7 @@ export default function AdminRecoveryPage() {
     {
       key: 'status_label',
       label: 'Category / Status',
+      priority: 'high',
       render: (row) => (
         <div className="space-y-1">
           <div className="text-sm text-slate-700 dark:text-slate-200">{row.collectionLabel}</div>
@@ -145,16 +148,19 @@ export default function AdminRecoveryPage() {
     {
       key: 'deleted_at',
       label: 'Deleted At',
+      priority: 'medium',
       render: (row) => formatDateTime(row.deleted_at),
     },
     {
       key: 'deleted_by_label',
       label: 'Deleted By',
+      priority: 'medium',
       render: (row) => row.deleted_by_label || 'N/A',
     },
     {
       key: 'advanced',
       label: 'Advanced Details',
+      priority: 'low',
       render: (row) => (
         <div className="space-y-1 text-xs text-slate-500">
           <div>Collection: {row.collection}</div>
@@ -275,9 +281,11 @@ export default function AdminRecoveryPage() {
       </Card>
 
       {error ? (
-        <Card>
-          <p className="text-sm text-rose-600">{error}</p>
-        </Card>
+        <InlineErrorState
+          title="Recovery data unavailable"
+          description={error}
+          onRetry={() => void loadRecovery()}
+        />
       ) : null}
 
       <Card className="space-y-4">
@@ -305,41 +313,36 @@ export default function AdminRecoveryPage() {
             description={`There are no soft-deleted ${collectionMeta.label.toLowerCase()} waiting for restore review right now.`}
           />
         ) : (
-          <>
-            <div className="space-y-3 md:hidden">
-              {items.map((row) => (
-                <Card key={row.id} className="space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">{row.display_name}</p>
-                      <p className="text-sm text-slate-500">{row.subtitle || 'N/A'}</p>
-                    </div>
-                    <Badge variant={getRecoveryStatusVariant(row.status_label)}>{row.status_label}</Badge>
+          <Table
+            columns={tableColumns}
+            data={items}
+            responsive
+            mobileBreakpoint="md"
+            stickyActions
+            mobileCardRender={(row, { renderRowActions }) => (
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">{row.display_name}</p>
+                    <p className="text-sm text-slate-500">{row.subtitle || 'N/A'}</p>
                   </div>
-                  <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
-                    <div>Category: {row.collectionLabel}</div>
-                    <div>Deleted at: {formatDateTime(row.deleted_at)}</div>
-                    <div>Deleted by: {row.deleted_by_label || 'N/A'}</div>
-                  </div>
-                  <div className="rounded-xl border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-500 dark:border-slate-700">
-                    <div>Collection key: {row.collection}</div>
-                    <div>Record ID: {row.id}</div>
-                    <div>Audit type: {row.audit_resource_type}</div>
-                  </div>
-                  <button className="btn-secondary w-fit" type="button" onClick={() => openRestoreModal(row)}>
-                    Review Restore
-                  </button>
-                </Card>
-              ))}
-            </div>
-            <div className="hidden md:block">
-              <Table
-                columns={tableColumns}
-                data={items}
-                rowActions={[{ key: 'restore', label: 'Review Restore', onClick: openRestoreModal }]}
-              />
-            </div>
-          </>
+                  <Badge variant={getRecoveryStatusVariant(row.status_label)}>{row.status_label}</Badge>
+                </div>
+                <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  <div>Category: {row.collectionLabel}</div>
+                  <div>Deleted at: {formatDateTime(row.deleted_at)}</div>
+                  <div>Deleted by: {row.deleted_by_label || 'N/A'}</div>
+                </div>
+                <div className="rounded-xl border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-500 dark:border-slate-700">
+                  <div>Collection key: {row.collection}</div>
+                  <div>Record ID: {row.id}</div>
+                  <div>Audit type: {row.audit_resource_type}</div>
+                </div>
+                {renderRowActions(row)}
+              </div>
+            )}
+            rowActions={[{ key: 'restore', label: 'Review Restore', onClick: openRestoreModal }]}
+          />
         )}
       </Card>
 
@@ -376,7 +379,7 @@ export default function AdminRecoveryPage() {
               This restore action will be written to the audit trail. Confirm only after verifying the deleted record and business context.
             </p>
 
-            {restoreError ? <p className="text-sm text-rose-600">{restoreError}</p> : null}
+            {restoreError ? <InlineErrorState compact title="Restore failed" description={restoreError} /> : null}
 
             <div className="flex flex-wrap justify-end gap-2">
               <button className="btn-secondary" type="button" onClick={closeRestoreModal} disabled={restoring}>

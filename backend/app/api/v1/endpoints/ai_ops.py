@@ -8,6 +8,14 @@ from app.services.ai_jobs import get_ai_job
 from app.services.ai_ops_workflow import build_ai_operations_overview_payload, list_ai_jobs_payload
 from app.services.ai_ops_workflow import get_ai_job_detail_payload
 from app.services.ai_runtime import get_ai_runtime_settings
+from app.services.ai_semantic_rollout_workflow import (
+    activate_semantic_rollout_snapshot_response,
+    apply_semantic_rollout_recommendations_response,
+    approve_semantic_rollout_recommendations_response,
+    get_semantic_rollout_config_response,
+    list_semantic_rollout_config_history_response,
+    rollback_semantic_rollout_snapshot_response,
+)
 from app.services.ai_similarity_views import delete_shared_similarity_view, list_shared_similarity_views, save_shared_similarity_view
 from app.services.ai_runtime_workflow import build_provider_mode_payload
 
@@ -117,3 +125,63 @@ async def get_ai_job_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+@router.get("/ops/semantic-threshold-recommendations")
+async def get_semantic_threshold_recommendations(
+    current_user=Depends(require_roles(["admin"])),
+) -> dict[str, Any]:
+    return await get_semantic_rollout_config_response(database=get_ai_db())
+
+
+@router.post("/ops/semantic-thresholds/apply")
+async def apply_semantic_thresholds(
+    payload: dict[str, Any] | None = None,
+    current_user=Depends(require_roles(["admin"])),
+) -> dict[str, Any]:
+    try:
+        return await apply_semantic_rollout_recommendations_response(
+            payload,
+            actor_user_id=str(current_user["_id"]),
+            database=get_ai_db(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/ops/semantic-thresholds/activate")
+async def activate_semantic_thresholds(
+    payload: dict[str, Any] | None = None,
+    current_user=Depends(require_roles(["admin"])),
+) -> dict[str, Any]:
+    try:
+        return await activate_semantic_rollout_snapshot_response(
+            payload,
+            actor_user_id=str(current_user["_id"]),
+            database=get_ai_db(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/ops/semantic-thresholds/rollback")
+async def rollback_semantic_thresholds(
+    payload: dict[str, Any] | None = None,
+    current_user=Depends(require_roles(["admin"])),
+) -> dict[str, Any]:
+    try:
+        return await rollback_semantic_rollout_snapshot_response(
+            payload,
+            actor_user_id=str(current_user["_id"]),
+            database=get_ai_db(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/ops/semantic-threshold-history")
+async def get_semantic_threshold_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user=Depends(require_roles(["admin"])),
+) -> dict[str, Any]:
+    return await list_semantic_rollout_config_history_response(database=get_ai_db(), limit=limit)

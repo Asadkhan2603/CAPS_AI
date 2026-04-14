@@ -2,6 +2,9 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
+import InlineErrorState from '../../components/ui/InlineErrorState';
+import PageLoader from '../../components/ui/PageLoader';
 import { useToast } from '../../hooks/useToast';
 import ClubObservabilityTrendSection from './system/ClubObservabilityTrendSection';
 import SystemHealthHistoryCharts from './system/SystemHealthHistoryCharts';
@@ -35,6 +38,7 @@ export default function AdminObservabilityPage() {
     localSnapshots,
     snapshotStore,
   });
+  const initialLoading = !data && !error && isRefreshing;
 
   return (
     <div className="space-y-4 page-fade">
@@ -91,10 +95,14 @@ export default function AdminObservabilityPage() {
       </Card>
 
       {error ? (
-        <Card>
-          <p className="text-sm text-rose-600">{error}</p>
-        </Card>
+        <InlineErrorState
+          title="Diagnostics unavailable"
+          description={error}
+          onRetry={() => void loadHealth({ silent: false, forceRefresh: true })}
+        />
       ) : null}
+
+      {initialLoading ? <PageLoader compact label="Loading diagnostics..." /> : null}
 
       <SectionCard
         title="Diagnostics Overview"
@@ -238,7 +246,7 @@ function PathListCard({ title, rows, emptyMessage }) {
           ))}
         </div>
       ) : (
-        <p className="text-sm text-slate-500">{emptyMessage}</p>
+        <EmptyState compact title="No path diagnostics available" description={emptyMessage} />
       )}
     </Card>
   );

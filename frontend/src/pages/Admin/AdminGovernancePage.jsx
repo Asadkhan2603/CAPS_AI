@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
+import InlineErrorState from '../../components/ui/InlineErrorState';
+import PageLoader from '../../components/ui/PageLoader';
 import Table from '../../components/ui/Table';
 import EmptyState from '../../components/ui/EmptyState';
 import { formatApiError } from '../../utils/apiError';
@@ -37,8 +39,10 @@ export default function AdminGovernancePage() {
   const [dashboard, setDashboard] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [reviewFilter, setReviewFilter] = useState('');
+  const [reviewError, setReviewError] = useState('');
   const [sessions, setSessions] = useState([]);
   const [sessionFilter, setSessionFilter] = useState('active');
+  const [sessionError, setSessionError] = useState('');
   const [createReviewForm, setCreateReviewForm] = useState({
     review_type: 'destructive',
     action: '',
@@ -59,28 +63,31 @@ export default function AdminGovernancePage() {
   );
 
   useEffect(() => {
-    async function loadAll() {
-      setLoading(true);
-      setError('');
-      try {
-        const [policyData, dashboardData, reviewData, sessionData] = await Promise.all([
-          fetchGovernancePolicy(),
-          fetchGovernanceDashboard(),
-          fetchGovernanceReviews({ status: reviewFilter || undefined, limit: 100 }),
-          fetchGovernanceSessions({ status: sessionFilter || undefined, limit: 50 })
-        ]);
-        setPolicy((prev) => ({ ...prev, ...policyData }));
-        setDashboard(dashboardData);
-        setReviews(reviewData);
-        setSessions(sessionData.items || []);
-      } catch (err) {
-        setError(formatApiError(err, 'Failed to load governance data'));
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadAll();
+    void loadAll();
   }, []);
+
+  async function loadAll() {
+    setLoading(true);
+    setError('');
+    setReviewError('');
+    setSessionError('');
+    try {
+      const [policyData, dashboardData, reviewData, sessionData] = await Promise.all([
+        fetchGovernancePolicy(),
+        fetchGovernanceDashboard(),
+        fetchGovernanceReviews({ status: reviewFilter || undefined, limit: 100 }),
+        fetchGovernanceSessions({ status: sessionFilter || undefined, limit: 50 })
+      ]);
+      setPolicy((prev) => ({ ...prev, ...policyData }));
+      setDashboard(dashboardData);
+      setReviews(reviewData);
+      setSessions(sessionData.items || []);
+    } catch (err) {
+      setError(formatApiError(err, 'Failed to load governance data'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function reloadDashboard() {
     try {
@@ -94,11 +101,14 @@ export default function AdminGovernancePage() {
 
   async function loadReviews(status = reviewFilter) {
     setLoadingReviews(true);
+    setReviewError('');
     try {
       const rows = await fetchGovernanceReviews({ status: status || undefined, limit: 100 });
       setReviews(rows);
     } catch (err) {
-      pushToast({ title: 'Reviews load failed', description: formatApiError(err, 'Failed to load reviews'), variant: 'error' });
+      const message = formatApiError(err, 'Failed to load reviews');
+      setReviewError(message);
+      pushToast({ title: 'Reviews load failed', description: message, variant: 'error' });
     } finally {
       setLoadingReviews(false);
     }
@@ -106,11 +116,14 @@ export default function AdminGovernancePage() {
 
   async function loadSessions(status = sessionFilter) {
     setLoadingSessions(true);
+    setSessionError('');
     try {
       const rows = await fetchGovernanceSessions({ status: status || undefined, limit: 50 });
       setSessions(rows.items || []);
     } catch (err) {
-      pushToast({ title: 'Sessions load failed', description: formatApiError(err, 'Failed to load sessions'), variant: 'error' });
+      const message = formatApiError(err, 'Failed to load sessions');
+      setSessionError(message);
+      pushToast({ title: 'Sessions load failed', description: message, variant: 'error' });
     } finally {
       setLoadingSessions(false);
     }
@@ -193,19 +206,21 @@ export default function AdminGovernancePage() {
   }
 
   const reviewColumns = [
-    { key: 'public_id', label: 'Short ID', render: (row) => row.public_id || row.id || '-' },
-    { key: 'review_type', label: 'Type' },
-    { key: 'action', label: 'Action' },
-    { key: 'entity_label', label: 'Entity', render: (row) => row.entity_label || row.entity_type || '-' },
-    { key: 'status', label: 'Status' },
-    { key: 'requested_by_label', label: 'Requested By', render: (row) => row.requested_by_label || row.requested_by || '-' },
+    { key: 'public_id', label: 'Short ID', priority: 'high', render: (row) => row.public_id || row.id || '-' },
+    { key: 'review_type', label: 'Type', priority: 'medium' },
+    { key: 'action', label: 'Action', priority: 'high' },
+    { key: 'entity_label', label: 'Entity', priority: 'high', render: (row) => row.entity_label || row.entity_type || '-' },
+    { key: 'status', label: 'Status', priority: 'high' },
+    { key: 'requested_by_label', label: 'Requested By', priority: 'low', render: (row) => row.requested_by_label || row.requested_by || '-' },
     {
       key: 'created_at',
+      priority: 'medium',
       label: 'Created',
       render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-')
     },
     {
       key: 'follow_up',
+      priority: 'medium',
       label: 'Follow-up',
       render: (row) => {
         const followUp = buildGovernanceReviewFollowUp(row);
@@ -224,9 +239,10 @@ export default function AdminGovernancePage() {
   ];
 
   const sessionColumns = [
-    { key: 'user_label', label: 'User', render: (row) => row.user_label || row.user_name || row.user_email || row.user_id || '-' },
+    { key: 'user_label', label: 'User', priority: 'high', render: (row) => row.user_label || row.user_name || row.user_email || row.user_id || '-' },
     {
       key: 'status',
+      priority: 'high',
       label: 'Status',
       render: (row) => (
         <span
@@ -240,19 +256,22 @@ export default function AdminGovernancePage() {
         </span>
       )
     },
-    { key: 'ip_address', label: 'IP' },
+    { key: 'ip_address', label: 'IP', priority: 'medium' },
     {
       key: 'fingerprint',
+      priority: 'low',
       label: 'Fingerprint',
       render: (row) => (row.fingerprint ? `${row.fingerprint.slice(0, 12)}...` : '-')
     },
     {
       key: 'last_seen_at',
+      priority: 'medium',
       label: 'Last Seen',
       render: (row) => (row.last_seen_at ? new Date(row.last_seen_at).toLocaleString() : '-')
     },
     {
       key: 'follow_up',
+      priority: 'medium',
       label: 'Follow-up',
       render: (row) => {
         const followUp = buildGovernanceSessionFollowUp(row);
@@ -264,6 +283,7 @@ export default function AdminGovernancePage() {
       }
     }
   ];
+  const initialLoading = loading && !dashboard && reviews.length === 0 && sessions.length === 0;
 
   return (
     <div className="space-y-4 page-fade">
@@ -272,10 +292,13 @@ export default function AdminGovernancePage() {
         <p className="text-sm text-slate-500">Review queue, policy controls, and session monitoring.</p>
       </Card>
       {error ? (
-        <Card>
-          <p className="text-sm text-rose-600">{error}</p>
-        </Card>
+        <InlineErrorState
+          title="Governance unavailable"
+          description={error}
+          onRetry={() => void loadAll()}
+        />
       ) : null}
+      {initialLoading ? <PageLoader compact label="Loading governance workspace..." /> : null}
       <div className="grid gap-3 md:grid-cols-4">
         {metrics.map((metric) => (
           <Card key={metric.label}>
@@ -446,10 +469,17 @@ export default function AdminGovernancePage() {
             {loadingReviews ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
-        {reviews.length ? (
+        {loadingReviews && !reviews.length ? (
+          <PageLoader compact label="Loading review queue..." />
+        ) : reviewError ? (
+          <InlineErrorState compact title="Review queue unavailable" description={reviewError} onRetry={() => void loadReviews()} />
+        ) : reviews.length ? (
           <Table
             columns={reviewColumns}
             data={reviews}
+            responsive
+            mobileBreakpoint="md"
+            stickyActions
             rowActions={[
               {
                 key: 'approve',
@@ -495,8 +525,12 @@ export default function AdminGovernancePage() {
             </button>
           </div>
         </div>
-        {sessions.length ? (
-          <Table columns={sessionColumns} data={sessions} />
+        {loadingSessions && !sessions.length ? (
+          <PageLoader compact label="Loading device sessions..." />
+        ) : sessionError ? (
+          <InlineErrorState compact title="Session monitor unavailable" description={sessionError} onRetry={() => void loadSessions()} />
+        ) : sessions.length ? (
+          <Table columns={sessionColumns} data={sessions} responsive mobileBreakpoint="md" stickyActions />
         ) : (
           <EmptyState title="No sessions" description="Session tracker will show active and revoked device sessions here." />
         )}

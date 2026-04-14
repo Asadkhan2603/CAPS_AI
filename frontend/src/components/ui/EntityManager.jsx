@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, RefreshCw, Search as SearchIcon } from 'lucide-react';
 import Card from './Card';
+import EmptyState from './EmptyState';
+import InlineErrorState from './InlineErrorState';
+import PageLoader from './PageLoader';
 import Table from './Table';
 import DeleteReviewPrompt from './entityManager/DeleteReviewPrompt';
 import EntityFormOverlay from './entityManager/EntityFormOverlay';
@@ -467,26 +470,47 @@ export default function EntityManager({
               </select>
             </div>
           </div>
-          {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
-          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+          {loading ? <PageLoader compact label={`Loading ${title.toLowerCase()}...`} /> : null}
+          {error ? (
+            <InlineErrorState
+              compact
+              title="Load failed"
+              description={error}
+              onRetry={() => loadData()}
+            />
+          ) : null}
           {deleteError && !deleteReviewPromptOpen ? <p className="text-sm text-rose-600">{deleteError}</p> : null}
-          <Table
-            columns={columns}
-            data={rows}
-            onEdit={enableEdit ? startEdit : undefined}
-            onDelete={enableDelete ? onDelete : undefined}
-            rowActions={rowActions.map((action) => ({
-              ...action,
-              onClick: async (row) => {
-                try {
-                  await action.onClick(row, { reload: loadData, pushToast });
-                } catch (err) {
-                  const message = formatApiError(err, 'Action failed');
-                  pushToast({ title: 'Action failed', description: message, variant: 'error' });
-                }
-              }
-            }))}
-          />
+          {!loading && !error ? (
+            rows.length ? (
+              <Table
+                columns={columns}
+                data={rows}
+                onEdit={enableEdit ? startEdit : undefined}
+                onDelete={enableDelete ? onDelete : undefined}
+                rowActions={rowActions.map((action) => ({
+                  ...action,
+                  onClick: async (row) => {
+                    try {
+                      await action.onClick(row, { reload: loadData, pushToast });
+                    } catch (err) {
+                      const message = formatApiError(err, 'Action failed');
+                      pushToast({ title: 'Action failed', description: message, variant: 'error' });
+                    }
+                  }
+                }))}
+              />
+            ) : (
+              <EmptyState
+                title={`No ${title.toLowerCase()} found`}
+                description={`There are no ${title.toLowerCase()} matching the current filters.`}
+                action={filters.length ? (
+                  <button type="button" className="btn-secondary" onClick={() => void resetFilters()}>
+                    Reset Filters
+                  </button>
+                ) : null}
+              />
+            )
+          ) : null}
         </Card>
       </motion.div>
 

@@ -8,9 +8,20 @@ from app.core.mongo import parse_object_id
 from app.core.schema_versions import STUDENT_SCHEMA_VERSION
 from app.core.security import require_permission, require_roles
 from app.models.students import student_public
-from app.schemas.student import StudentCreate, StudentOut, StudentUpdate
+from app.schemas.student import (
+    StudentCreate,
+    StudentDuplicateCaseOut,
+    StudentMergeExecuteIn,
+    StudentMergeExecuteOut,
+    StudentMergePreviewIn,
+    StudentMergePreviewOut,
+    StudentOut,
+    StudentUpdate,
+)
 from app.services.academic_students import resolve_student_placement_snapshot
+from app.services.audit import log_audit_event
 from app.services.public_ids import persist_public_id, persist_public_id_update
+from app.services.student_merge import execute_student_merge, list_duplicate_cases, preview_merge_case
 
 router = APIRouter()
 
@@ -115,6 +126,65 @@ async def student_duplicate_audit(
         "user_id_groups": sum(1 for item in duplicate_groups if item["match_type"] == "user_id"),
     }
     return {"summary": summary, "groups": duplicate_groups[:50]}
+
+
+@router.get("/duplicate-cases", response_model=List[StudentDuplicateCaseOut])
+async def student_duplicate_cases(
+    limit: int = Query(default=25, ge=1, le=100),
+    _current_user=Depends(require_roles(["admin"])),
+) -> List[StudentDuplicateCaseOut]:
+    return [StudentDuplicateCaseOut(**item) for item in await list_duplicate_cases(database=db, limit=limit)]
+
+
+@router.post("/merge/preview", response_model=StudentMergePreviewOut)
+async def preview_student_merge(
+    payload: StudentMergePreviewIn,
+    _current_user=Depends(require_roles(["admin"])),
+) -> StudentMergePreviewOut:
+    preview = await preview_merge_case(
+        seed_student_ids=payload.seed_student_ids,
+        preferred_primary_student_id=payload.preferred_primary_student_id,
+        database=db,
+    )
+    return StudentMergePreviewOut(**preview)
+
+
+@router.post("/merge/execute", response_model=StudentMergeExecuteOut)
+async def execute_student_merge_endpoint(
+    payload: StudentMergeExecuteIn,
+    current_user=Depends(require_roles(["admin"])),
+) -> StudentMergeExecuteOut:
+    if not payload.confirm_hard_delete:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="confirm_hard_delete must be true")
+
+    result = await execute_student_merge(
+        primary_student_id=payload.primary_student_id,
+        duplicate_student_ids=payload.duplicate_student_ids,
+        resolved_profile=payload.resolved_profile.model_dump(),
+        actor_user_id=str(current_user.get("_id") or ""),
+        reason=payload.reason,
+        database=db,
+    )
+    audit_log = await log_audit_event(
+        actor_user_id=str(current_user.get("_id") or ""),
+        action="merge_student_duplicates",
+        entity_type="student",
+        entity_id=payload.primary_student_id,
+        detail=payload.reason,
+        old_value={
+            "deleted_student_ids": result["deleted_student_ids"],
+            "duplicate_student_ids": payload.duplicate_student_ids,
+        },
+        new_value=result["audit_payload"],
+        severity="high",
+    )
+    return StudentMergeExecuteOut(
+        merged_student=await _student_out(result["merged_student_document"]),
+        deleted_student_ids=result["deleted_student_ids"],
+        rewrite_counts=result["rewrite_counts"],
+        warnings=result["warnings"],
+        audit_log_id=str(audit_log.get("_id")) if audit_log and audit_log.get("_id") else None,
+    )
 
 
 @router.get("/{student_id}", response_model=StudentOut)

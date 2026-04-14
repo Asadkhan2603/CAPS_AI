@@ -4,15 +4,41 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.services.ai_similarity_views import list_shared_similarity_views
+from app.services.semantic_rollout_readiness import calibration_eligible, language_bucket_for_row, normalize_match_scope
 
 DEFAULT_SIMILARITY_QUEUES = [
-    {"id": "all", "label": "All flagged", "filters": {}},
+    {"id": "all", "label": "All reviewable", "filters": {}},
     {"id": "needs-review", "label": "Needs review", "filters": {"review_status": "open"}},
+    {"id": "awaiting-final", "label": "Awaiting final decision", "filters": {"awaiting_final_decision": True}},
+    {"id": "stale-open", "label": "Stale open", "filters": {"review_status": "open", "stale_review": True}},
+    {"id": "stale-in-progress", "label": "Stale in progress", "filters": {"review_status": "in_progress", "stale_review": True}},
     {"id": "reopened", "label": "Reopened", "filters": {"review_status": "reopened"}},
+    {"id": "ready-calibration", "label": "Ready for calibration", "filters": {"counts_toward_calibration": True}},
+    {"id": "calibration-eligible", "label": "Calibration eligible", "filters": {"calibration_eligible": True}},
+    {
+        "id": "same-assignment-semantic-candidates",
+        "label": "Same-assignment semantic candidates",
+        "filters": {"semantic_review_candidate": True, "match_scope": "same_assignment_shadow"},
+    },
+    {
+        "id": "cross-assignment-shadow-candidates",
+        "label": "Cross-assignment shadow candidates",
+        "filters": {"match_scope": "cross_assignment_shadow"},
+    },
+    {
+        "id": "mixed-transliterated-review-candidates",
+        "label": "Mixed/transliterated review candidates",
+        "filters": {"language_bucket": "mixed_transliterated"},
+    },
+    {"id": "suppressed-high-risk", "label": "Suppressed high lexical risk", "filters": {"decision_mode": "suppressed"}},
+    {"id": "semantic-review", "label": "Semantic review candidates", "filters": {"semantic_review_candidate": True}},
+    {"id": "low-extraction-hold", "label": "Low extraction hold", "filters": {"decision_mode": "suppressed", "low_extraction_quality": True}},
     {"id": "low-text-risk", "label": "Low text risk", "filters": {"low_extraction_quality": True}},
     {"id": "high-drift", "label": "High semantic drift", "filters": {"semantic_drift_present": True, "review_status": "open"}},
     {"id": "cap-reached", "label": "Cap reached", "filters": {"cap_reached": True}},
 ]
+_STALE_OPEN_HOURS = 48
+_STALE_IN_PROGRESS_HOURS = 72
 
 
 def _normalize_datetime(value: Any) -> datetime | None:
@@ -58,9 +84,50 @@ def _matches_search(item: dict[str, Any], search: str) -> bool:
     return normalized in haystack
 
 
+def _review_updated_timestamp(item: dict[str, Any]) -> datetime | None:
+    value = item.get("review_updated_at") or item.get("reviewed_at") or item.get("created_at")
+    return _normalize_datetime(value)
+
+
+def _counts_toward_calibration(item: dict[str, Any]) -> bool:
+    return calibration_eligible(item)
+
+
+def _is_stale_review(item: dict[str, Any]) -> bool:
+    review_status = str(item.get("review_status") or "").strip().lower()
+    updated_at = _review_updated_timestamp(item)
+    if updated_at is None:
+        return False
+    age_hours = max(0.0, (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600.0)
+    if review_status == "open":
+        return age_hours >= _STALE_OPEN_HOURS
+    if review_status == "in_progress":
+        return age_hours >= _STALE_IN_PROGRESS_HOURS
+    return False
+
+
 def _matches_filters(item: dict[str, Any], filters: dict[str, Any], *, semantic_drift_threshold: float) -> bool:
     review_status = str(filters.get("review_status") or "").strip().lower()
     if review_status and str(item.get("review_status") or "").strip().lower() != review_status:
+        return False
+    decision_mode = str(filters.get("decision_mode") or "").strip().lower()
+    if decision_mode and str(item.get("decision_mode") or "").strip().lower() != decision_mode:
+        return False
+    if filters.get("awaiting_final_decision") and str(item.get("review_status") or "").strip().lower() not in {"open", "in_progress"}:
+        return False
+    if filters.get("stale_review") and not _is_stale_review(item):
+        return False
+    if filters.get("counts_toward_calibration") and not _counts_toward_calibration(item):
+        return False
+    if filters.get("calibration_eligible") and not calibration_eligible(item):
+        return False
+    if filters.get("semantic_review_candidate") and not bool(item.get("semantic_review_candidate")):
+        return False
+    filter_match_scope = str(filters.get("match_scope") or "").strip().lower()
+    if filter_match_scope and normalize_match_scope(item) != filter_match_scope:
+        return False
+    filter_language_bucket = str(filters.get("language_bucket") or "").strip().lower()
+    if filter_language_bucket and language_bucket_for_row(item) != filter_language_bucket:
         return False
     if filters.get("semantic_drift_present") and not _has_semantic_drift(item, semantic_drift_threshold=semantic_drift_threshold):
         return False
@@ -171,8 +238,17 @@ async def build_similarity_queue_metrics(
     semantic_drift_threshold: float,
 ) -> dict[str, Any]:
     scoped_query = similarity_scope_query.copy() if similarity_scope_query else {}
-    scoped_query["is_flagged"] = True
     rows = await database.similarity_logs.find(scoped_query).to_list(length=5000)
+    rows = [
+        row for row in rows
+        if (
+            bool(row.get("is_flagged"))
+            or str(row.get("decision_mode") or "").strip().lower() in {"assist_only", "suppressed"}
+            or bool(row.get("semantic_review_candidate"))
+            or str(row.get("match_scope") or "").strip().lower() == "cross_assignment_shadow"
+            or calibration_eligible(row)
+        )
+    ]
     shared_views = await list_shared_similarity_views(database=database)
 
     return {

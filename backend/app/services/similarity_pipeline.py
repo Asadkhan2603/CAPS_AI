@@ -14,7 +14,9 @@ from app.core.schema_versions import SIMILARITY_LOG_SCHEMA_VERSION, SUBMISSION_S
 from app.services.ai_runtime import AI_SIMILARITY_ENGINE_VERSION
 from app.services.notifications import create_notifications_bulk
 from app.services.similarity_engine import (
+    build_similarity_risk_signals,
     build_similarity_retrieval_artifact,
+    classify_similarity_decision,
     compute_similarity_scores,
     compute_overlap_stats,
     compute_semantic_shadow_score,
@@ -24,7 +26,11 @@ from app.services.similarity_engine import (
     shortlist_similarity_candidate_ids,
     tokenize_text,
 )
-from app.services.similarity_rollout import detect_language_profile, should_capture_semantic_shadow
+from app.services.similarity_rollout import (
+    detect_language_profile,
+    resolve_tokenizer_mode_for_texts,
+    should_capture_semantic_shadow,
+)
 
 
 async def _notify_similarity_alert(
@@ -217,6 +223,20 @@ async def _load_cross_assignment_similarity_candidates(
     return ranked_candidate_ids, max(0, total_candidates)
 
 
+def _review_status_for_similarity_case(*, decision_mode: str, suppression_reason: str | None, semantic_review_candidate: bool) -> str | None:
+    if decision_mode in {"flagged", "assist_only"}:
+        return "open"
+    if suppression_reason in {
+        "low_extraction_hold",
+        "short_generic_overlap",
+        "insufficient_non_prompt_overlap",
+    }:
+        return "open"
+    if semantic_review_candidate:
+        return "open"
+    return None
+
+
 def _build_language_profile(source_text: str, matched_text: str) -> dict[str, Any]:
     source_profile = detect_language_profile(source_text)
     matched_profile = detect_language_profile(matched_text)
@@ -225,7 +245,9 @@ def _build_language_profile(source_text: str, matched_text: str) -> dict[str, An
         "matched": matched_profile,
         "mixed_or_non_latin": bool(
             source_profile.get("mixed_script")
+            or source_profile.get("mixed_language_hint")
             or matched_profile.get("mixed_script")
+            or matched_profile.get("mixed_language_hint")
             or source_profile.get("primary_script") != "latin"
             or matched_profile.get("primary_script") != "latin"
         ),
@@ -242,6 +264,11 @@ def _build_submission_extraction_diagnostics(submission: dict[str, Any] | None) 
         "page_count": submission.get("page_count"),
         "extraction_confidence": submission.get("extraction_confidence"),
         "low_text_reason": submission.get("low_text_reason"),
+        "ocr_result_state": submission.get("ocr_result_state"),
+        "ocr_retry_count": submission.get("ocr_retry_count"),
+        "ocr_timeout_seconds": submission.get("ocr_timeout_seconds"),
+        "ocr_error": submission.get("ocr_error"),
+        "ocr_retry_guidance": submission.get("ocr_retry_guidance"),
     }
 
 
@@ -278,6 +305,11 @@ async def run_similarity_pipeline(
                 "page_count": 1,
                 "extraction_confidence": 1,
                 "low_text_reason": 1,
+                "ocr_result_state": 1,
+                "ocr_retry_count": 1,
+                "ocr_timeout_seconds": 1,
+                "ocr_error": 1,
+                "ocr_retry_guidance": 1,
             },
         ).to_list(length=len(filtered_candidate_ids))
     id_to_submission = {str(item.get("_id")): item for item in shortlisted_candidates if item.get("_id")}
@@ -325,11 +357,22 @@ async def run_similarity_pipeline(
         matched_assignment_id = source_assignment_id if matched_submission else None
         matched_assignment = source_assignment
 
-        is_flagged = numeric_score >= threshold_value
         matched_text = matched_submission.get("extracted_text", "") if matched_submission else ""
         matched_extraction_quality = extraction_quality_score(matched_text)
-        overlap_stats = None
-        evidence_excerpts: list[dict] = []
+        tokenization_mode_applied = resolve_tokenizer_mode_for_texts([source_text, matched_text])
+        overlap_stats = compute_overlap_stats(
+            source_text,
+            matched_text,
+            prompt_terms=prompt_terms,
+            tokenizer_mode=tokenization_mode_applied,
+        )
+        evidence_excerpts = extract_top_sentence_overlaps(
+            source_text,
+            matched_text,
+            prompt_terms=prompt_terms,
+            max_pairs=3,
+            tokenizer_mode=tokenization_mode_applied,
+        )
         semantic_shadow_score = None
         capture_semantic_shadow = should_capture_semantic_shadow(
             rank=rank,
@@ -337,20 +380,44 @@ async def run_similarity_pipeline(
             threshold=threshold_value,
             raw_candidate_count=raw_candidate_count,
         )
-        if is_flagged:
-            overlap_stats = compute_overlap_stats(source_text, matched_text, prompt_terms=prompt_terms)
-            evidence_excerpts = extract_top_sentence_overlaps(
-                source_text,
-                matched_text,
-                prompt_terms=prompt_terms,
-                max_pairs=3,
-            )
         if capture_semantic_shadow:
             semantic_shadow_score = compute_semantic_shadow_score(source_text, matched_text)
+        language_profile = _build_language_profile(source_text, matched_text)
+        extraction_diagnostics = {
+            "source": _build_submission_extraction_diagnostics(source),
+            "matched": _build_submission_extraction_diagnostics(matched_submission),
+        }
+        risk_signals = build_similarity_risk_signals(
+            source_text,
+            matched_text,
+            prompt_terms=prompt_terms,
+            overlap_stats=overlap_stats,
+            evidence_excerpts=evidence_excerpts,
+            extraction_diagnostics=extraction_diagnostics,
+            language_profile=language_profile,
+            tokenizer_mode=tokenization_mode_applied,
+        )
+        decision = classify_similarity_decision(
+            lexical_score=numeric_score,
+            threshold=threshold_value,
+            semantic_shadow_score=semantic_shadow_score,
+            overlap_stats=overlap_stats,
+            risk_signals=risk_signals,
+            language_profile=language_profile,
+        )
+        decision_mode = str(decision.get("decision_mode") or "suppressed")
+        suppression_reason = decision.get("suppression_reason")
+        semantic_review_candidate = bool(decision.get("semantic_review_candidate"))
+        if decision_mode == "suppressed" and suppression_reason == "below_threshold" and not semantic_review_candidate:
+            continue
+        is_flagged = decision_mode == "flagged"
         if is_flagged:
             flagged_count += 1
-        match_scope = "same_assignment_lexical" if is_flagged else (
-            "same_assignment_shadow" if semantic_shadow_score is not None else "same_assignment_lexical"
+        match_scope = "same_assignment_lexical" if is_flagged else "same_assignment_shadow"
+        review_status = _review_status_for_similarity_case(
+            decision_mode=decision_mode,
+            suppression_reason=suppression_reason,
+            semantic_review_candidate=semantic_review_candidate,
         )
 
         existing = existing_by_matched_submission_id.get(matched_submission_id)
@@ -371,28 +438,24 @@ async def run_similarity_pipeline(
                 "source": source_extraction_quality,
                 "matched": matched_extraction_quality,
             },
-            "extraction_diagnostics": {
-                "source": _build_submission_extraction_diagnostics(source),
-                "matched": _build_submission_extraction_diagnostics(matched_submission),
-            },
+            "extraction_diagnostics": extraction_diagnostics,
             "semantic_shadow_score": semantic_shadow_score,
+            "decision_mode": decision_mode,
+            "suppression_reason": suppression_reason,
+            "risk_signals": risk_signals,
+            "tokenization_mode_applied": tokenization_mode_applied,
+            "semantic_review_candidate": semantic_review_candidate,
             "match_scope": match_scope,
-            "language_profile": {
-                "source": source_language_profile,
-                "matched": detect_language_profile(matched_text),
-                "mixed_or_non_latin": bool(
-                    source_language_profile.get("mixed_script")
-                    or detect_language_profile(matched_text).get("mixed_script")
-                    or source_language_profile.get("primary_script") != "latin"
-                    or detect_language_profile(matched_text).get("primary_script") != "latin"
-                ),
-            },
+            "language_profile": language_profile,
             "candidate_count": candidate_count,
             "cap_reached": cap_reached,
-            "review_status": "open" if is_flagged else None,
+            "review_status": review_status,
             "review_notes": None,
             "reviewed_by_user_id": None,
             "reviewed_at": None,
+            "review_updated_at": None,
+            "review_finalized_at": None,
+            "review_finalized_by_user_id": None,
             "engine_version": AI_SIMILARITY_ENGINE_VERSION,
             "updated_at": datetime.now(timezone.utc),
             "schema_version": SIMILARITY_LOG_SCHEMA_VERSION,
@@ -401,9 +464,13 @@ async def run_similarity_pipeline(
         if existing:
             existing_review_fields = {
                 "review_status": existing.get("review_status"),
+                "review_reason_code": existing.get("review_reason_code"),
                 "review_notes": existing.get("review_notes"),
                 "reviewed_by_user_id": existing.get("reviewed_by_user_id"),
                 "reviewed_at": existing.get("reviewed_at"),
+                "review_updated_at": existing.get("review_updated_at"),
+                "review_finalized_at": existing.get("review_finalized_at"),
+                "review_finalized_by_user_id": existing.get("review_finalized_by_user_id"),
             }
             await db.similarity_logs.update_one(
                 {"_id": existing["_id"]},
@@ -450,6 +517,11 @@ async def run_similarity_pipeline(
                 "page_count": 1,
                 "extraction_confidence": 1,
                 "low_text_reason": 1,
+                "ocr_result_state": 1,
+                "ocr_retry_count": 1,
+                "ocr_timeout_seconds": 1,
+                "ocr_error": 1,
+                "ocr_retry_guidance": 1,
             },
         ).to_list(length=len(cross_assignment_candidate_ids))
         cross_by_id = {
@@ -481,6 +553,7 @@ async def run_similarity_pipeline(
             if not matched_submission:
                 continue
             matched_text = matched_submission.get("extracted_text", "")
+            tokenization_mode_applied = resolve_tokenizer_mode_for_texts([source_text, matched_text])
             semantic_shadow_score = compute_semantic_shadow_score(source_text, matched_text)
             if semantic_shadow_score is None:
                 continue
@@ -496,6 +569,28 @@ async def run_similarity_pipeline(
                 matched_text,
                 prompt_terms=prompt_terms,
                 max_pairs=2,
+                tokenizer_mode=tokenization_mode_applied,
+            )
+            overlap_stats = compute_overlap_stats(
+                source_text,
+                matched_text,
+                prompt_terms=prompt_terms,
+                tokenizer_mode=tokenization_mode_applied,
+            )
+            language_profile = _build_language_profile(source_text, matched_text)
+            extraction_diagnostics = {
+                "source": _build_submission_extraction_diagnostics(source),
+                "matched": _build_submission_extraction_diagnostics(matched_submission),
+            }
+            risk_signals = build_similarity_risk_signals(
+                source_text,
+                matched_text,
+                prompt_terms=prompt_terms,
+                overlap_stats=overlap_stats,
+                evidence_excerpts=evidence_excerpts,
+                extraction_diagnostics=extraction_diagnostics,
+                language_profile=language_profile,
+                tokenizer_mode=tokenization_mode_applied,
             )
             document = {
                 "source_submission_id": submission_id,
@@ -509,24 +604,29 @@ async def run_similarity_pipeline(
                 "threshold": threshold_value,
                 "is_flagged": False,
                 "evidence_excerpts": evidence_excerpts,
-                "overlap_stats": compute_overlap_stats(source_text, matched_text, prompt_terms=prompt_terms),
+                "overlap_stats": overlap_stats,
                 "extraction_quality": {
                     "source": source_extraction_quality,
                     "matched": matched_extraction_quality,
                 },
-                "extraction_diagnostics": {
-                    "source": _build_submission_extraction_diagnostics(source),
-                    "matched": _build_submission_extraction_diagnostics(matched_submission),
-                },
+                "extraction_diagnostics": extraction_diagnostics,
                 "semantic_shadow_score": semantic_shadow_score,
+                "decision_mode": "assist_only",
+                "suppression_reason": "cross_assignment_shadow_only",
+                "risk_signals": risk_signals,
+                "tokenization_mode_applied": tokenization_mode_applied,
+                "semantic_review_candidate": True,
                 "match_scope": "cross_assignment_shadow",
-                "language_profile": _build_language_profile(source_text, matched_text),
+                "language_profile": language_profile,
                 "candidate_count": len(cross_texts),
                 "cap_reached": cross_assignment_candidate_count > len(cross_assignment_candidate_ids),
-                "review_status": None,
+                "review_status": "open",
                 "review_notes": None,
                 "reviewed_by_user_id": None,
                 "reviewed_at": None,
+                "review_updated_at": None,
+                "review_finalized_at": None,
+                "review_finalized_by_user_id": None,
                 "engine_version": AI_SIMILARITY_ENGINE_VERSION,
                 "updated_at": datetime.now(timezone.utc),
                 "schema_version": SIMILARITY_LOG_SCHEMA_VERSION,

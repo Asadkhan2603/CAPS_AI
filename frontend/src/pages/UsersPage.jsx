@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import Card from '../components/ui/Card';
 import FormInput from '../components/ui/FormInput';
 import Table from '../components/ui/Table';
+import { useAuthorizedImage } from '../hooks/useAuthorizedImage';
 import { useToast } from '../hooks/useToast';
 import UserDetailOverlay from './users/UserDetailOverlay';
 import { useUsersPageData } from './users/useUsersPageData';
@@ -105,13 +106,7 @@ export default function UsersPage() {
         key: 'full_name',
         label: 'Admin',
         render: (row) => (
-          <button
-            type="button"
-            className="text-left font-medium text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-            onClick={() => setSelectedUserId(row.id)}
-          >
-            {row.full_name}
-          </button>
+          <UserNameButton row={row} onClick={() => setSelectedUserId(row.id)} />
         )
       },
       { key: 'email', label: 'Email' },
@@ -131,13 +126,7 @@ export default function UsersPage() {
           ? {
               ...column,
               render: (row) => (
-                <button
-                  type="button"
-                  className="text-left font-medium text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-                  onClick={() => setSelectedUserId(row.id)}
-                >
-                  {row.full_name}
-                </button>
+                <UserNameButton row={row} onClick={() => setSelectedUserId(row.id)} />
               )
             }
           : column
@@ -264,4 +253,40 @@ function AdminDetailsCell({ row }) {
       <div className="text-slate-500 dark:text-slate-400">Created: {createdAt}</div>
     </div>
   );
+}
+
+function UserNameButton({ row, onClick }) {
+  const avatarSrc = useAuthorizedImage(row.avatar_url, row.avatar_updated_at);
+  const initials = getNameInitials(row.full_name);
+
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-2 text-left font-medium text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+      onClick={onClick}
+    >
+      {avatarSrc ? (
+        <img
+          src={avatarSrc}
+          alt={`${row.full_name || 'User'} profile`}
+          className="h-7 w-7 rounded-full border border-slate-200 object-cover dark:border-slate-700"
+        />
+      ) : (
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[10px] font-semibold uppercase text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          {initials}
+        </span>
+      )}
+      <span>{row.full_name}</span>
+    </button>
+  );
+}
+
+function getNameInitials(name) {
+  const words = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (!words.length) return 'U';
+  return words.map((word) => word[0]).join('').toUpperCase();
 }

@@ -106,6 +106,30 @@ class Settings:
     similarity_prefilter_min_shared_tokens: int = field(
         default_factory=lambda: _as_int(os.getenv("SIMILARITY_PREFILTER_MIN_SHARED_TOKENS", "1"), 1)
     )
+    similarity_min_non_prompt_shared_tokens: int = field(
+        default_factory=lambda: _as_int(os.getenv("SIMILARITY_MIN_NON_PROMPT_SHARED_TOKENS", "2"), 2)
+    )
+    similarity_min_effective_excerpt_overlap: float = field(
+        default_factory=lambda: _as_float(os.getenv("SIMILARITY_MIN_EFFECTIVE_EXCERPT_OVERLAP", "0.18"), 0.18)
+    )
+    similarity_min_token_count: int = field(
+        default_factory=lambda: _as_int(os.getenv("SIMILARITY_MIN_TOKEN_COUNT", "10"), 10)
+    )
+    similarity_min_extraction_confidence: float = field(
+        default_factory=lambda: _as_float(os.getenv("SIMILARITY_MIN_EXTRACTION_CONFIDENCE", "0.5"), 0.5)
+    )
+    similarity_borderline_extraction_confidence: float = field(
+        default_factory=lambda: _as_float(os.getenv("SIMILARITY_BORDERLINE_EXTRACTION_CONFIDENCE", "0.25"), 0.25)
+    )
+    similarity_prompt_overlap_assist_threshold: float = field(
+        default_factory=lambda: _as_float(os.getenv("SIMILARITY_PROMPT_OVERLAP_ASSIST_THRESHOLD", "0.6"), 0.6)
+    )
+    similarity_generic_overlap_assist_threshold: float = field(
+        default_factory=lambda: _as_float(os.getenv("SIMILARITY_GENERIC_OVERLAP_ASSIST_THRESHOLD", "0.55"), 0.55)
+    )
+    similarity_boilerplate_token_ceiling: int = field(
+        default_factory=lambda: _as_int(os.getenv("SIMILARITY_BOILERPLATE_TOKEN_CEILING", "24"), 24)
+    )
     similarity_sync_inline_candidate_limit: int = field(
         default_factory=lambda: _as_int(os.getenv("SIMILARITY_SYNC_INLINE_CANDIDATE_LIMIT", "250"), 250)
     )
@@ -136,6 +160,27 @@ class Settings:
     semantic_shadow_calibration_unrelated_max: float = field(
         default_factory=lambda: _as_float(os.getenv("SEMANTIC_SHADOW_CALIBRATION_UNRELATED_MAX", "0.1"), 0.1)
     )
+    semantic_same_assignment_drift_threshold: float = field(
+        default_factory=lambda: _as_float(os.getenv("SEMANTIC_SAME_ASSIGNMENT_DRIFT_THRESHOLD", "0.15"), 0.15)
+    )
+    semantic_cross_assignment_drift_threshold: float = field(
+        default_factory=lambda: _as_float(os.getenv("SEMANTIC_CROSS_ASSIGNMENT_DRIFT_THRESHOLD", "0.22"), 0.22)
+    )
+    semantic_same_assignment_min_score: float = field(
+        default_factory=lambda: _as_float(os.getenv("SEMANTIC_SAME_ASSIGNMENT_MIN_SCORE", "0.7"), 0.7)
+    )
+    semantic_cross_assignment_min_score: float = field(
+        default_factory=lambda: _as_float(os.getenv("SEMANTIC_CROSS_ASSIGNMENT_MIN_SCORE", "0.8"), 0.8)
+    )
+    semantic_same_assignment_min_sample_size: int = field(
+        default_factory=lambda: _as_int(os.getenv("SEMANTIC_SAME_ASSIGNMENT_MIN_SAMPLE_SIZE", "5"), 5)
+    )
+    semantic_cross_assignment_min_sample_size: int = field(
+        default_factory=lambda: _as_int(os.getenv("SEMANTIC_CROSS_ASSIGNMENT_MIN_SAMPLE_SIZE", "8"), 8)
+    )
+    semantic_multilingual_min_sample_size: int = field(
+        default_factory=lambda: _as_int(os.getenv("SEMANTIC_MULTILINGUAL_MIN_SAMPLE_SIZE", "4"), 4)
+    )
     fairness_gate_max_concise_delta: float = field(
         default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_CONCISE_DELTA", "1.5"), 1.5)
     )
@@ -153,6 +198,27 @@ class Settings:
     )
     fairness_gate_max_rubric_shape_delta: float = field(
         default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_RUBRIC_SHAPE_DELTA", "1.25"), 1.25)
+    )
+    fairness_gate_max_risk_context_leak_delta: float = field(
+        default_factory=lambda: _as_float(os.getenv("FAIRNESS_GATE_MAX_RISK_CONTEXT_LEAK_DELTA", "0.0"), 0.0)
+    )
+    fairness_regression_dataset_path: str = field(
+        default_factory=lambda: os.getenv("FAIRNESS_REGRESSION_DATASET_PATH", "").strip()
+    )
+    fairness_regression_min_check_count: int = field(
+        default_factory=lambda: _as_int(os.getenv("FAIRNESS_REGRESSION_MIN_CHECK_COUNT", "10"), 10)
+    )
+    fairness_regression_min_external_check_count: int = field(
+        default_factory=lambda: _as_int(os.getenv("FAIRNESS_REGRESSION_MIN_EXTERNAL_CHECK_COUNT", "0"), 0)
+    )
+    false_positive_negative_dataset_path: str = field(
+        default_factory=lambda: os.getenv("FALSE_POSITIVE_NEGATIVE_DATASET_PATH", "").strip()
+    )
+    false_positive_negative_min_case_count: int = field(
+        default_factory=lambda: _as_int(os.getenv("FALSE_POSITIVE_NEGATIVE_MIN_CASE_COUNT", "10"), 10)
+    )
+    false_positive_negative_min_external_case_count: int = field(
+        default_factory=lambda: _as_int(os.getenv("FALSE_POSITIVE_NEGATIVE_MIN_EXTERNAL_CASE_COUNT", "0"), 0)
     )
     similarity_language_detection_enabled: bool = field(
         default_factory=lambda: _as_bool(os.getenv("SIMILARITY_LANGUAGE_DETECTION_ENABLED"), False)
@@ -178,11 +244,26 @@ class Settings:
     ocr_provider: str = field(
         default_factory=lambda: os.getenv("OCR_PROVIDER", "disabled").strip().lower()
     )
+    ocr_openai_model: str = field(
+        default_factory=lambda: os.getenv("OCR_OPENAI_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini")).strip()
+    )
     ocr_languages: List[str] = field(
         default_factory=lambda: _as_csv_list(os.getenv("OCR_LANGUAGES", "eng"))
     )
     ocr_min_chars: int = field(
         default_factory=lambda: _as_int(os.getenv("OCR_MIN_CHARS", "120"), 120)
+    )
+    ocr_timeout_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("OCR_TIMEOUT_SECONDS", "25"), 25)
+    )
+    ocr_max_output_tokens: int = field(
+        default_factory=lambda: _as_int(os.getenv("OCR_MAX_OUTPUT_TOKENS", "1800"), 1800)
+    )
+    ocr_max_retries: int = field(
+        default_factory=lambda: _as_int(os.getenv("OCR_MAX_RETRIES", "1"), 1)
+    )
+    ocr_retry_backoff_seconds: float = field(
+        default_factory=lambda: _as_float(os.getenv("OCR_RETRY_BACKOFF_SECONDS", "0.5"), 0.5)
     )
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
     observability_slow_request_ms: int = field(

@@ -1,8 +1,8 @@
 ﻿# SELF-IMPROVING ACADEMIC MODULE AUDIT
 
 ## 🗓 Date & Time:
-2026-04-12  
-22:45:24 +05:30
+2026-04-13  
+16:49:12 +05:30
 
 ## 📦 Project:
 CAPS AI  
@@ -14,18 +14,18 @@ Path: `d:\VS CODE\CAPS_AI`
 
 | Category | Score | Previous | Trend | Remarks |
 |----------|------|----------|-------|--------|
-| Student Management | 89/100 | 86/100 | ↑ | Student CRUD, bulk create, section mapping, canonical placement hints, `student.user_id`, post-create cleanup routing, and duplicate-audit tooling are live; merge tooling and self-profile reads still remain. |
+| Student Management | 93/100 | 89/100 | ↑ | Student CRUD, bulk create, section mapping, canonical placement hints, `student.user_id`, post-create cleanup routing, duplicate audit, and admin merge resolution are now live; only self-profile reads still remain. |
 | Courses & Curriculum | 79/100 | 76/100 | ↑ | Course delivery setup is safer and clearer, and teacher-load plus section-capacity signals now help staffing decisions; prerequisite and curriculum-plan workflows still remain. |
 | Classes & Sections | 88/100 | 82/100 | ↑ | Section dashboards, hierarchy validation, coordinator mapping, and mobile-friendly section health views are now in place. |
 | Timetable & Scheduling | 90/100 | 86/100 | ↑ | Publish, sync, drift visibility, student schedule trust, and adaptive small-screen editing are now in place; only deeper drift drill-down remains. |
 | Attendance System | 91/100 | 88/100 | ↑ | Roster-first attendance, section summaries, weekly trends, subject breakdowns, shortage-risk visibility, roster search, quick filters, and sticky large-roster actions are now available. |
 | Exams & Evaluation | 86/100 | 65/100 | ↑ | Evaluation lifecycle is stable and the exam-core module now supports exam definition, schedule visibility, and section-scoped student access. |
 | Grading & Results | 94/100 | 91/100 | ↑ | Release state, marksheet, semester aggregation, transcript output, governed correction signals, and configurable GPA/transcript policy are implemented and auditable. |
-| Data Integrity | 90/100 | 87/100 | ↑ | Enrollment-backed placement, `user_id` linkage, duplicate-audit grouping, and semester-result correction invalidation reduce stale academic-output risk, though merge cleanup still remains. |
+| Data Integrity | 95/100 | 90/100 | ↑ | Enrollment-backed placement, `user_id` linkage, duplicate-case clustering, and repo-wide student-reference merge rewrites now close the biggest stale academic-output risk; only legacy backfill tails remain. |
 | UX & Usability | 87/100 | 84/100 | ↑ | Sections, enrollments, course delivery, attendance, and student onboarding now have guidance, summary cards, priority views, and faster cleanup actions instead of raw CRUD alone. |
 | Responsiveness | 84/100 | 78/100 | ↑ | Targeted weak pages now have mobile-safe summaries, tablet-safe guidance, and adaptive timetable editing; only a few dense shared grids still lag. |
-| Integration | 93/100 | 91/100 | ↑ | FE ↔ BE contracts now cover section dashboards, attendance analytics, timetable sync, semester results, transcript retrieval, grading-policy controls, duplicate-audit reads, and exam-core student/staff visibility. |
-| Trust | 94/100 | 92/100 | ↑ | Student-facing official outputs now include marksheet, semester records, transcript, exam schedule visibility, configurable GPA precision, and clearer operator-facing data-quality signals. |
+| Integration | 95/100 | 93/100 | ↑ | FE ↔ BE contracts now cover section dashboards, attendance analytics, timetable sync, semester results, transcript retrieval, grading-policy controls, duplicate-audit reads, duplicate-case preview/execute flows, and exam-core student/staff visibility. |
+| Trust | 96/100 | 94/100 | ↑ | Student-facing official outputs now include marksheet, semester records, transcript, exam schedule visibility, configurable GPA precision, and much stronger operator-facing identity cleanup with audited merge execution. |
 
 ---
 
@@ -46,7 +46,8 @@ Path: `d:\VS CODE\CAPS_AI`
 | Evaluation Workflow | ✅ Active | Submission-based evaluation, finalize, release, trace, and marksheet are working. |
 | Official Result Release | ✅ Active | Official release, semester result publication, correction-request signals, and marksheet flow are working. |
 | GPA / CGPA / Transcript | ✅ Active | Transcript output, CGPA calculation, and configurable GPA/transcript precision policy are available from published semester results. |
-| Duplicate Audit Tooling | ✅ Active | Admin duplicate-audit groups now surface roll, email, and `user_id` identity collisions for cleanup. |
+| Duplicate Audit Tooling | ✅ Active | Admin duplicate-audit groups and connected duplicate cases now surface roll, email, and `user_id` identity collisions for cleanup. |
+| Duplicate Merge Workflow | ✅ Active | Admins can preview merge impact, choose the canonical profile, rewrite linked student references, and hard-delete losing duplicates with audit logs. |
 | Exam-Core Module | ✅ Active | Exam definition, scheduling, subject-section mapping, and section-scoped student exam visibility are implemented. |
 | Student Self-Service Academics | ✅ Active | Students can access attendance, timetable, evaluations, marksheet, transcript, and exam schedule in the academic workspace. |
 
@@ -79,6 +80,7 @@ Statuses:
 | Student Academic Structure access | Students should see only authorized academic tools | Student access has been removed | Fixed trust gap, but needs to stay protected against regression | Keep navigation and permission tests in CI |
 | Legacy `Bulk Import` mental model | Operators may expect academic placement during import | Bulk flow still creates student profiles first, then placement happens later | Naming and process can still be misunderstood if users skip guidance | Keep `Bulk Create Students` wording and add post-create placement CTA |
 | Exam handling | Academic suite should expose formal exams | Formal exam-core now exists for definition, schedule, and visibility | Operational exam logistics are intentionally not part of the current scope | Keep UI labels explicit that hall logistics are out of scope |
+| Duplicate cleanup | Admins should be able to resolve real identity collisions | Duplicate cases now support preview, canonical profile review, cross-collection rewrite, and audited hard-delete merge execution | Enrollment-number grouping and self-service student profile reads still remain outside this merge wave | Extend duplicate inputs only if more identity keys become first-class |
 | Transcript expectations | Released marksheet may be confused with full result system | Transcript and semester result records are now available, and GPA precision/policy is now configurable | Institutional moderation depth may still vary by institution | Add configurable approval lanes only if deployment policy requires them |
 ---
 
@@ -88,6 +90,7 @@ Statuses:
 |--------|----------------|-----------|-------|-----|
 | Section Dashboard APIs | FE expects filtered section health with totals and per-section signals | `/sections/dashboard` returns health totals, timetable drift, attendance risk, unreleased-result counts, and powers section-capacity summaries | Teacher allocation pressure is surfaced in FE through offering + dashboard composition rather than one dedicated backend card endpoint | Add a dedicated staffing pressure read model only if composition becomes too heavy |
 | Student APIs | FE expects student CRUD plus canonical placement hints | Backend supports CRUD, `user_id`, placement source, and enrollment-aware reads | No dedicated student self-service academic profile endpoint | Add `/students/me` academic read model |
+| Duplicate Merge APIs | FE expects actionable duplicate cleanup, not just a summary list | Backend supports duplicate-case listing, merge preview, merge execution, repo-wide student-id rewrites, and audit logging | Enrollment-number grouping is still not part of the merge key set | Extend merge case clustering only if more identity keys are formalized |
 | Enrollment APIs | FE expects simple section + student assignment | Backend supports enrollment creation and canonical placement usage | Legacy `student.class_id` compatibility still exists | Continue migration toward enrollment-only authority |
 | Attendance APIs | FE expects roster load, bulk save, summaries, analytics, and faster large-roster handling | Backend supports roster, bulk submit, student summary, section summary, trends, and subject-wise analytics; FE adds search, filters, and sticky batch actions on top | Institutional shortage policy remains fixed rather than configurable | Add policy-level threshold controls only if the deployment requires them |
 | Course Offering APIs | FE expects dependent academic branch lookups and safe creation | Backend validates lineage and group scope correctly, while FE now derives teacher-load and section-capacity summaries from current offering and dashboard data | No dedicated backend staffing summary contract yet | Add offering coverage and staffing summary endpoint if query cost grows |
@@ -242,10 +245,10 @@ Moderate and improving. Checklists, cards, load summaries, duplicate-audit views
 | Attendance summaries | Section and student summaries plus analytics exist, and large-roster operators now have faster controls | Better operational visibility and lower execution friction | Add longer-range comparisons and configurable shortage policy if required |
 | Timetable sync | Sync/drift visibility exists | Better schedule trust | Add drill-down causes and remediation cues |
 | Official results | Release metadata, semester results, transcript, marksheet, and configurable GPA policy exist | Students can trust published records more clearly and admins can align transcript precision to policy | Add configurable grade-band policy depth only if institution rules require it |
-| Duplicate student detection | Duplicate-audit groups now surface key identity collisions | Duplicate profiles are easier to detect before they fragment academic records further | Add merge/resolve tooling and enrollment-number grouping |
+| Duplicate student detection | Duplicate-audit groups and connected merge cases now surface key identity collisions | Duplicate profiles can now be detected, reviewed, rewritten, and removed before they fragment academic records further | Add enrollment-number grouping only if it becomes a formal identity key |
 
 Check:
-- Duplicate records: Detectable and reviewable, but not fully unified
+- Duplicate records: Detectable, mergeable, and mostly unified after admin execution
 - Incorrect grades: Lower risk after explicit release state, but no full moderation layer yet
 - Attendance mismatch: Lower than before and now visible through analytics, but still incomplete without predictive projections
 - Missing data: Mostly contained, with legacy migration tail remaining
@@ -265,9 +268,9 @@ Check:
 
 ### Student Management:
 - Issues:
-  Student identity and placement are stronger, duplicate groups are now visible, but merge/resolve tooling and student self-profile reads are still absent.
+  Student identity and placement are stronger, and duplicate merge tooling is now live, but student self-profile reads are still absent.
 - Fix:
-  Add duplicate merge workflow and student self-profile academic read model.
+  Add student self-profile academic read model and optional enrollment-number identity support only if required.
 
 ### Attendance System:
 - Issues:
@@ -294,7 +297,7 @@ Check:
 - Surface section-level health, setup pressure, staffing load, capacity pressure, and cleanup needs before operators enter edit flows.
 - Continue replacing ambiguous academic labels with more truthful workflow language.
 - Add quick filters and drill-down actions from summary cards into cleanup cohorts.
-- Keep improving operator-speed workflows after the roadmap, especially for large attendance rosters and duplicate-resolution reviews.
+- Keep improving operator-speed workflows after the roadmap, especially for large attendance rosters and the remaining enrollment cleanup shortcuts.
 - Improve mobile/tablet handling for the remaining dense academic tools, especially large attendance rosters and generic manager grids.
 - Extend transcript and exam outputs with institution-specific policy controls only when the deployment requires them.
 
@@ -312,6 +315,7 @@ Check:
 - Adaptive timetable card editor for tablet and mobile coordination workflows
 - Teacher-load and section-capacity summaries for course delivery balancing
 - Duplicate student audit workspace for admin cleanup
+- Duplicate merge workflow with preview, conflict review, repo-wide student-id rewrites, and audited hard delete
 - Configurable GPA/transcript grading-policy controls for official results
 - High-volume attendance helpers with search, focused views, and sticky action controls
 
@@ -389,6 +393,22 @@ Check:
 
 ### Test Case:
 - Scenario:
+  Duplicate merge should rewrite repo-wide student-id references before deleting losing student profiles.
+- Steps:
+  1. Login as admin.
+  2. Seed duplicate student profiles with overlapping roll/email/`user_id`.
+  3. Add linked enrollment, attendance, internship, grievance, and intervention rows.
+  4. Open `/api/v1/students/merge/preview`.
+  5. Execute `/api/v1/students/merge/execute`.
+- Expected:
+  Canonical student survives, linked rows are rewritten or deduplicated, losing students are deleted, and the merge is audit logged.
+- Failure:
+  Losing student ids still remain in linked collections or the merge deletes profiles before rewrite verification.
+
+---
+
+### Test Case:
+- Scenario:
   Grading policy changes should affect transcript GPA precision and official result output.
 - Steps:
   1. Login as admin.
@@ -420,12 +440,12 @@ Check:
 
 | Priority | Issue | Reason |
 |----------|-------|--------|
-| P1 | Duplicate groups are visible but not yet mergeable from one admin workflow | Data-quality review is faster than before, but cleanup still requires manual follow-through |
 | P1 | Enrollment cleanup still lacks direct quick-filter action chips for `Unmapped` and `Legacy Only` | Operators can see the risk cohorts, but acting on them can still be faster |
+| P1 | Predictive staffing and academic risk analytics are still not present | Oversight is descriptive today, not predictive |
 | P2 | Grade-band thresholds are not yet institution-configurable beyond GPA mapping and precision | Acceptable now, but some institutions may require deeper policy controls |
 | P2 | Attendance power-user shortcuts are still light for exception-heavy very large rosters | Current helpers are strong, but keyboard-first operators may still want more speed |
 | P3 | Exam logistics such as hall-ticket, room allocation, and invigilation are deferred | Current roadmap committed only exam-core, not operational logistics |
-| P3 | Predictive staffing and academic risk analytics are still not present | Oversight is descriptive today, not predictive |
+| P3 | Student self-profile academic read model is still missing | Students still rely on distributed academic views rather than one canonical self-profile endpoint |
 
 ---
 
@@ -433,7 +453,7 @@ Check:
 
 | Area | Trust | Reason |
 |------|-------|--------|
-| Student data | 9/10 | Identity, placement semantics, cleanup routing, and duplicate-audit visibility are stronger than before. |
+| Student data | 10/10 | Identity, placement semantics, cleanup routing, duplicate visibility, and merge execution are stronger than before. |
 | Section operations | 9/10 | Dashboard signals, hierarchy rules, teacher-load, and capacity context make section oversight much more trustworthy. |
 | Attendance | 9/10 | Workflow is operationally credible and now backed by visible analytics plus scale-speed helpers, with only power-user shortcut polish still pending. |
 | Timetable | 9/10 | Sync and drift visibility are strong, and smaller-screen editing is now much safer. |
@@ -441,14 +461,14 @@ Check:
 | Student-facing academics | 9/10 | Students can access trustworthy marksheet, transcript, attendance, timetable, and exam schedule views. |
 
 Overall Score:
-94/100
+96/100
 
 ---
 
 # 🔍 EDGE CASES
 
 - Duplicate student entries
-  Still possible through legacy identity splits if `user_id`, email, and roll data were not cleaned consistently, though admin duplicate-audit now surfaces them clearly.
+  Still possible through legacy identity splits if `user_id`, email, and roll data were not cleaned consistently, but admin merge tooling now lets operators resolve and remove them safely.
 - Missing attendance
   Section summaries and analytics help, but there is still no full missing-period detection engine.
 - Incorrect grades
@@ -462,15 +482,15 @@ Overall Score:
 - System Quality:
   Good. The academic module now feels like a guided operational system in its weak areas rather than a loose collection of CRUD screens.
 - Data Accuracy:
-  Good to excellent. Canonical placement, identity rules, duplicate-audit visibility, and grading-policy-backed official outputs are much stronger than the baseline.
+  Excellent for the current scope. Canonical placement, identity rules, duplicate merge execution, and grading-policy-backed official outputs are much stronger than the baseline.
 - Usability:
   Good to excellent. Phase 3 and the post-roadmap hardening slice meaningfully improved sections, enrollments, course delivery, attendance speed, and timetable editing on smaller screens.
 - Trust Level:
-  Good to excellent. Users can trust what the system claims in the implemented roadmap scope, with the main remaining gaps now in operator-speed polish and optional policy customization.
+  Excellent for the implemented scope. Users can trust what the system claims in the academic module, with the main remaining gaps now in predictive oversight, operator-speed polish, and optional policy customization.
 - Biggest Problem:
-  The largest remaining gaps are now post-roadmap enhancements: duplicate merge tooling, predictive oversight, and optional deeper institutional grading-policy controls.
+  The largest remaining gaps are now post-roadmap enhancements: predictive oversight, remaining enrollment cleanup shortcuts, and optional deeper institutional grading-policy controls.
 - Next Action:
-  Move into post-roadmap hardening: add duplicate-resolution workflow, quick cleanup filters, predictive oversight, and broader regression coverage.
+  Move into post-roadmap hardening: add quick cleanup filters, predictive oversight, and broader regression coverage around the newest admin controls.
 
 ---
 
@@ -492,6 +512,7 @@ Overall Score:
 | 2026-04-12 | Added adaptive tablet/mobile timetable card editing and removed the lingering frontend JSX build warning | Closed the remaining audited timetable responsiveness gap and restored a quiet frontend build |
 | 2026-04-12 | Added post-bulk-create enrollment cleanup routing | Reduced onboarding drop-off between student creation and placement |
 | 2026-04-12 | Added teacher-load and section-capacity summaries, high-volume attendance helpers, duplicate-audit tooling, and configurable grading-policy controls | Completed the current post-roadmap hardening batch |
+| 2026-04-13 | Added duplicate-case preview, admin merge execution, repo-wide student-id rewrites, and audited hard delete cleanup | Closed the largest remaining identity and data-integrity gap in the academic module |
 
 ---
 
@@ -510,7 +531,7 @@ Overall Score:
 ## 🔁 NEXT ACTIONS
 
 - Immediate fix:
-  Add duplicate-resolution workflow, quick enrollment cleanup filters, and targeted regression coverage for grading-policy and duplicate-audit flows.
+  Add quick enrollment cleanup filters, predictive oversight, and targeted regression coverage for the newest admin controls.
 - Next review:
   2026-04-19
 - Responsible:
@@ -529,7 +550,7 @@ Overall Score:
 | Post-bulk-create placement deep links | Medium | Low | P1 | Completed |
 | Teacher-load and section-capacity summaries | Medium | Medium | P1 | Completed |
 | Configurable GPA / grading policy rules | Medium | Medium | P2 | Completed |
-| Duplicate merge and resolution workflow | Medium | Medium | P2 | Fix next |
+| Duplicate merge and resolution workflow | Medium | Medium | P2 | Completed |
 | Exam logistics extensions | Medium | High | P3 | Build later |
 
 ---
@@ -549,7 +570,7 @@ Phase 4: Performance
 Completed for the current hardening slice. Attendance analytics, large-roster helpers, and tablet/mobile timetable editing are shipped.
 
 Phase 5: Feature Enhancements  
-Completed for the current post-roadmap hardening batch. Operator-speed tooling, duplicate auditing, and grading-policy flexibility are shipped; optional predictive and exam-logistics enhancements remain future work.
+Completed for the current post-roadmap hardening batch. Operator-speed tooling, duplicate auditing, duplicate merge execution, and grading-policy flexibility are shipped; optional predictive and exam-logistics enhancements remain future work.
 
 ---
 
@@ -558,9 +579,9 @@ Completed for the current post-roadmap hardening batch. Operator-speed tooling, 
 | Task | Impact | Effort | Benefit |
 |------|--------|--------|--------|
 | Add quick filters for unmapped and legacy-only students | Medium | Low | Speeds placement cleanup |
-| Add duplicate merge workflow from duplicate-audit groups | Medium | Medium | Turns visibility into direct data cleanup |
 | Add timetable drift detail drawer | Medium | Low | Improves operator trust during schedule fixes |
 | Add predictive staffing and academic risk signals | Medium | Medium | Helps coordinators act before imbalance becomes operational pain |
+| Add student self-profile academic endpoint | Medium | Medium | Gives students one canonical academic identity and placement view |
 
 ---
 
@@ -570,7 +591,7 @@ Completed for the current post-roadmap hardening batch. Operator-speed tooling, 
 |------|-------|-----------|
 | Academic policy mismatch | Institutional moderation rules or grade-band thresholds may differ from the current GPA-focused policy controls | Add configurable grading thresholds and approval lanes when required |
 | Analytics depth gap | Attendance analytics are improved, but long-range and predictive insights are still lighter than the workflow layer | Expand derived read models and trend dashboards |
-| Legacy data inconsistency | Old student records may still lack fully clean identity linkage even though duplicate groups are now visible | Continue backfill, duplicate audit, and merge tooling |
+| Legacy data inconsistency | Old student records may still lack fully clean identity linkage even though duplicate merge tooling is now live | Continue backfill, duplicate audit, and merge usage reviews |
 | Operator speed gap on very large rosters | Large sections are improved but still not fully keyboard-optimized for exception-heavy edits | Add optional shortcuts and saved presets |
 
 ---
@@ -578,7 +599,7 @@ Completed for the current post-roadmap hardening batch. Operator-speed tooling, 
 ## 🎯 EXECUTION PLAN
 
 - Fix now:
-  Duplicate merge workflow, quick enrollment cleanup filters, and targeted regression coverage for the newest post-roadmap controls.
+  Quick enrollment cleanup filters, predictive staffing/risk signals, and targeted regression coverage for the newest post-roadmap controls.
 - Fix later:
   Richer analytics dashboards, predictive staffing/risk insights, and deeper academic policy controls.
 - Remove:

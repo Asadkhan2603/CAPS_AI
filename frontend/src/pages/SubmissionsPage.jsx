@@ -19,6 +19,18 @@ function aiStatusVariant(status) {
   return 'default';
 }
 
+function formatOcrResultState(state) {
+  if (state === 'success') return 'OCR success';
+  if (state === 'timeout') return 'OCR timeout';
+  if (state === 'failed') return 'OCR failed';
+  if (state === 'empty') return 'OCR empty';
+  if (state === 'provider_not_configured') return 'OCR not configured';
+  if (state === 'not_needed') return 'OCR not needed';
+  if (state === 'disabled') return 'OCR disabled';
+  if (state === 'unsupported') return 'OCR unsupported';
+  return state || 'OCR unavailable';
+}
+
 export default function SubmissionsPage() {
   const navigate = useNavigate();
   const { pushToast } = useToast();
@@ -81,9 +93,9 @@ export default function SubmissionsPage() {
                 <span>{truncated}</span>
                 {lowExtraction ? (
                   <span className="block text-xs text-amber-700 dark:text-amber-300">
-                    Low text extraction detected. {row.ocr_attempted
-                      ? `OCR ${row.ocr_provider || 'adapter'} added ${row.ocr_chars_added ?? 0} chars with confidence ${row.extraction_confidence ?? 0}.`
-                      : 'OCR not applied yet.'} Consider re-uploading with a clearer PDF.
+                    Low text extraction detected. Treat this file as weak evidence until extraction improves. {row.ocr_attempted
+                      ? `${formatOcrResultState(row.ocr_result_state)} via ${row.ocr_provider || 'adapter'} added ${row.ocr_chars_added ?? 0} chars with confidence ${row.extraction_confidence ?? 0} after ${row.ocr_retry_count ?? 0} retries.`
+                      : 'OCR was not applied yet.'} {row.ocr_retry_guidance || 'Consider re-uploading a clearer, text-searchable PDF.'}
                   </span>
                 ) : null}
               </div>

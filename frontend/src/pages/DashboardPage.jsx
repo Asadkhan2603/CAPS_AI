@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, BookOpenCheck, ChartLine, FileText, Sparkles, ArrowRight, Clock3, ShieldAlert, CalendarClock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import StatCard from '../components/ui/StatCard';
@@ -13,8 +13,9 @@ import { apiClient } from '../services/apiClient';
 import { canAccessFeature } from '../utils/permissions';
 import { formatApiError } from '../utils/apiError';
 import { FEATURE_ACCESS } from '../config/featureAccess';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
-const DashboardTrendChart = lazy(() => import('../components/analytics/DashboardTrendChart'));
+const DashboardTrendChart = lazyWithRetry(() => import('../components/analytics/DashboardTrendChart'));
 
 const performanceData = [
   { month: 'Jan', avg: 67, submissions: 41 },

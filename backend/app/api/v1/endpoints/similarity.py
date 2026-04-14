@@ -12,6 +12,8 @@ from app.schemas.similarity_log import SimilarityLogOut, SimilarityRunQueuedResp
 from app.services.ai_jobs import AI_JOB_TYPE_SIMILARITY, queue_ai_job, schedule_ai_job_processing, serialize_ai_job
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
+from app.services.semantic_rollout_readiness import calibration_eligible as is_calibration_eligible
+from app.services.semantic_rollout_readiness import language_bucket_for_row, normalize_match_scope
 from app.services.similarity_access_policy import (
     can_view_similarity_log,
     filter_similarity_logs_for_user,
@@ -30,6 +32,11 @@ _REVIEW_REASON_CODES = {
     "assignment_context_mismatch",
     "other",
 }
+_DECISION_MODES = {"flagged", "assist_only", "suppressed"}
+_MATCH_SCOPES = {"same_assignment_lexical", "same_assignment_shadow", "cross_assignment_shadow"}
+_LANGUAGE_BUCKETS = {"latin_only", "mixed_transliterated", "non_latin"}
+_STALE_OPEN_HOURS = 48
+_STALE_IN_PROGRESS_HOURS = 72
 
 
 def _has_low_extraction_quality(item: dict) -> bool:
@@ -50,6 +57,28 @@ def _has_semantic_drift(item: dict) -> bool:
     if not isinstance(lexical_score, (int, float)) or not isinstance(semantic_score, (int, float)):
         return False
     return float(semantic_score) - float(lexical_score) >= float(settings.semantic_shadow_calibration_paraphrase_advantage_min)
+
+
+def _review_updated_timestamp(item: dict) -> datetime | None:
+    value = item.get("review_updated_at") or item.get("reviewed_at") or item.get("created_at")
+    return value if isinstance(value, datetime) else None
+
+
+def _is_stale_review(item: dict) -> bool:
+    updated_at = _review_updated_timestamp(item)
+    if updated_at is None:
+        return False
+    review_status = str(item.get("review_status") or "").strip().lower()
+    age_hours = max(0.0, (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600.0)
+    if review_status == "open":
+        return age_hours >= _STALE_OPEN_HOURS
+    if review_status == "in_progress":
+        return age_hours >= _STALE_IN_PROGRESS_HOURS
+    return False
+
+
+def _counts_toward_calibration(item: dict) -> bool:
+    return is_calibration_eligible(item)
 
 
 def _matches_similarity_search(item: dict, search: str) -> bool:
@@ -147,6 +176,14 @@ async def similarity_checks(
     source_submission_id: str | None = Query(default=None),
     is_flagged: bool | None = Query(default=None),
     review_status: str | None = Query(default=None),
+    decision_mode: str | None = Query(default=None),
+    awaiting_final_decision: bool | None = Query(default=None),
+    stale_review: bool | None = Query(default=None),
+    counts_toward_calibration: bool | None = Query(default=None),
+    calibration_eligible: bool | None = Query(default=None),
+    semantic_review_candidate: bool | None = Query(default=None),
+    match_scope: str | None = Query(default=None),
+    language_bucket: str | None = Query(default=None),
     semantic_drift_present: bool | None = Query(default=None),
     cap_reached: bool | None = Query(default=None),
     low_extraction_quality: bool | None = Query(default=None),
@@ -167,6 +204,21 @@ async def similarity_checks(
         if normalized_review_status not in _REVIEW_STATUSES:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid review_status filter')
         query['review_status'] = normalized_review_status
+    if decision_mode:
+        normalized_decision_mode = str(decision_mode).strip().lower()
+        if normalized_decision_mode not in _DECISION_MODES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid decision_mode filter')
+        query['decision_mode'] = normalized_decision_mode
+    normalized_match_scope = None
+    if match_scope:
+        normalized_match_scope = str(match_scope).strip().lower()
+        if normalized_match_scope not in _MATCH_SCOPES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid match_scope filter')
+    normalized_language_bucket = None
+    if language_bucket:
+        normalized_language_bucket = str(language_bucket).strip().lower()
+        if normalized_language_bucket not in _LANGUAGE_BUCKETS:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid language_bucket filter')
     if cap_reached is not None:
         query['cap_reached'] = cap_reached
 
@@ -180,6 +232,22 @@ async def similarity_checks(
         if min_score is not None and (not isinstance(numeric_score, (int, float)) or float(numeric_score) < float(min_score)):
             continue
         if max_score is not None and (not isinstance(numeric_score, (int, float)) or float(numeric_score) > float(max_score)):
+            continue
+        if awaiting_final_decision is not None and (
+            str(item.get("review_status") or "").strip().lower() in {"open", "in_progress"}
+        ) is not awaiting_final_decision:
+            continue
+        if stale_review is not None and _is_stale_review(item) is not stale_review:
+            continue
+        if counts_toward_calibration is not None and _counts_toward_calibration(item) is not counts_toward_calibration:
+            continue
+        if calibration_eligible is not None and is_calibration_eligible(item) is not calibration_eligible:
+            continue
+        if semantic_review_candidate is not None and bool(item.get("semantic_review_candidate")) is not semantic_review_candidate:
+            continue
+        if normalized_match_scope is not None and normalize_match_scope(item) != normalized_match_scope:
+            continue
+        if normalized_language_bucket is not None and language_bucket_for_row(item) != normalized_language_bucket:
             continue
         if semantic_drift_present is not None and _has_semantic_drift(item) is not semantic_drift_present:
             continue
@@ -238,6 +306,7 @@ async def update_similarity_check(
     review_notes = payload.get("review_notes")
     update_data = {}
     normalized_status = None
+    now = datetime.now(timezone.utc)
     if review_status is not None:
         status_value = str(review_status).strip().lower()
         if status_value not in _REVIEW_STATUSES:
@@ -266,7 +335,14 @@ async def update_similarity_check(
         update_data["review_reason_code"] = None
 
     update_data["reviewed_by_user_id"] = str(current_user.get("_id"))
-    update_data["reviewed_at"] = datetime.now(timezone.utc)
+    update_data["reviewed_at"] = now
+    update_data["review_updated_at"] = now
+    if normalized_status in {"fixed", "reopened"}:
+        update_data["review_finalized_at"] = now
+        update_data["review_finalized_by_user_id"] = str(current_user.get("_id"))
+    else:
+        update_data["review_finalized_at"] = None
+        update_data["review_finalized_by_user_id"] = None
 
     await db.similarity_logs.update_one({"_id": parse_object_id(log_id)}, {"$set": update_data})
     updated = await db.similarity_logs.find_one({"_id": parse_object_id(log_id)})

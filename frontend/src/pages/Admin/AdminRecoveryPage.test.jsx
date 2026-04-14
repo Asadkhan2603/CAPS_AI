@@ -47,7 +47,20 @@ vi.mock('../../components/ui/Skeleton', () => ({
 }));
 
 vi.mock('../../components/ui/Table', () => ({
-  default: () => <div data-testid="recovery-table">Table</div>,
+  default: ({ data = [], rowActions = [] }) => (
+    <div data-testid="recovery-table">
+      {data.map((row) => (
+        <div key={row.id}>
+          <span>{row.display_name}</span>
+          {rowActions.map((action) => (
+            <button key={action.key} type="button" onClick={() => action.onClick(row)}>
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock('../../components/ui/Modal', () => ({
@@ -249,12 +262,20 @@ describe('AdminRecoveryPage', () => {
     expect(document.body.textContent).toContain('There are no soft-deleted notices waiting for restore review right now.');
   });
 
-  it('shows a readable load error without crashing the page shell', async () => {
-    mockFetchRecoveryItems.mockRejectedValue(new Error('network failure'));
+  it('shows a readable load error without crashing the page shell and allows retry', async () => {
+    mockFetchRecoveryItems
+      .mockRejectedValueOnce(new Error('network failure'))
+      .mockResolvedValueOnce(buildResponse());
 
     await renderPage();
 
     expect(document.body.textContent).toContain('Failed to load recovery items');
     expect(document.body.textContent).toContain('Collection Selector');
+    expect(document.body.textContent).toContain('Retry');
+
+    await clickButtonByText('Retry');
+
+    expect(mockFetchRecoveryItems).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).toContain('Midterm Schedule Notice');
   });
 });

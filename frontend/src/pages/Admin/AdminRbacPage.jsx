@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
-import Table from '../../components/ui/Table';
-import Modal from '../../components/ui/Modal';
-import FormInput from '../../components/ui/FormInput';
 import EmptyState from '../../components/ui/EmptyState';
+import FormInput from '../../components/ui/FormInput';
+import InlineErrorState from '../../components/ui/InlineErrorState';
+import Modal from '../../components/ui/Modal';
+import PageLoader from '../../components/ui/PageLoader';
+import Table from '../../components/ui/Table';
 import { useToast } from '../../hooks/useToast';
 import { apiClient } from '../../services/apiClient';
 import {
@@ -484,16 +486,18 @@ export default function AdminRbacPage() {
   }
 
   const adminColumns = [
-    { key: 'full_name', label: 'Admin' },
-    { key: 'email', label: 'Email' },
+    { key: 'full_name', label: 'Admin', priority: 'high' },
+    { key: 'email', label: 'Email', priority: 'high' },
     {
       key: 'admin_details',
       label: 'Admin Details',
+      priority: 'low',
       render: (row) => <AdminDetailsCell row={row} />,
     },
     {
       key: 'admin_role',
       label: 'Role',
+      priority: 'high',
       render: (row) => (
         <div>
           <div className="font-medium text-slate-900 dark:text-white">{row.admin_role?.name || row.rbac_role_code || '-'}</div>
@@ -501,34 +505,36 @@ export default function AdminRbacPage() {
         </div>
       ),
     },
-    { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-    { key: 'scopes', label: 'Scopes', render: (row) => <ScopeSummary scopes={row.scopes} /> },
-    { key: 'permissions', label: 'Permissions', render: (row) => `${row.permissions?.length || 0}` },
+    { key: 'status', label: 'Status', priority: 'high', render: (row) => <StatusBadge status={row.status} /> },
+    { key: 'scopes', label: 'Scopes', priority: 'medium', render: (row) => <ScopeSummary scopes={row.scopes} /> },
+    { key: 'permissions', label: 'Permissions', priority: 'medium', render: (row) => `${row.permissions?.length || 0}` },
     {
       key: 'overrides',
       label: 'Overrides',
+      priority: 'low',
       render: (row) => `${row.permission_overrides?.allow_permission_keys?.length || 0} allow / ${row.permission_overrides?.deny_permission_keys?.length || 0} deny`,
     },
   ];
 
   const roleColumns = [
-    { key: 'name', label: 'Role Name' },
-    { key: 'code', label: 'Code' },
-    { key: 'permission_groups', label: 'Groups', render: (row) => (row.permission_groups?.length ? row.permission_groups.join(', ') : '-') },
-    { key: 'permission_count', label: 'Permissions', render: (row) => `${row.permission_keys?.length || 0}` },
-    { key: 'type', label: 'Type', render: (row) => <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{row.is_system ? 'System' : 'Custom'}</span> },
-    { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.deleted_at ? 'deleted' : row.is_active === false ? 'inactive' : 'active'} /> },
+    { key: 'name', label: 'Role Name', priority: 'high' },
+    { key: 'code', label: 'Code', priority: 'high' },
+    { key: 'permission_groups', label: 'Groups', priority: 'medium', render: (row) => (row.permission_groups?.length ? row.permission_groups.join(', ') : '-') },
+    { key: 'permission_count', label: 'Permissions', priority: 'medium', render: (row) => `${row.permission_keys?.length || 0}` },
+    { key: 'type', label: 'Type', priority: 'low', render: (row) => <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{row.is_system ? 'System' : 'Custom'}</span> },
+    { key: 'status', label: 'Status', priority: 'high', render: (row) => <StatusBadge status={row.deleted_at ? 'deleted' : row.is_active === false ? 'inactive' : 'active'} /> },
   ];
 
   const auditColumns = [
-    { key: 'action', label: 'Action' },
-    { key: 'entity_type', label: 'Entity' },
-    { key: 'detail', label: 'Detail' },
-    { key: 'actor_user_id', label: 'Actor' },
-    { key: 'created_at', label: 'Created', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') },
+    { key: 'action', label: 'Action', priority: 'high' },
+    { key: 'entity_type', label: 'Entity', priority: 'high' },
+    { key: 'detail', label: 'Detail', priority: 'medium' },
+    { key: 'actor_user_id', label: 'Actor', priority: 'low' },
+    { key: 'created_at', label: 'Created', priority: 'medium', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') },
     {
       key: 'follow_up',
       label: 'Follow-up',
+      priority: 'high',
       render: (row) => (
         <Link className="btn-secondary !px-3 !py-1.5 text-xs" to={buildRbacAuditLogPath(row)}>
           Open Audit Logs
@@ -536,6 +542,7 @@ export default function AdminRbacPage() {
       ),
     },
   ];
+  const initialLoading = loading && admins.length === 0 && roles.length === 0 && auditRows.length === 0;
 
   return (
     <div className="space-y-4 page-fade">
@@ -561,7 +568,15 @@ export default function AdminRbacPage() {
         </div>
       </Card>
 
-      {error ? <Card><p className="text-sm text-rose-600">{error}</p></Card> : null}
+      {error ? (
+        <InlineErrorState
+          title="RBAC workspace unavailable"
+          description={error}
+          onRetry={() => void loadData(false)}
+        />
+      ) : null}
+
+      {initialLoading ? <PageLoader compact label="Loading RBAC workspace..." /> : null}
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         {summary.map((item) => <Metric key={item.label} label={item.label} value={loading ? '...' : item.value} />)}
@@ -656,10 +671,15 @@ export default function AdminRbacPage() {
             </button>
           </div>
         </div>
-        {filteredAdmins.length ? (
+        {loading && !filteredAdmins.length ? (
+          <PageLoader compact label="Loading admins..." />
+        ) : filteredAdmins.length ? (
           <Table
             columns={adminColumns}
             data={filteredAdmins}
+            responsive
+            mobileBreakpoint="md"
+            stickyActions
             rowActions={[
               { key: 'edit', label: 'Edit', onClick: (row) => openEditAdmin(row.id) },
               { key: 'status', label: 'Toggle Status', onClick: (row) => toggleAdminStatus(row) },
@@ -685,10 +705,15 @@ export default function AdminRbacPage() {
             <button type="button" className="btn-secondary w-full" onClick={() => setRoleQuery('')}>Clear Search</button>
           </div>
         </div>
-        {filteredRoles.length ? (
+        {loading && !filteredRoles.length ? (
+          <PageLoader compact label="Loading roles..." />
+        ) : filteredRoles.length ? (
           <Table
             columns={roleColumns}
             data={filteredRoles}
+            responsive
+            mobileBreakpoint="md"
+            stickyActions
             rowActions={[
               { key: 'edit', label: 'Edit', onClick: (row) => openEditRole(row) },
               { key: 'delete', label: 'Delete', className: 'text-rose-700 dark:text-rose-300', onClick: (row) => removeRole(row) },
@@ -710,7 +735,13 @@ export default function AdminRbacPage() {
             <Link className="btn-secondary" to={buildGovernancePath({ context: 'rbac_audit' })}>Open Governance</Link>
           </div>
         </div>
-        {auditRows.length ? <Table columns={auditColumns} data={auditRows.slice(0, 12)} /> : <EmptyState title="No RBAC audit events yet" description="RBAC and admin management actions will appear here after the first mutation." />}
+        {loading && !auditRows.length ? (
+          <PageLoader compact label="Loading RBAC audit trail..." />
+        ) : auditRows.length ? (
+          <Table columns={auditColumns} data={auditRows.slice(0, 12)} responsive mobileBreakpoint="md" stickyActions />
+        ) : (
+          <EmptyState title="No RBAC audit events yet" description="RBAC and admin management actions will appear here after the first mutation." />
+        )}
       </Card>
 
       <AdminModal

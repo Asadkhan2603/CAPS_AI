@@ -9,11 +9,38 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from app.core.config import settings
 from app.core.schema_versions import SIMILARITY_RETRIEVAL_ARTIFACT_SCHEMA_VERSION
-from app.services.similarity_rollout import resolve_similarity_stop_words, tokenize_for_similarity
+from app.services.similarity_rollout import (
+    resolve_similarity_stop_words,
+    resolve_tokenizer_mode_for_texts,
+    tokenize_for_similarity,
+)
 
 
 _SENTENCE_RE = re.compile(r"[.!?]+")
 _RETRIEVAL_ARTIFACT_VERSION = f"retrieval-v{SIMILARITY_RETRIEVAL_ARTIFACT_SCHEMA_VERSION}"
+_GENERIC_OVERLAP_TERMS = {
+    "answer",
+    "analysis",
+    "approach",
+    "completed",
+    "conclusion",
+    "data",
+    "design",
+    "discussion",
+    "experiment",
+    "general",
+    "implementation",
+    "method",
+    "model",
+    "observation",
+    "process",
+    "report",
+    "result",
+    "system",
+    "test",
+    "testing",
+    "verified",
+}
 
 
 def normalize_text(text: str) -> str:
@@ -21,8 +48,8 @@ def normalize_text(text: str) -> str:
     return cleaned
 
 
-def tokenize_text(text: str) -> list[str]:
-    return tokenize_for_similarity(text)
+def tokenize_text(text: str, *, tokenizer_mode: str | None = None) -> list[str]:
+    return tokenize_for_similarity(text, tokenizer_mode=tokenizer_mode)
 
 
 def build_similarity_retrieval_artifact(text: str) -> dict:
@@ -111,13 +138,19 @@ def extraction_quality_score(text: str) -> float:
     return round(token_component * char_component, 3)
 
 
+def token_count(text: str, *, tokenizer_mode: str | None = None) -> int:
+    return len(tokenize_text(text, tokenizer_mode=tokenizer_mode))
+
+
 def compute_overlap_stats(
     source_text: str,
     matched_text: str,
     prompt_terms: set[str] | None = None,
+    tokenizer_mode: str | None = None,
 ) -> dict:
-    source_tokens = set(tokenize_text(source_text))
-    matched_tokens = set(tokenize_text(matched_text))
+    tokenizer_mode = tokenizer_mode or resolve_tokenizer_mode_for_texts([source_text, matched_text])
+    source_tokens = set(tokenize_text(source_text, tokenizer_mode=tokenizer_mode))
+    matched_tokens = set(tokenize_text(matched_text, tokenizer_mode=tokenizer_mode))
     overlap_terms = source_tokens.intersection(matched_tokens)
     overlap_ratio = len(overlap_terms) / max(len(source_tokens), 1)
     prompt_terms = prompt_terms or set()
@@ -138,8 +171,10 @@ def extract_top_sentence_overlaps(
     matched_text: str,
     prompt_terms: set[str] | None = None,
     max_pairs: int = 3,
+    tokenizer_mode: str | None = None,
 ) -> list[dict]:
     prompt_terms = prompt_terms or set()
+    tokenizer_mode = tokenizer_mode or resolve_tokenizer_mode_for_texts([source_text, matched_text])
     source_sentences = split_sentences(source_text)
     matched_sentences = split_sentences(matched_text)
     if not source_sentences or not matched_sentences:
@@ -147,11 +182,11 @@ def extract_top_sentence_overlaps(
 
     scored_pairs: list[tuple[float, dict]] = []
     for source_sentence in source_sentences[:20]:
-        source_tokens = set(tokenize_text(source_sentence))
+        source_tokens = set(tokenize_text(source_sentence, tokenizer_mode=tokenizer_mode))
         if not source_tokens:
             continue
         for matched_sentence in matched_sentences[:20]:
-            matched_tokens = set(tokenize_text(matched_sentence))
+            matched_tokens = set(tokenize_text(matched_sentence, tokenizer_mode=tokenizer_mode))
             if not matched_tokens:
                 continue
             overlap_terms = source_tokens.intersection(matched_tokens)
@@ -221,10 +256,11 @@ def compute_similarity_scores(
 
     corpus = [source, *[text for _, text in candidates]]
     stop_words = resolve_similarity_stop_words(corpus)
-    if settings.similarity_tokenizer_mode == "unicode_words" or settings.similarity_language_detection_enabled:
+    tokenizer_mode = resolve_tokenizer_mode_for_texts(corpus)
+    if tokenizer_mode == "unicode_words" or settings.similarity_language_detection_enabled:
         vectorizer = TfidfVectorizer(
             stop_words=stop_words,
-            tokenizer=tokenize_text,
+            tokenizer=lambda value: tokenize_text(value, tokenizer_mode=tokenizer_mode),
             token_pattern=None,
             lowercase=True,
         )
@@ -241,3 +277,187 @@ def compute_similarity_scores(
         results.append((submission_id, normalized_score))
     results.sort(key=lambda item: item[1], reverse=True)
     return results
+
+
+def build_similarity_risk_signals(
+    source_text: str,
+    matched_text: str,
+    *,
+    prompt_terms: set[str] | None = None,
+    overlap_stats: dict | None = None,
+    evidence_excerpts: list[dict] | None = None,
+    extraction_diagnostics: dict | None = None,
+    language_profile: dict | None = None,
+    tokenizer_mode: str | None = None,
+) -> dict:
+    tokenizer_mode = tokenizer_mode or resolve_tokenizer_mode_for_texts([source_text, matched_text])
+    prompt_terms = prompt_terms or set()
+    overlap_stats = overlap_stats or compute_overlap_stats(
+        source_text,
+        matched_text,
+        prompt_terms=prompt_terms,
+        tokenizer_mode=tokenizer_mode,
+    )
+    evidence_excerpts = evidence_excerpts or []
+    source_tokens = set(tokenize_text(source_text, tokenizer_mode=tokenizer_mode))
+    matched_tokens = set(tokenize_text(matched_text, tokenizer_mode=tokenizer_mode))
+    shared_terms = source_tokens.intersection(matched_tokens)
+    non_prompt_shared_terms = shared_terms.difference(prompt_terms)
+    generic_shared_terms = {
+        term
+        for term in shared_terms
+        if term in _GENERIC_OVERLAP_TERMS or len(term) <= 3
+    }
+    extraction_diagnostics = extraction_diagnostics or {}
+    source_confidence = extraction_diagnostics.get("source", {}).get("extraction_confidence")
+    matched_confidence = extraction_diagnostics.get("matched", {}).get("extraction_confidence")
+    numeric_confidences = [
+        float(value)
+        for value in (source_confidence, matched_confidence)
+        if isinstance(value, (int, float))
+    ]
+    min_extraction_confidence = min(numeric_confidences) if numeric_confidences else 1.0
+    effective_excerpt_overlaps = [
+        float(item.get("effective_overlap_ratio"))
+        for item in evidence_excerpts
+        if isinstance(item, dict) and isinstance(item.get("effective_overlap_ratio"), (int, float))
+    ]
+    min_effective_excerpt_overlap = min(effective_excerpt_overlaps) if effective_excerpt_overlaps else 0.0
+    qualifying_excerpt_count = sum(
+        1 for value in effective_excerpt_overlaps if value >= float(settings.similarity_min_effective_excerpt_overlap)
+    )
+    return {
+        "prompt_overlap_ratio": round(float(overlap_stats.get("prompt_term_discount") or 0.0), 4),
+        "generic_overlap_ratio": round(
+            len(generic_shared_terms) / max(len(shared_terms), 1),
+            4,
+        ),
+        "non_prompt_shared_tokens": len(non_prompt_shared_terms),
+        "effective_excerpt_count": qualifying_excerpt_count,
+        "min_effective_excerpt_overlap": round(min_effective_excerpt_overlap, 4),
+        "min_extraction_confidence": round(float(min_extraction_confidence), 4),
+        "low_extraction_block": min_extraction_confidence < float(settings.similarity_min_extraction_confidence),
+        "language_mismatch": bool(
+            language_profile
+            and (
+                language_profile.get("mixed_or_non_latin")
+                or language_profile.get("source", {}).get("primary_script")
+                != language_profile.get("matched", {}).get("primary_script")
+            )
+        ),
+        "boilerplate_risk": bool(
+            min(len(source_tokens), len(matched_tokens)) <= int(settings.similarity_boilerplate_token_ceiling)
+            and (
+                len(non_prompt_shared_terms) <= int(settings.similarity_min_non_prompt_shared_tokens)
+                or len(generic_shared_terms) / max(len(shared_terms), 1)
+                >= float(settings.similarity_generic_overlap_assist_threshold)
+            )
+        ),
+    }
+
+
+def classify_similarity_decision(
+    *,
+    lexical_score: float,
+    threshold: float,
+    semantic_shadow_score: float | None,
+    overlap_stats: dict | None,
+    risk_signals: dict,
+    language_profile: dict | None,
+) -> dict[str, Any]:
+    overlap_stats = overlap_stats or {}
+    semantic_advantage = (
+        float(semantic_shadow_score) - float(lexical_score)
+        if isinstance(semantic_shadow_score, (int, float))
+        else 0.0
+    )
+    source_token_total = int(overlap_stats.get("source_token_count") or 0)
+    matched_token_total = int(overlap_stats.get("matched_token_count") or 0)
+    prompt_heavy = float(risk_signals.get("prompt_overlap_ratio") or 0.0) >= float(
+        settings.similarity_prompt_overlap_assist_threshold
+    )
+    generic_heavy = float(risk_signals.get("generic_overlap_ratio") or 0.0) >= float(
+        settings.similarity_generic_overlap_assist_threshold
+    )
+    too_short = min(source_token_total, matched_token_total) < int(settings.similarity_min_token_count)
+    insufficient_non_prompt = int(risk_signals.get("non_prompt_shared_tokens") or 0) < int(
+        settings.similarity_min_non_prompt_shared_tokens
+    )
+    weak_excerpts = (
+        int(risk_signals.get("effective_excerpt_count") or 0) < 1
+        or float(risk_signals.get("min_effective_excerpt_overlap") or 0.0)
+        < float(settings.similarity_min_effective_excerpt_overlap)
+    )
+    low_extraction_block = bool(risk_signals.get("low_extraction_block"))
+    min_extraction_confidence = float(risk_signals.get("min_extraction_confidence") or 1.0)
+    mixed_or_non_latin = bool(language_profile and language_profile.get("mixed_or_non_latin"))
+    semantic_review_candidate = bool(
+        semantic_advantage >= float(settings.semantic_shadow_calibration_paraphrase_advantage_min)
+        or (mixed_or_non_latin and isinstance(semantic_shadow_score, (int, float)))
+        or (
+            not low_extraction_block
+            and min_extraction_confidence >= float(settings.similarity_borderline_extraction_confidence)
+            and min_extraction_confidence < float(settings.similarity_min_extraction_confidence)
+        )
+    )
+
+    if lexical_score < threshold:
+        if semantic_review_candidate:
+            return {
+                "decision_mode": "assist_only",
+                "suppression_reason": "semantic_review_candidate",
+                "semantic_review_candidate": True,
+            }
+        return {
+            "decision_mode": "suppressed",
+            "suppression_reason": "below_threshold",
+            "semantic_review_candidate": False,
+        }
+
+    if low_extraction_block:
+        return {
+            "decision_mode": "suppressed",
+            "suppression_reason": "low_extraction_hold",
+            "semantic_review_candidate": True,
+        }
+    if too_short and bool(risk_signals.get("boilerplate_risk")):
+        return {
+            "decision_mode": "suppressed",
+            "suppression_reason": "short_generic_overlap",
+            "semantic_review_candidate": False,
+        }
+    if prompt_heavy:
+        return {
+            "decision_mode": "assist_only",
+            "suppression_reason": "prompt_heavy_overlap",
+            "semantic_review_candidate": semantic_review_candidate,
+        }
+    if insufficient_non_prompt:
+        return {
+            "decision_mode": "suppressed",
+            "suppression_reason": "insufficient_non_prompt_overlap",
+            "semantic_review_candidate": semantic_review_candidate,
+        }
+    if weak_excerpts:
+        return {
+            "decision_mode": "assist_only",
+            "suppression_reason": "weak_excerpt_evidence",
+            "semantic_review_candidate": semantic_review_candidate,
+        }
+    if generic_heavy or bool(risk_signals.get("boilerplate_risk")):
+        return {
+            "decision_mode": "assist_only",
+            "suppression_reason": "boilerplate_overlap",
+            "semantic_review_candidate": semantic_review_candidate,
+        }
+    if mixed_or_non_latin and semantic_review_candidate:
+        return {
+            "decision_mode": "assist_only",
+            "suppression_reason": "multilingual_manual_review",
+            "semantic_review_candidate": True,
+        }
+    return {
+        "decision_mode": "flagged",
+        "suppression_reason": None,
+        "semantic_review_candidate": semantic_review_candidate,
+    }

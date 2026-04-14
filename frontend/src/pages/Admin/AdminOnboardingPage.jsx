@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
+import InlineErrorState from '../../components/ui/InlineErrorState';
+import PageLoader from '../../components/ui/PageLoader';
 import { apiClient } from '../../services/apiClient';
 import { formatApiError } from '../../utils/apiError';
 
@@ -17,21 +20,21 @@ export default function AdminOnboardingPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError('');
-      try {
-        const response = await apiClient.get('/admin/analytics/onboarding-overview');
-        setOverview(response.data || null);
-      } catch (err) {
-        setError(formatApiError(err, 'Failed to load onboarding wizard'));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
+    void loadOverview();
   }, []);
+
+  async function loadOverview() {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await apiClient.get('/admin/analytics/overview');
+      setOverview(response.data || null);
+    } catch (err) {
+      setError(formatApiError(err, 'Failed to load onboarding wizard'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const progress = overview?.progress || {};
   const nextStep = overview?.next_step || null;
@@ -46,20 +49,19 @@ export default function AdminOnboardingPage() {
         </p>
       </Card>
 
-      {loading ? (
-        <Card>
-          <p className="text-sm text-slate-500">Loading onboarding progress...</p>
-        </Card>
-      ) : null}
+      {loading ? <PageLoader compact label="Loading onboarding progress..." /> : null}
 
       {error ? (
-        <Card>
-          <p className="text-sm text-rose-600">{error}</p>
-        </Card>
+        <InlineErrorState
+          title="Onboarding overview unavailable"
+          description={error}
+          onRetry={() => void loadOverview()}
+        />
       ) : null}
 
       {!loading && !error ? (
-        <>
+        overview ? (
+          <>
           <div className="grid gap-3 md:grid-cols-4">
             <Metric label="Required Steps Complete" value={`${progress.completed_steps ?? 0}/${progress.total_steps ?? 0}`} />
             <Metric label="Progress" value={`${progress.percent ?? 0}%`} />
@@ -138,7 +140,13 @@ export default function AdminOnboardingPage() {
               </Card>
             ))}
           </div>
-        </>
+          </>
+        ) : (
+          <EmptyState
+            title="No onboarding overview available"
+            description="The onboarding wizard has no progress snapshot yet. Refresh after initial setup data is available."
+          />
+        )
       ) : null}
     </div>
   );

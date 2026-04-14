@@ -32,6 +32,11 @@ def submission_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'page_count': document.get('page_count'),
         'extraction_confidence': document.get('extraction_confidence'),
         'low_text_reason': document.get('low_text_reason'),
+        'ocr_result_state': document.get('ocr_result_state'),
+        'ocr_retry_count': document.get('ocr_retry_count'),
+        'ocr_timeout_seconds': document.get('ocr_timeout_seconds'),
+        'ocr_error': document.get('ocr_error'),
+        'ocr_retry_guidance': document.get('ocr_retry_guidance'),
         'created_at': document.get('created_at'),
     }
     return apply_public_identity(payload, kind="submission", document=document, display_name=document.get("original_filename"))

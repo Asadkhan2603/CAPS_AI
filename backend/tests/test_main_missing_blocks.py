@@ -13,6 +13,7 @@ from app.api.v1.endpoints import submissions as submissions_endpoint
 from app.services.ai_chat_service import generate_evaluation_chat_reply
 from app.services.ai_jobs import process_ai_jobs_once
 from app.services.file_parser import ParsedFileResult
+from app.services.false_positive_negative_regression import run_false_positive_negative_regression_suite
 from app.services.fairness_regression import run_fairness_regression_suite
 from app.services.reviewer_outcome_calibration import build_reviewer_outcome_calibration_report
 from app.services.semantic_shadow_calibration import run_semantic_shadow_calibration
@@ -1938,13 +1939,15 @@ def test_similarity_detail_and_review_update() -> None:
         headers=headers,
     )
     assert run.status_code == 200
-    log_id = run.json()[0]["id"]
+    run_rows = run.json()
+    target_row = next((item for item in run_rows if item.get("is_flagged")), run_rows[0])
+    log_id = target_row["id"]
 
     detail = client.get(f"/api/v1/similarity/checks/{log_id}", headers=headers)
     assert detail.status_code == 200
     body = detail.json()
     assert body["id"] == log_id
-    assert body["is_flagged"] is True
+    assert body["decision_mode"] in {"flagged", "assist_only", "suppressed"}
     assert body["candidate_count"] is not None
     assert body["cap_reached"] in [True, False]
     assert isinstance(body.get("evidence_excerpts", []), list)
@@ -1959,6 +1962,33 @@ def test_similarity_detail_and_review_update() -> None:
     updated = update.json()
     assert updated["review_status"] == "in_progress"
     assert updated["review_notes"] == "Investigating."
+    assert updated["review_updated_at"] is not None
+    assert updated["review_finalized_at"] is None
+    assert updated["counts_toward_calibration"] is False
+
+    finalize = client.patch(
+        f"/api/v1/similarity/checks/{log_id}",
+        json={"review_status": "fixed", "review_notes": "Confirmed lexical evidence."},
+        headers=headers,
+    )
+    assert finalize.status_code == 200
+    finalized = finalize.json()
+    assert finalized["review_status"] == "fixed"
+    assert finalized["review_finalized_at"] is not None
+    assert finalized["review_finalized_by_user_id"] is not None
+    assert finalized["counts_toward_calibration"] is True
+
+    reopen_progress = client.patch(
+        f"/api/v1/similarity/checks/{log_id}",
+        json={"review_status": "open", "review_notes": "Rechecking after teacher follow-up."},
+        headers=headers,
+    )
+    assert reopen_progress.status_code == 200
+    reopened_progress_body = reopen_progress.json()
+    assert reopened_progress_body["review_status"] == "open"
+    assert reopened_progress_body["review_finalized_at"] is None
+    assert reopened_progress_body["review_finalized_by_user_id"] is None
+    assert reopened_progress_body["counts_toward_calibration"] is False
 
 
 def test_similarity_run_captures_semantic_shadow_for_top_unflagged_candidate() -> None:
@@ -2000,6 +2030,90 @@ def test_similarity_run_captures_semantic_shadow_for_top_unflagged_candidate() -
     body = run.json()
     assert body[0]["is_flagged"] is False
     assert body[0]["semantic_shadow_score"] is not None
+
+
+def test_similarity_run_suppresses_short_generic_false_positive() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_similarity_short_generic@example.com")
+
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={"title": "Generic Lab", "description": "Describe what happened in the experiment.", "total_marks": 100},
+        headers=headers,
+    )
+    assert assignment.status_code == 201
+    assignment_id = assignment.json()["id"]
+
+    first_headers = _student_headers(client, "student_similarity_generic_one@example.com")
+    second_headers = _student_headers(client, "student_similarity_generic_two@example.com")
+
+    first = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment_id},
+        files={"file": ("one.txt", b"I completed the experiment and verified the result.", "text/plain")},
+        headers=first_headers,
+    )
+    second = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment_id},
+        files={"file": ("two.txt", b"I completed the experiment and verified the result.", "text/plain")},
+        headers=second_headers,
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    run = client.post(
+        f"/api/v1/similarity/checks/run/{first.json()['id']}?threshold=0.1",
+        headers=headers,
+    )
+    assert run.status_code == 200, run.text
+    body = run.json()[0]
+    assert body["decision_mode"] == "suppressed"
+    assert body["suppression_reason"] in {"short_generic_overlap", "insufficient_non_prompt_overlap"}
+    assert body["is_flagged"] is False
+
+
+def test_similarity_run_marks_mixed_language_paraphrase_as_semantic_review_candidate() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_similarity_mixed_language_candidate@example.com")
+
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={"title": "Optimization Theory", "description": "Explain optimization strategy.", "total_marks": 100},
+        headers=headers,
+    )
+    assert assignment.status_code == 201
+    assignment_id = assignment.json()["id"]
+
+    first_headers = _student_headers(client, "student_similarity_mixed_one@example.com")
+    second_headers = _student_headers(client, "student_similarity_mixed_two@example.com")
+
+    first = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment_id},
+        files={"file": ("one.txt", b"Neural network optimization uses gradient descent, validation data, and regularization to improve model generalization.", "text/plain")},
+        headers=first_headers,
+    )
+    second = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment_id},
+        files={"file": ("two.txt", "Neural network optimization mein gradient descent, validation data, aur regularization model generalization ko improve karte hain.".encode("utf-8"), "text/plain")},
+        headers=second_headers,
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    run = client.post(
+        f"/api/v1/similarity/checks/run/{first.json()['id']}?threshold=0.8",
+        headers=headers,
+    )
+    assert run.status_code == 200, run.text
+    matched = next(item for item in run.json() if item["matched_submission_id"] == second.json()["id"])
+    assert matched["semantic_review_candidate"] is True
+    assert matched["decision_mode"] in {"assist_only", "suppressed"}
+    assert matched["tokenization_mode_applied"] == "unicode_words"
 
 
 def test_similarity_run_backfills_retrieval_artifacts_for_seeded_candidates() -> None:
@@ -2064,11 +2178,50 @@ def test_fairness_regression_gate_passes_default_cases() -> None:
     report = run_fairness_regression_suite()
 
     assert report["gates"]["passed"] is True
-    assert report["summary"]["check_count"] >= 6
+    assert report["summary"]["check_count"] >= 10
     assert report["summary"]["failed_count"] == 0
     assert "max_unicode_eval_delta" in report["thresholds"]
     assert "max_short_answer_delta" in report["thresholds"]
     assert "max_rubric_shape_delta" in report["thresholds"]
+    assert "max_risk_context_leak_delta" in report["thresholds"]
+    assert report["coverage"]["meets_minimum_check_count"] is True
+    assert report["coverage"]["check_count"] >= report["coverage"]["minimum_required_check_count"]
+
+
+def test_false_positive_negative_regression_gate_passes_default_cases() -> None:
+    report = run_false_positive_negative_regression_suite()
+
+    assert report["gates"]["passed"] is True
+    assert report["summary"]["case_count"] >= 10
+    assert report["summary"]["failed_count"] == 0
+    assert "min_non_prompt_shared_tokens" in report["thresholds"]
+    assert "min_extraction_confidence" in report["thresholds"]
+    assert report["coverage"]["meets_minimum_case_count"] is True
+    assert report["coverage"]["case_count"] >= report["coverage"]["minimum_required_case_count"]
+
+
+def test_false_positive_negative_regression_fails_minimum_volume_gate() -> None:
+    original_min_case_count = settings.false_positive_negative_min_case_count
+    settings.false_positive_negative_min_case_count = 999
+    try:
+        report = run_false_positive_negative_regression_suite()
+    finally:
+        settings.false_positive_negative_min_case_count = original_min_case_count
+
+    assert report["gates"]["passed"] is False
+    assert any("below minimum required" in item for item in report["gates"]["failures"])
+
+
+def test_fairness_regression_fails_minimum_volume_gate() -> None:
+    original_min_check_count = settings.fairness_regression_min_check_count
+    settings.fairness_regression_min_check_count = 999
+    try:
+        report = run_fairness_regression_suite()
+    finally:
+        settings.fairness_regression_min_check_count = original_min_check_count
+
+    assert report["gates"]["passed"] is False
+    assert any("below minimum required" in item for item in report["gates"]["failures"])
 
 
 def test_reviewer_outcome_calibration_report_promotes_only_with_real_review_separation() -> None:
@@ -2095,6 +2248,12 @@ def test_reviewer_outcome_calibration_report_promotes_only_with_real_review_sepa
                 "is_flagged": True,
                 "created_at": now - timedelta(minutes=index),
                 "reviewed_at": now - timedelta(days=(2 - min(index, 2))) if item["review_status"] == "fixed" else now - timedelta(days=1),
+                "review_updated_at": now - timedelta(days=(2 - min(index, 2))) if item["review_status"] == "fixed" else now - timedelta(days=1),
+                "review_finalized_at": (
+                    now - timedelta(days=(2 - min(index, 2)))
+                    if item["review_status"] == "fixed"
+                    else (now - timedelta(days=1) if item["review_status"] == "reopened" else None)
+                ),
             }
         )
 
@@ -2103,6 +2262,7 @@ def test_reviewer_outcome_calibration_report_promotes_only_with_real_review_sepa
     assert report["summary"]["reviewed_final_count"] == 5
     assert report["summary"]["fixed_count"] == 3
     assert report["summary"]["reopened_count"] == 2
+    assert report["reviewer_outcome_pipeline"]["minimum_sample_gap"] == 0
     assert report["gates"]["promotion_ready"] is True
     assert report["recommendations"]["keep_shadow_only"] is True
     assert report["recommendations"]["promotion_thresholds"]["semantic_advantage_min"] >= 0.1
@@ -2124,12 +2284,134 @@ def test_reviewer_outcome_calibration_report_handles_empty_similarity_logs() -> 
     assert report["summary"]["latest_reviewed_at"] is None
     assert report["recommendations"]["assist_only_semantic_advantage_threshold"] == 0.15
     assert report["gates"]["promotion_ready"] is False
-    assert len(report["gates"]["failures"]) == 2
+    assert len(report["gates"]["failures"]) >= 2
+    assert any("Same-assignment semantic calibration needs" in item for item in report["gates"]["failures"])
+    assert any("Cross-assignment semantic calibration needs" in item for item in report["gates"]["failures"])
     assert report["analytics"]["review_status_counts"]["reopened"] == 0
     assert report["analytics"]["drift_buckets"][0]["count"] == 0
     assert report["analytics"]["top_reopened_reasons"] == []
     assert report["analytics"]["reopened_reason_trends"] == []
     assert report["analytics"]["threshold_trend"] == []
+    assert report["analytics"]["readiness_trend"] == []
+    assert report["analytics"]["legacy_validation"]["invalid_finalized_rows"] == 0
+    assert any(
+        "semantic calibration needs" in item["reason"].lower()
+        for item in report["semantic_rollout_readiness"]["blocker_aging"]
+    )
+    assert report["reviewer_outcome_pipeline"]["minimum_sample_gap"] == 5
+
+
+def test_reviewer_outcome_calibration_report_exposes_cross_assignment_reversal_ranking() -> None:
+    fake_db = _setup_fake_db()
+    now = datetime.now(timezone.utc)
+    fake_db.similarity_logs.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "cross-fixed-1",
+                "matched_submission_id": "cross-fixed-match-1",
+                "score": 0.42,
+                "semantic_shadow_score": 0.74,
+                "review_status": "fixed",
+                "review_reason_code": None,
+                "review_notes": "Confirmed cross-assignment semantic evidence.",
+                "match_scope": "cross_assignment_shadow",
+                "review_finalized_at": now - timedelta(days=2),
+                "review_finalized_by_user_id": "teacher-1",
+                "created_at": now - timedelta(days=4),
+                "decision_mode": "assist_only",
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "cross-reopened-1",
+                "matched_submission_id": "cross-reopened-match-1",
+                "score": 0.39,
+                "semantic_shadow_score": 0.53,
+                "review_status": "reopened",
+                "review_reason_code": "extraction_quality",
+                "review_notes": "Extraction quality remained too weak after OCR retry.",
+                "match_scope": "cross_assignment_shadow",
+                "review_finalized_at": now - timedelta(days=1),
+                "review_finalized_by_user_id": "teacher-2",
+                "created_at": now - timedelta(days=3),
+                "decision_mode": "assist_only",
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "cross-reopened-2",
+                "matched_submission_id": "cross-reopened-match-2",
+                "score": 0.37,
+                "semantic_shadow_score": 0.49,
+                "review_status": "reopened",
+                "review_reason_code": "low_evidence",
+                "review_notes": "Still low evidence against cross-assignment copying.",
+                "match_scope": "cross_assignment_shadow",
+                "review_finalized_at": now - timedelta(hours=8),
+                "review_finalized_by_user_id": "teacher-2",
+                "created_at": now - timedelta(days=2),
+                "decision_mode": "assist_only",
+            },
+        ]
+    )
+
+    report = asyncio.run(build_reviewer_outcome_calibration_report(database=fake_db))
+    cross_outcomes = report["analytics"]["cross_assignment_review_outcomes"]
+    assert cross_outcomes["reviewed_final_count"] == 3
+    assert cross_outcomes["reopened_count"] == 2
+    assert cross_outcomes["reopened_rate"] > 0
+    assert report["analytics"]["cross_assignment_reversal_ranking"][0]["count"] >= 1
+    assert report["analytics"]["cross_assignment_reversal_ranking"][0]["share"] > 0
+    assert "cross_assignment_reopened_reason_trends" in report["analytics"]
+
+
+def test_reviewer_outcome_calibration_report_exposes_legacy_validation_and_readiness_trend() -> None:
+    fake_db = _setup_fake_db()
+    now = datetime.now(timezone.utc)
+    fake_db.similarity_logs.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "eligible-fixed",
+                "matched_submission_id": "eligible-fixed-match",
+                "score": 0.47,
+                "semantic_shadow_score": 0.77,
+                "review_status": "fixed",
+                "review_notes": "Confirmed semantic evidence.",
+                "match_scope": "same_assignment_shadow",
+                "review_finalized_at": now - timedelta(days=2),
+                "review_finalized_by_user_id": "teacher-1",
+                "created_at": now - timedelta(days=3),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "legacy-reopened",
+                "matched_submission_id": "legacy-reopened-match",
+                "score": 0.35,
+                "semantic_shadow_score": 0.41,
+                "review_status": "reopened",
+                "review_notes": "Legacy row missing finalized timestamp.",
+                "match_scope": "same_assignment_lexical",
+                "reviewed_at": now - timedelta(days=1),
+                "created_at": now - timedelta(days=2),
+            },
+        ]
+    )
+
+    report = asyncio.run(build_reviewer_outcome_calibration_report(database=fake_db))
+
+    legacy_validation = report["analytics"]["legacy_validation"]
+    assert legacy_validation["finalized_rows"] == 2
+    assert legacy_validation["invalid_finalized_rows"] == 1
+    assert any(item["reason"] == "missing_review_finalized_at" for item in legacy_validation["reason_counts"])
+
+    readiness_trend = report["analytics"]["readiness_trend"]
+    assert len(readiness_trend) == 1
+    assert readiness_trend[0]["eligible_sample_count"] == 1
+    assert readiness_trend[0]["same_assignment"]["sample_gap"] >= 0
+
+    blocker_aging = report["semantic_rollout_readiness"]["blocker_aging"]
+    assert blocker_aging
+    assert blocker_aging[0]["first_seen_date"] is not None
 
 
 def test_ai_operations_overview_includes_quality_gate_snapshot() -> None:
@@ -2150,6 +2432,8 @@ def test_ai_operations_overview_includes_quality_gate_snapshot() -> None:
                 "is_flagged": True,
                 "created_at": now,
                 "reviewed_at": now,
+                "review_updated_at": now,
+                "review_finalized_at": now,
             },
             {
                 "_id": ObjectId(),
@@ -2162,6 +2446,8 @@ def test_ai_operations_overview_includes_quality_gate_snapshot() -> None:
                 "is_flagged": True,
                 "created_at": now - timedelta(minutes=1),
                 "reviewed_at": now - timedelta(minutes=1),
+                "review_updated_at": now - timedelta(minutes=1),
+                "review_finalized_at": now - timedelta(minutes=1),
             },
         ]
     )
@@ -2173,11 +2459,267 @@ def test_ai_operations_overview_includes_quality_gate_snapshot() -> None:
     assert "quality_gates" in body
     assert "semantic_calibration" in body["quality_gates"]
     assert "fairness_regression" in body["quality_gates"]
+    assert "false_positive_negative_regression" in body["quality_gates"]
     assert "benchmark" in body["quality_gates"]
     assert body["quality_gates"]["reviewer_outcome_calibration"]["summary"]["reviewed_final_count"] == 2
     assert "analytics" in body["quality_gates"]["reviewer_outcome_calibration"]
     assert body["quality_gates"]["reviewer_outcome_calibration"]["analytics"]["review_status_counts"]["fixed"] == 1
     assert "reopened_reason_trends" in body["quality_gates"]["reviewer_outcome_calibration"]["analytics"]
+    assert "reviewer_outcome_pipeline" in body
+
+
+def test_ai_admin_semantic_rollout_config_supports_update_and_history() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_semantic_rollout_config@example.com")
+    teacher_headers = _teacher_headers(client, "teacher_semantic_rollout_config@example.com")
+
+    forbidden = client.get("/api/v1/ai/admin/semantic-rollout-config", headers=teacher_headers)
+    assert forbidden.status_code == 403
+
+    initial = client.get("/api/v1/ai/admin/semantic-rollout-config", headers=admin_headers)
+    assert initial.status_code == 200, initial.text
+    initial_body = initial.json()
+    assert initial_body["effective"]["manual_promotion_guidance_only"] is True
+
+    updated = client.put(
+        "/api/v1/ai/admin/semantic-rollout-config",
+        headers=admin_headers,
+        json={
+            "semantic_same_assignment_drift_threshold": 0.23,
+            "semantic_cross_assignment_drift_threshold": 0.31,
+            "semantic_same_assignment_min_score": 0.73,
+            "semantic_cross_assignment_min_score": 0.84,
+            "semantic_same_assignment_min_sample_size": 9,
+            "semantic_cross_assignment_min_sample_size": 13,
+            "semantic_multilingual_min_sample_size": 7,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    updated_body = updated.json()
+    assert updated_body["effective"]["semantic_same_assignment_drift_threshold"] == 0.23
+    assert updated_body["effective"]["semantic_cross_assignment_drift_threshold"] == 0.31
+    assert updated_body["effective"]["semantic_multilingual_min_sample_size"] == 7
+    assert updated_body["changes"]["semantic_same_assignment_drift_threshold"]["new"] == 0.23
+
+    history = client.get("/api/v1/ai/admin/semantic-rollout-config/history", headers=admin_headers)
+    assert history.status_code == 200, history.text
+    history_body = history.json()
+    assert history_body["count"] >= 1
+    assert history_body["items"][0]["action"] == "update_semantic_rollout_config"
+    assert history_body["items"][0]["effective_settings"]["semantic_cross_assignment_min_sample_size"] == 13
+    assert history_body["items"][0]["version"] >= 1
+    assert any(item.get("action") == "update_semantic_rollout_config" for item in fake_db.audit_logs.items)
+
+
+def test_ai_admin_apply_semantic_recommendations_respects_readiness_guard() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_semantic_rollout_apply@example.com")
+
+    blocked = client.post(
+        "/api/v1/ai/admin/semantic-rollout-config/apply-recommendations",
+        headers=admin_headers,
+        json={"scope": "same_assignment"},
+    )
+    assert blocked.status_code == 400, blocked.text
+    assert "Cannot apply semantic recommendations for same_assignment" in blocked.json()["detail"]
+
+    forced = client.post(
+        "/api/v1/ai/admin/semantic-rollout-config/apply-recommendations",
+        headers=admin_headers,
+        json={"scope": "same_assignment", "force": True},
+    )
+    assert forced.status_code == 200, forced.text
+    forced_body = forced.json()
+    assert forced_body["applied_scope"] == "same_assignment"
+    assert forced_body["force"] is True
+    assert forced_body["effective"]["manual_promotion_guidance_only"] is True
+    assert forced_body["scope_blockers"]["same_assignment"]
+
+
+def test_ai_admin_semantic_rollout_approve_activate_and_rollback_flow() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_semantic_rollout_phase2@example.com")
+    now = datetime.now(timezone.utc)
+    fake_db.similarity_logs.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "same-fixed-1",
+                "matched_submission_id": "same-fixed-m1",
+                "score": 0.48,
+                "semantic_shadow_score": 0.84,
+                "review_status": "fixed",
+                "match_scope": "same_assignment_shadow",
+                "review_finalized_at": now - timedelta(days=3),
+                "review_finalized_by_user_id": "teacher-1",
+                "created_at": now - timedelta(days=4),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "same-fixed-2",
+                "matched_submission_id": "same-fixed-m2",
+                "score": 0.50,
+                "semantic_shadow_score": 0.83,
+                "review_status": "fixed",
+                "match_scope": "same_assignment_shadow",
+                "review_finalized_at": now - timedelta(days=2),
+                "review_finalized_by_user_id": "teacher-1",
+                "created_at": now - timedelta(days=3),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "same-fixed-3",
+                "matched_submission_id": "same-fixed-m3",
+                "score": 0.52,
+                "semantic_shadow_score": 0.86,
+                "review_status": "fixed",
+                "match_scope": "same_assignment_shadow",
+                "review_finalized_at": now - timedelta(days=1),
+                "review_finalized_by_user_id": "teacher-1",
+                "created_at": now - timedelta(days=2),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "same-reopened-1",
+                "matched_submission_id": "same-reopened-m1",
+                "score": 0.31,
+                "semantic_shadow_score": 0.38,
+                "review_status": "reopened",
+                "match_scope": "same_assignment_shadow",
+                "review_finalized_at": now - timedelta(days=1),
+                "review_finalized_by_user_id": "teacher-2",
+                "created_at": now - timedelta(days=2),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "same-reopened-2",
+                "matched_submission_id": "same-reopened-m2",
+                "score": 0.34,
+                "semantic_shadow_score": 0.39,
+                "review_status": "reopened",
+                "match_scope": "same_assignment_shadow",
+                "review_finalized_at": now - timedelta(hours=6),
+                "review_finalized_by_user_id": "teacher-2",
+                "created_at": now - timedelta(days=1),
+            },
+        ]
+    )
+
+    initial = client.get("/api/v1/ai/admin/semantic-rollout-config", headers=admin_headers)
+    assert initial.status_code == 200, initial.text
+    initial_threshold = initial.json()["effective"]["semantic_same_assignment_drift_threshold"]
+
+    approved = client.post(
+        "/api/v1/ai/admin/semantic-rollout-config/approve-recommendations",
+        headers=admin_headers,
+        json={
+            "scope": "same_assignment",
+            "include_sample_sizes": True,
+            "justification": "Approve same-assignment thresholds for assist-only governance.",
+        },
+    )
+    assert approved.status_code == 200, approved.text
+    approved_body = approved.json()
+    approved_version = approved_body["approved_snapshot_version"]
+    assert approved_body["scope_states"]["same_assignment"] == "approved_manual"
+    assert approved_body["effective"]["semantic_same_assignment_drift_threshold"] == initial_threshold
+    assert approved_body["approved_versions"]["same_assignment"] == approved_version
+    assert approved_body["active_versions"]["same_assignment"] is None
+
+    activated = client.post(
+        "/api/v1/ai/admin/semantic-rollout-config/activate",
+        headers=admin_headers,
+        json={
+            "scope": "same_assignment",
+            "target_version": approved_version,
+            "justification": "Activate approved same-assignment guidance snapshot.",
+        },
+    )
+    assert activated.status_code == 200, activated.text
+    activated_body = activated.json()
+    assert activated_body["scope_states"]["same_assignment"] == "active_assist_only"
+    assert activated_body["active_versions"]["same_assignment"] == approved_version
+    assert (
+        activated_body["effective"]["semantic_same_assignment_drift_threshold"]
+        == approved_body["recommendations"]["recommended_same_assignment_drift_threshold"]
+    )
+
+    rollback = client.post(
+        "/api/v1/ai/admin/semantic-rollout-config/rollback",
+        headers=admin_headers,
+        json={
+            "scope": "same_assignment",
+            "target_version": approved_version,
+            "justification": "Revert to the approved pre-activation governance snapshot.",
+        },
+    )
+    assert rollback.status_code == 200, rollback.text
+    rollback_body = rollback.json()
+    assert rollback_body["restored_from_version"] == approved_version
+    assert rollback_body["scope_states"]["same_assignment"] == "approved_manual"
+    assert rollback_body["active_versions"]["same_assignment"] is None
+
+    history = client.get("/api/v1/ai/admin/semantic-rollout-config/history", headers=admin_headers)
+    assert history.status_code == 200, history.text
+    actions = [item["action"] for item in history.json()["items"]]
+    assert "approve_semantic_rollout_recommendations" in actions
+    assert "activate_semantic_rollout_snapshot" in actions
+    assert "rollback_semantic_rollout_snapshot" in actions
+
+
+def test_ai_ops_semantic_threshold_aliases_match_admin_governance_payload() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_semantic_rollout_aliases@example.com")
+
+    recommendations = client.get("/api/v1/ai/ops/semantic-threshold-recommendations", headers=admin_headers)
+    assert recommendations.status_code == 200, recommendations.text
+    recommendations_body = recommendations.json()
+    assert "scope_states" in recommendations_body
+    assert "approved_versions" in recommendations_body
+    assert "active_versions" in recommendations_body
+
+    history = client.get("/api/v1/ai/ops/semantic-threshold-history", headers=admin_headers)
+    assert history.status_code == 200, history.text
+
+    teacher_headers = _teacher_headers(client, "teacher_semantic_rollout_aliases@example.com")
+    forbidden = client.get("/api/v1/ai/ops/semantic-threshold-recommendations", headers=teacher_headers)
+    assert forbidden.status_code == 403
+
+
+def test_ai_operations_overview_uses_persisted_semantic_rollout_thresholds() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_semantic_rollout_persisted_ops@example.com")
+
+    update = client.put(
+        "/api/v1/ai/admin/semantic-rollout-config",
+        headers=admin_headers,
+        json={
+            "semantic_same_assignment_drift_threshold": 0.27,
+            "semantic_cross_assignment_drift_threshold": 0.35,
+            "semantic_same_assignment_min_score": 0.76,
+            "semantic_cross_assignment_min_score": 0.88,
+            "semantic_same_assignment_min_sample_size": 11,
+            "semantic_cross_assignment_min_sample_size": 17,
+            "semantic_multilingual_min_sample_size": 6,
+        },
+    )
+    assert update.status_code == 200, update.text
+
+    overview = client.get("/api/v1/ai/ops/overview", headers=admin_headers)
+    assert overview.status_code == 200, overview.text
+    readiness = overview.json()["semantic_rollout_readiness"]
+    assert readiness["same_assignment"]["configured_thresholds"]["drift_threshold"] == 0.27
+    assert readiness["same_assignment"]["configured_thresholds"]["min_semantic_score"] == 0.76
+    assert readiness["same_assignment"]["configured_thresholds"]["minimum_sample_size"] == 11
+    assert readiness["cross_assignment"]["configured_thresholds"]["drift_threshold"] == 0.35
+    assert readiness["cross_assignment"]["configured_thresholds"]["min_semantic_score"] == 0.88
+    assert readiness["cross_assignment"]["configured_thresholds"]["minimum_sample_size"] == 17
+    assert readiness["language_coverage"]["minimum_sample_size"] == 6
 
 
 def test_similarity_checks_support_review_filters_and_search() -> None:
@@ -2193,6 +2735,8 @@ def test_similarity_checks_support_review_filters_and_search() -> None:
                 "matched_submission_id": "sub-target-1",
                 "score": 0.42,
                 "semantic_shadow_score": 0.68,
+                "decision_mode": "flagged",
+                "semantic_review_candidate": True,
                 "review_status": "fixed",
                 "review_notes": "Confirmed after semantic drift review.",
                 "cap_reached": True,
@@ -2206,6 +2750,9 @@ def test_similarity_checks_support_review_filters_and_search() -> None:
                 "matched_submission_id": "sub-target-2",
                 "score": 0.39,
                 "semantic_shadow_score": 0.43,
+                "decision_mode": "suppressed",
+                "suppression_reason": "low_extraction_hold",
+                "semantic_review_candidate": True,
                 "review_status": "reopened",
                 "review_notes": "Insufficient evidence because extraction was weak.",
                 "cap_reached": False,
@@ -2219,6 +2766,9 @@ def test_similarity_checks_support_review_filters_and_search() -> None:
                 "matched_submission_id": "sub-target-3",
                 "score": 0.61,
                 "semantic_shadow_score": 0.66,
+                "decision_mode": "assist_only",
+                "suppression_reason": "prompt_heavy_overlap",
+                "semantic_review_candidate": True,
                 "review_status": "open",
                 "review_notes": "Pending review.",
                 "cap_reached": False,
@@ -2247,6 +2797,178 @@ def test_similarity_checks_support_review_filters_and_search() -> None:
     assert len(low_quality_body) == 1
     assert low_quality_body[0]["source_submission_id"] == "sub-reopened-lowtext"
     assert low_quality_body[0]["extraction_quality"]["source"] == 0.31
+
+    decision_filtered = client.get(
+        "/api/v1/similarity/checks?decision_mode=assist_only&semantic_review_candidate=true&search=pending",
+        headers=headers,
+    )
+    assert decision_filtered.status_code == 200, decision_filtered.text
+    decision_body = decision_filtered.json()
+    assert len(decision_body) == 1
+    assert decision_body[0]["source_submission_id"] == "sub-open-mid"
+
+
+def test_similarity_checks_support_calibration_eligible_scope_and_language_filters() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_similarity_readiness_filters@example.com")
+    now = datetime.now(timezone.utc)
+    fake_db.similarity_logs.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "sub-same-eligible",
+                "matched_submission_id": "sub-same-target",
+                "score": 0.46,
+                "semantic_shadow_score": 0.74,
+                "decision_mode": "assist_only",
+                "review_status": "fixed",
+                "review_notes": "Finalized same-assignment calibration row.",
+                "match_scope": "same_assignment_shadow",
+                "review_finalized_at": now - timedelta(hours=4),
+                "review_finalized_by_user_id": "teacher-1",
+                "language_profile": {
+                    "source": {"primary_script": "latin"},
+                    "matched": {"primary_script": "latin"},
+                    "mixed_or_non_latin": False,
+                },
+                "is_flagged": False,
+                "created_at": now - timedelta(hours=5),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "sub-cross-eligible",
+                "matched_submission_id": "sub-cross-target",
+                "score": 0.34,
+                "semantic_shadow_score": 0.69,
+                "decision_mode": "assist_only",
+                "review_status": "reopened",
+                "review_notes": "Finalized mixed-language cross-assignment row.",
+                "match_scope": "cross_assignment_shadow",
+                "review_finalized_at": now - timedelta(hours=2),
+                "review_finalized_by_user_id": "teacher-2",
+                "language_profile": {
+                    "source": {"primary_script": "latin", "mixed_language_hint": True},
+                    "matched": {"primary_script": "latin", "mixed_language_hint": True},
+                    "mixed_or_non_latin": True,
+                },
+                "is_flagged": False,
+                "created_at": now - timedelta(hours=3),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "sub-open-noneligible",
+                "matched_submission_id": "sub-open-target",
+                "score": 0.61,
+                "semantic_shadow_score": 0.64,
+                "decision_mode": "flagged",
+                "review_status": "open",
+                "review_notes": "Not finalized yet.",
+                "match_scope": "same_assignment_lexical",
+                "is_flagged": True,
+                "created_at": now - timedelta(minutes=30),
+            },
+        ]
+    )
+
+    response = client.get(
+        "/api/v1/similarity/checks?calibration_eligible=true&match_scope=cross_assignment_shadow&language_bucket=mixed_transliterated",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["source_submission_id"] == "sub-cross-eligible"
+    assert body[0]["calibration_eligible"] is True
+    assert body[0]["language_bucket"] == "mixed_transliterated"
+
+
+def test_ai_operations_overview_exposes_semantic_rollout_readiness_and_new_queue_slices() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_semantic_rollout_readiness@example.com")
+    now = datetime.now(timezone.utc)
+    fake_db.similarity_logs.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "same-fixed-1",
+                "matched_submission_id": "same-fixed-target-1",
+                "score": 0.49,
+                "semantic_shadow_score": 0.81,
+                "decision_mode": "assist_only",
+                "semantic_review_candidate": True,
+                "review_status": "fixed",
+                "review_notes": "Finalized same-assignment semantic case.",
+                "match_scope": "same_assignment_shadow",
+                "review_finalized_at": now - timedelta(days=1),
+                "review_finalized_by_user_id": "teacher-1",
+                "language_profile": {
+                    "source": {"primary_script": "latin"},
+                    "matched": {"primary_script": "latin"},
+                    "mixed_or_non_latin": False,
+                },
+                "is_flagged": False,
+                "created_at": now - timedelta(days=1, minutes=5),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "same-reopened-1",
+                "matched_submission_id": "same-reopened-target-1",
+                "score": 0.38,
+                "semantic_shadow_score": 0.44,
+                "decision_mode": "assist_only",
+                "semantic_review_candidate": True,
+                "review_status": "reopened",
+                "review_notes": "Finalized reopened same-assignment case.",
+                "match_scope": "same_assignment_lexical",
+                "review_finalized_at": now - timedelta(hours=20),
+                "review_finalized_by_user_id": "teacher-2",
+                "language_profile": {
+                    "source": {"primary_script": "latin"},
+                    "matched": {"primary_script": "latin"},
+                    "mixed_or_non_latin": False,
+                },
+                "is_flagged": True,
+                "created_at": now - timedelta(hours=22),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "cross-open-1",
+                "matched_submission_id": "cross-open-target-1",
+                "score": 0.22,
+                "semantic_shadow_score": 0.63,
+                "decision_mode": "assist_only",
+                "semantic_review_candidate": True,
+                "review_status": "open",
+                "review_notes": "Cross-assignment shadow candidate.",
+                "match_scope": "cross_assignment_shadow",
+                "language_profile": {
+                    "source": {"primary_script": "latin", "mixed_language_hint": True},
+                    "matched": {"primary_script": "latin", "mixed_language_hint": True},
+                    "mixed_or_non_latin": True,
+                },
+                "is_flagged": False,
+                "created_at": now - timedelta(hours=2),
+            },
+        ]
+    )
+
+    response = client.get("/api/v1/ai/ops/overview", headers=headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    readiness = body["semantic_rollout_readiness"]
+    assert "same_assignment" in readiness
+    assert "cross_assignment" in readiness
+    assert "language_coverage" in readiness
+    assert readiness["manual_promotion_guidance_only"] is True
+    assert readiness["same_assignment"]["eligible_sample_count"] == 2
+    queue_by_id = {item["id"]: item for item in body["similarity_queue_metrics"]["default_queues"]}
+    assert "calibration-eligible" in queue_by_id
+    assert "same-assignment-semantic-candidates" in queue_by_id
+    assert "cross-assignment-shadow-candidates" in queue_by_id
+    assert "mixed-transliterated-review-candidates" in queue_by_id
 
 
 def test_similarity_review_update_persists_structured_reopened_reason() -> None:
@@ -2283,6 +3005,7 @@ def test_similarity_review_update_persists_structured_reopened_reason() -> None:
     assert body["review_status"] == "reopened"
     assert body["review_reason_code"] == "extraction_quality"
     assert body["review_notes"].startswith("Reopened because")
+    assert body["review_finalized_at"] is not None
     stored = next(item for item in fake_db.similarity_logs.items if item["_id"] == log_id)
     assert stored["review_reason_code"] == "extraction_quality"
 
@@ -2295,6 +3018,7 @@ def test_similarity_review_update_persists_structured_reopened_reason() -> None:
     cleared_body = clear_response.json()
     assert cleared_body["review_status"] == "fixed"
     assert cleared_body["review_reason_code"] is None
+    assert cleared_body["counts_toward_calibration"] is True
 
 
 def test_ai_ops_similarity_views_are_shared_and_admin_deletable() -> None:
@@ -2416,7 +3140,11 @@ def test_ai_operations_overview_includes_similarity_queue_metrics() -> None:
     default_metrics = {item["id"]: item for item in body["similarity_queue_metrics"]["default_queues"]}
     assert default_metrics["all"]["count"] == 3
     assert default_metrics["needs-review"]["count"] == 2
+    assert default_metrics["awaiting-final"]["count"] == 2
+    assert default_metrics["stale-open"]["count"] == 1
+    assert default_metrics["stale-in-progress"]["count"] == 0
     assert default_metrics["reopened"]["count"] == 1
+    assert default_metrics["ready-calibration"]["count"] == 0
     assert default_metrics["low-text-risk"]["count"] == 1
     assert default_metrics["high-drift"]["count"] == 1
     assert default_metrics["cap-reached"]["count"] == 1
@@ -2460,6 +3188,65 @@ def test_ai_operations_overview_includes_similarity_queue_forecast() -> None:
     assert forecast_by_id["all"]["oldest_age_hours"] is not None
 
 
+def test_ai_operations_overview_includes_reviewer_outcome_pipeline() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_similarity_review_pipeline@example.com")
+    now = datetime.now(timezone.utc)
+    fake_db.similarity_logs.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "open-stale",
+                "matched_submission_id": "open-match",
+                "score": 0.41,
+                "semantic_shadow_score": 0.52,
+                "review_status": "open",
+                "review_notes": "Needs final decision.",
+                "is_flagged": True,
+                "created_at": now - timedelta(hours=60),
+                "review_updated_at": now - timedelta(hours=60),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "progress-fresh",
+                "matched_submission_id": "progress-match",
+                "score": 0.49,
+                "semantic_shadow_score": 0.63,
+                "review_status": "in_progress",
+                "review_notes": "Investigating.",
+                "is_flagged": True,
+                "created_at": now - timedelta(hours=10),
+                "review_updated_at": now - timedelta(hours=10),
+            },
+            {
+                "_id": ObjectId(),
+                "source_submission_id": "fixed-final",
+                "matched_submission_id": "fixed-match",
+                "score": 0.53,
+                "semantic_shadow_score": 0.81,
+                "review_status": "fixed",
+                "review_notes": "Confirmed copied structure.",
+                "is_flagged": True,
+                "created_at": now - timedelta(hours=8),
+                "review_updated_at": now - timedelta(hours=2),
+                "review_finalized_at": now - timedelta(hours=2),
+            },
+        ]
+    )
+
+    response = client.get("/api/v1/ai/ops/overview", headers=headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    pipeline = body["reviewer_outcome_pipeline"]
+    assert pipeline["open_count"] == 1
+    assert pipeline["in_progress_count"] == 1
+    assert pipeline["finalized_count"] == 1
+    assert pipeline["stale_open_count"] == 1
+    assert pipeline["minimum_sample_gap"] == 4
+
+
 def test_submission_upload_persists_extraction_diagnostics() -> None:
     _setup_fake_db()
     client = TestClient(app)
@@ -2483,6 +3270,11 @@ def test_submission_upload_persists_extraction_diagnostics() -> None:
             "page_count": 2,
             "extraction_confidence": 0.34,
             "low_text_reason": "empty_pdf_text",
+            "ocr_result_state": "timeout",
+            "ocr_retry_count": 1,
+            "ocr_timeout_seconds": 25,
+            "ocr_error": "ocr_timeout",
+            "ocr_retry_guidance": "OCR timed out. Retry with a clearer PDF before review.",
             "parser": "pdf",
         },
     )
@@ -2504,6 +3296,11 @@ def test_submission_upload_persists_extraction_diagnostics() -> None:
     assert body["page_count"] == 2
     assert body["extraction_confidence"] == 0.34
     assert body["low_text_reason"] == "empty_pdf_text"
+    assert body["ocr_result_state"] == "timeout"
+    assert body["ocr_retry_count"] == 1
+    assert body["ocr_timeout_seconds"] == 25
+    assert body["ocr_error"] == "ocr_timeout"
+    assert "Retry" in body["ocr_retry_guidance"]
 
 
 def test_similarity_run_stores_cross_assignment_shadow_candidates_without_flagging() -> None:
@@ -6151,6 +6948,308 @@ def test_student_duplicate_audit_groups_roll_email_and_user_links() -> None:
     assert body["summary"]["roll_number_groups"] >= 1
     assert body["summary"]["email_groups"] >= 1
     assert body["summary"]["user_id_groups"] >= 1
+
+
+def test_student_merge_preview_and_execute_rewrites_repo_wide_student_references() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_student_merge@example.com")
+
+    student_user_id = str(ObjectId())
+    fake_db.users.items.append(
+        {
+            "_id": ObjectId(student_user_id),
+            "full_name": "Merged Student User",
+            "email": "merged_student_user@example.com",
+            "password_hash": "hashed",
+            "role": "student",
+            "is_active": True,
+        }
+    )
+
+    section_obj_id = ObjectId()
+    group_obj_id = ObjectId()
+    primary_student_id = ObjectId()
+    duplicate_student_id = ObjectId()
+    legacy_student_id = ObjectId()
+
+    fake_db.classes.items.append(
+        {
+            "_id": section_obj_id,
+            "name": "Merge Section",
+            "is_active": True,
+        }
+    )
+    fake_db.groups.items.append(
+        {
+            "_id": group_obj_id,
+            "name": "Merge Group",
+            "section_id": str(section_obj_id),
+            "is_active": True,
+        }
+    )
+
+    fake_db.students.items.extend(
+        [
+            {
+                "_id": primary_student_id,
+                "full_name": "Alex Prime",
+                "roll_number": "DUP-001",
+                "email": "dup@example.com",
+                "user_id": None,
+                "class_id": str(section_obj_id),
+                "group_id": str(group_obj_id),
+                "is_active": True,
+                "created_at": datetime(2026, 4, 10, tzinfo=timezone.utc),
+            },
+            {
+                "_id": duplicate_student_id,
+                "full_name": "Alex Duplicate",
+                "roll_number": "DUP-002",
+                "email": "dup@example.com",
+                "user_id": student_user_id,
+                "class_id": None,
+                "group_id": None,
+                "is_active": True,
+                "created_at": datetime(2026, 4, 11, tzinfo=timezone.utc),
+            },
+            {
+                "_id": legacy_student_id,
+                "full_name": "Alex Legacy",
+                "roll_number": "DUP-002",
+                "email": "legacy@example.com",
+                "user_id": None,
+                "class_id": None,
+                "group_id": None,
+                "is_active": True,
+                "created_at": datetime(2026, 4, 9, tzinfo=timezone.utc),
+            },
+        ]
+    )
+
+    duplicate_class_obj_id = ObjectId()
+    legacy_class_obj_id = ObjectId()
+    class_slot_primary = ObjectId()
+    class_slot_secondary = ObjectId()
+
+    fake_db.enrollments.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "class_id": str(duplicate_class_obj_id),
+                "student_id": str(primary_student_id),
+                "student_roll_number": "DUP-001",
+                "created_at": datetime(2026, 4, 10, tzinfo=timezone.utc),
+            },
+            {
+                "_id": ObjectId(),
+                "class_id": str(duplicate_class_obj_id),
+                "student_id": str(duplicate_student_id),
+                "student_roll_number": "DUP-002",
+                "created_at": datetime(2026, 4, 12, tzinfo=timezone.utc),
+            },
+            {
+                "_id": ObjectId(),
+                "class_id": str(legacy_class_obj_id),
+                "student_id": "DUP-002",
+                "student_roll_number": "DUP-002",
+                "created_at": datetime(2026, 4, 8, tzinfo=timezone.utc),
+            },
+        ]
+    )
+    fake_db.attendance_records.items.extend(
+        [
+            {
+                "_id": ObjectId(),
+                "class_slot_id": str(class_slot_primary),
+                "student_id": str(primary_student_id),
+                "status": "present",
+                "marked_by_user_id": "teacher-1",
+                "marked_at": datetime(2026, 4, 12, 8, tzinfo=timezone.utc),
+            },
+            {
+                "_id": ObjectId(),
+                "class_slot_id": str(class_slot_primary),
+                "student_id": str(duplicate_student_id),
+                "status": "absent",
+                "marked_by_user_id": "teacher-2",
+                "marked_at": datetime(2026, 4, 12, 9, tzinfo=timezone.utc),
+            },
+            {
+                "_id": ObjectId(),
+                "class_slot_id": str(class_slot_secondary),
+                "student_id": str(legacy_student_id),
+                "status": "late",
+                "marked_by_user_id": "teacher-3",
+                "marked_at": datetime(2026, 4, 12, 10, tzinfo=timezone.utc),
+            },
+        ]
+    )
+    fake_db.internship_sessions.items.append(
+        {
+            "_id": ObjectId(),
+            "student_user_id": student_user_id,
+            "student_id": str(duplicate_student_id),
+            "status": "active",
+            "clock_in_at": datetime(2026, 4, 12, 7, tzinfo=timezone.utc),
+        }
+    )
+    fake_db.grievances.items.append(
+        {
+            "_id": ObjectId(),
+            "student_user_id": student_user_id,
+            "student_id": str(duplicate_student_id),
+            "student_name": "Alex Duplicate",
+            "student_email": "dup@example.com",
+            "status": "open",
+        }
+    )
+    fake_db.student_interventions.items.append(
+        {
+            "_id": ObjectId(),
+            "student_id": str(legacy_student_id),
+            "student_name": "Alex Legacy",
+            "status": "open",
+        }
+    )
+
+    preview = client.post(
+        "/api/v1/students/merge/preview",
+        json={
+            "seed_student_ids": [str(primary_student_id), str(duplicate_student_id), str(legacy_student_id)],
+            "preferred_primary_student_id": str(primary_student_id),
+        },
+        headers=admin_headers,
+    )
+    assert preview.status_code == 200, preview.text
+    preview_body = preview.json()
+    assert len(preview_body["member_student_ids"]) == 3
+    assert preview_body["suggested_primary_student_id"] == str(primary_student_id)
+    assert sorted(preview_body["hard_delete_ids"]) == sorted([str(duplicate_student_id), str(legacy_student_id)])
+
+    execute = client.post(
+        "/api/v1/students/merge/execute",
+        json={
+            "primary_student_id": str(primary_student_id),
+            "duplicate_student_ids": [str(duplicate_student_id), str(legacy_student_id)],
+            "resolved_profile": {
+                "full_name": "Alex Prime",
+                "roll_number": "DUP-001",
+                "email": "dup@example.com",
+                "user_id": student_user_id,
+                "class_id": str(section_obj_id),
+                "group_id": str(group_obj_id),
+                "is_active": True,
+            },
+            "reason": "Profiles belong to the same student and must be consolidated",
+            "confirm_hard_delete": True,
+        },
+        headers=admin_headers,
+    )
+    assert execute.status_code == 200, execute.text
+    body = execute.json()
+    assert sorted(body["deleted_student_ids"]) == sorted([str(duplicate_student_id), str(legacy_student_id)])
+    assert body["merged_student"]["id"] == str(primary_student_id)
+    assert body["merged_student"]["user_id"] == student_user_id
+    assert body["audit_log_id"]
+
+    remaining_student_ids = {str(item.get("_id")) for item in fake_db.students.items}
+    assert str(primary_student_id) in remaining_student_ids
+    assert str(duplicate_student_id) not in remaining_student_ids
+    assert str(legacy_student_id) not in remaining_student_ids
+
+    assert len([item for item in fake_db.enrollments.items if item.get("class_id") == str(duplicate_class_obj_id)]) == 1
+    assert all(item.get("student_id") == str(primary_student_id) for item in fake_db.enrollments.items)
+    assert all(item.get("student_roll_number") == "DUP-001" for item in fake_db.enrollments.items)
+
+    attendance_rows = fake_db.attendance_records.items
+    assert len([item for item in attendance_rows if item.get("class_slot_id") == str(class_slot_primary)]) == 1
+    assert all(item.get("student_id") == str(primary_student_id) for item in attendance_rows)
+
+    assert fake_db.internship_sessions.items[0]["student_id"] == str(primary_student_id)
+    assert fake_db.grievances.items[0]["student_id"] == str(primary_student_id)
+    assert fake_db.grievances.items[0]["student_name"] == "Alex Prime"
+    assert fake_db.student_interventions.items[0]["student_id"] == str(primary_student_id)
+    assert fake_db.student_interventions.items[0]["student_name"] == "Alex Prime"
+    assert any(item.get("action") == "merge_student_duplicates" for item in fake_db.audit_logs.items)
+
+
+def test_student_merge_rejects_external_user_conflict() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_student_merge_conflict@example.com")
+
+    student_user_id = str(ObjectId())
+    fake_db.users.items.append(
+        {
+            "_id": ObjectId(student_user_id),
+            "full_name": "Conflict Student User",
+            "email": "conflict_student_user@example.com",
+            "password_hash": "hashed",
+            "role": "student",
+            "is_active": True,
+        }
+    )
+
+    section_obj_id = ObjectId()
+    fake_db.classes.items.append({"_id": section_obj_id, "name": "Merge Section", "is_active": True})
+
+    primary_student_id = ObjectId()
+    duplicate_student_id = ObjectId()
+    external_student_id = ObjectId()
+    fake_db.students.items.extend(
+        [
+            {
+                "_id": primary_student_id,
+                "full_name": "Pri Student",
+                "roll_number": "MC-001",
+                "email": "mc-dup@example.com",
+                "user_id": None,
+                "class_id": str(section_obj_id),
+                "is_active": True,
+            },
+            {
+                "_id": duplicate_student_id,
+                "full_name": "Dup Student",
+                "roll_number": "MC-002",
+                "email": "mc-dup@example.com",
+                "user_id": None,
+                "class_id": None,
+                "is_active": True,
+            },
+            {
+                "_id": external_student_id,
+                "full_name": "External Student",
+                "roll_number": "MC-999",
+                "email": "external@example.com",
+                "user_id": student_user_id,
+                "class_id": None,
+                "is_active": True,
+            },
+        ]
+    )
+
+    execute = client.post(
+        "/api/v1/students/merge/execute",
+        json={
+            "primary_student_id": str(primary_student_id),
+            "duplicate_student_ids": [str(duplicate_student_id)],
+            "resolved_profile": {
+                "full_name": "Pri Student",
+                "roll_number": "MC-001",
+                "email": "mc-dup@example.com",
+                "user_id": student_user_id,
+                "class_id": str(section_obj_id),
+                "group_id": None,
+                "is_active": True,
+            },
+            "reason": "Attempt merge with conflicting student user",
+            "confirm_hard_delete": True,
+        },
+        headers=admin_headers,
+    )
+    assert execute.status_code == 400, execute.text
+    assert "conflicts with another active student profile" in execute.text
 
 
 def test_grading_policy_updates_transcript_gpa_precision() -> None:

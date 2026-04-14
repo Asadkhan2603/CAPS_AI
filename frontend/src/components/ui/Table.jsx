@@ -1,3 +1,4 @@
+import React from 'react';
 import { Edit3, Trash2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
@@ -12,110 +13,199 @@ export default function Table({
   selectedRowIds = [],
   onToggleRow,
   onToggleAllRows,
-  selectionLabel = 'Select row'
+  selectionLabel = 'Select row',
+  responsive = false,
+  mobileBreakpoint = 'md',
+  mobileCardRender,
+  stickyActions = false,
 }) {
   const hasActions = Boolean(onEdit || onDelete || rowActions.length);
   const allSelected = selectable && data.length > 0 && data.every((row) => selectedRowIds.includes(row.id));
+  const breakpoint = mobileBreakpoint === 'sm' ? 'sm' : 'md';
+  const desktopVisibilityClass = responsive ? `hidden ${breakpoint}:block` : 'block';
+  const mobileVisibilityClass = responsive ? `${breakpoint}:hidden` : 'hidden';
+
+  function renderRowActions(row) {
+    return (
+      <div className={cn('flex items-center justify-end gap-2', stickyActions ? 'sticky bottom-0 rounded-xl bg-white/95 py-2 dark:bg-slate-900/95' : '')}>
+        {rowActions.map((action) => {
+          const hidden = typeof action.hidden === 'function' ? action.hidden(row) : Boolean(action.hidden);
+          if (hidden) return null;
+          const disabled = typeof action.disabled === 'function' ? action.disabled(row) : Boolean(action.disabled);
+          const title = typeof action.title === 'function' ? action.title(row) : action.title || action.label;
+          return (
+            <button
+              key={action.key}
+              type="button"
+              className={cn('btn-secondary !px-2 !py-1 text-xs', action.className)}
+              onClick={() => action.onClick(row)}
+              title={title}
+              disabled={disabled}
+            >
+              {typeof action.label === 'function' ? action.label(row) : action.label}
+            </button>
+          );
+        })}
+        {onEdit ? (
+          <button type="button" className="btn-secondary !p-2" onClick={() => onEdit(row)} title="Edit">
+            <Edit3 size={16} />
+          </button>
+        ) : null}
+        {onDelete ? (
+          <button
+            type="button"
+            className="btn-secondary !p-2 text-rose-600 dark:text-rose-300"
+            onClick={() => onDelete(row)}
+            title="Delete"
+          >
+            <Trash2 size={16} />
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderDefaultMobileCard(row) {
+    const highPriorityColumns = columns.filter((column) => column.priority === 'high');
+    const mediumPriorityColumns = columns.filter((column) => column.priority !== 'high' && column.priority !== 'low');
+    const lowPriorityColumns = columns.filter((column) => column.priority === 'low');
+    const primaryColumns = highPriorityColumns.length ? highPriorityColumns : columns.slice(0, 2);
+
+    return (
+      <div className="space-y-3">
+        <div className="space-y-2">
+          {primaryColumns.map((column) => (
+            <div key={column.key}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{column.label}</p>
+              <div className="mt-1 text-sm text-slate-900 dark:text-slate-100">
+                {column.render ? column.render(row) : row[column.key] ?? '-'}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {mediumPriorityColumns.length ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {mediumPriorityColumns.map((column) => (
+              <div key={column.key}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{column.label}</p>
+                <div className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                  {column.render ? column.render(row) : row[column.key] ?? '-'}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {lowPriorityColumns.length ? (
+          <div className="rounded-xl border border-dashed border-slate-200 px-3 py-3 text-sm dark:border-slate-700">
+            <div className="space-y-2">
+              {lowPriorityColumns.map((column) => (
+                <div key={column.key}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{column.label}</p>
+                  <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    {column.render ? column.render(row) : row[column.key] ?? '-'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {hasActions ? renderRowActions(row) : null}
+      </div>
+    );
+  }
 
   return (
-    <div className="overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-[0_16px_40px_-34px_rgba(15,23,42,0.34)] dark:border-slate-800 dark:bg-slate-900">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-left dark:bg-slate-800/70">
-            <tr>
-              {selectable ? (
-                <th className="w-12 px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                    checked={allSelected}
-                    onChange={() => onToggleAllRows?.(data)}
-                    aria-label="Select all rows"
-                  />
-                </th>
-              ) : null}
-              {columns.map((col) => (
-                <th key={col.key} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">
-                  {col.label}
-                </th>
-              ))}
-              {hasActions ? <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">Actions</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row, idx) => (
-              <tr
-                key={row.id ?? idx}
-                className={cn(
-                  'border-t border-slate-200 transition hover:bg-brand-50/40 dark:border-slate-800 dark:hover:bg-brand-900/15',
-                  zebra && idx % 2 === 1 ? 'bg-slate-50/60 dark:bg-slate-800/30' : ''
-                )}
-              >
-                {selectable ? (
-                  <td className="px-4 py-3 align-top">
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                      checked={selectedRowIds.includes(row.id)}
-                      onChange={() => onToggleRow?.(row)}
-                      aria-label={typeof selectionLabel === 'function' ? selectionLabel(row) : selectionLabel}
-                    />
-                  </td>
-                ) : null}
-                {columns.map((col) => (
-                  <td key={col.key} className="px-4 py-3 text-slate-700 dark:text-slate-200">
-                    {col.render ? col.render(row) : row[col.key] ?? '-'}
-                  </td>
+    <>
+      {responsive ? (
+        <div className={cn('space-y-3', mobileVisibilityClass)}>
+          {data.map((row, idx) => (
+            <div
+              key={row.id ?? idx}
+              className="rounded-[1.4rem] border border-slate-200 bg-white p-4 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.34)] dark:border-slate-800 dark:bg-slate-900"
+            >
+              {mobileCardRender ? mobileCardRender(row, { renderRowActions }) : renderDefaultMobileCard(row)}
+            </div>
+          ))}
+          {data.length === 0 ? (
+            <div className="rounded-[1.4rem] border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+              No records found.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className={desktopVisibilityClass}>
+        <div className="overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-[0_16px_40px_-34px_rgba(15,23,42,0.34)] dark:border-slate-800 dark:bg-slate-900">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left dark:bg-slate-800/70">
+                <tr>
+                  {selectable ? (
+                    <th className="w-12 px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                        checked={allSelected}
+                        onChange={() => onToggleAllRows?.(data)}
+                        aria-label="Select all rows"
+                      />
+                    </th>
+                  ) : null}
+                  {columns.map((col) => (
+                    <th key={col.key} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">
+                      {col.label}
+                    </th>
+                  ))}
+                  {hasActions ? <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">Actions</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((row, idx) => (
+                  <tr
+                    key={row.id ?? idx}
+                    className={cn(
+                      'border-t border-slate-200 transition hover:bg-brand-50/40 dark:border-slate-800 dark:hover:bg-brand-900/15',
+                      zebra && idx % 2 === 1 ? 'bg-slate-50/60 dark:bg-slate-800/30' : ''
+                    )}
+                  >
+                    {selectable ? (
+                      <td className="px-4 py-3 align-top">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          checked={selectedRowIds.includes(row.id)}
+                          onChange={() => onToggleRow?.(row)}
+                          aria-label={typeof selectionLabel === 'function' ? selectionLabel(row) : selectionLabel}
+                        />
+                      </td>
+                    ) : null}
+                    {columns.map((col) => (
+                      <td key={col.key} className="px-4 py-3 text-slate-700 dark:text-slate-200">
+                        {col.render ? col.render(row) : row[col.key] ?? '-'}
+                      </td>
+                    ))}
+                    {hasActions ? (
+                      <td className="px-4 py-3">
+                        {renderRowActions(row)}
+                      </td>
+                    ) : null}
+                  </tr>
                 ))}
-                {hasActions ? (
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-2">
-                      {rowActions.map((action) => {
-                        const hidden = typeof action.hidden === 'function' ? action.hidden(row) : Boolean(action.hidden);
-                        if (hidden) return null;
-                        const disabled = typeof action.disabled === 'function' ? action.disabled(row) : Boolean(action.disabled);
-                        const title = typeof action.title === 'function' ? action.title(row) : action.title || action.label;
-                        return (
-                          <button
-                            key={action.key}
-                            className={cn('btn-secondary !px-2 !py-1 text-xs', action.className)}
-                            onClick={() => action.onClick(row)}
-                            title={title}
-                            disabled={disabled}
-                          >
-                            {typeof action.label === 'function' ? action.label(row) : action.label}
-                          </button>
-                        );
-                      })}
-                      {onEdit ? (
-                        <button className="btn-secondary !p-2" onClick={() => onEdit(row)} title="Edit">
-                          <Edit3 size={16} />
-                        </button>
-                      ) : null}
-                      {onDelete ? (
-                        <button
-                          className="btn-secondary !p-2 text-rose-600 dark:text-rose-300"
-                          onClick={() => onDelete(row)}
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
+                {data.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length + (hasActions ? 1 : 0) + (selectable ? 1 : 0)} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
+                      No records found.
+                    </td>
+                  </tr>
                 ) : null}
-              </tr>
-            ))}
-            {data.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length + (hasActions ? 1 : 0) + (selectable ? 1 : 0)} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
-                  No records found.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

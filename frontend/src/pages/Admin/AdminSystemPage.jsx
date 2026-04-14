@@ -2,6 +2,9 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
+import InlineErrorState from '../../components/ui/InlineErrorState';
+import PageLoader from '../../components/ui/PageLoader';
 import { useToast } from '../../hooks/useToast';
 import AlertRoutingHistorySection from './system/AlertRoutingHistorySection';
 import { AUTO_REFRESH_MS, useAdminSystemHealth } from './system/useAdminSystemHealth';
@@ -31,6 +34,7 @@ export default function AdminSystemPage() {
     clubsMetrics,
     snapshotStore,
   });
+  const initialLoading = !data && !error && isRefreshing;
 
   return (
     <div className="space-y-4 page-fade">
@@ -73,10 +77,14 @@ export default function AdminSystemPage() {
       </Card>
 
       {error ? (
-        <Card>
-          <p className="text-sm text-rose-600">{error}</p>
-        </Card>
+        <InlineErrorState
+          title="System overview unavailable"
+          description={error}
+          onRetry={() => void loadHealth({ silent: false, forceRefresh: true })}
+        />
       ) : null}
+
+      {initialLoading ? <PageLoader compact label="Loading system overview..." /> : null}
 
       <SectionCard
         title="Health Summary"
@@ -100,7 +108,7 @@ export default function AdminSystemPage() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-emerald-600 dark:text-emerald-400">No active operational alerts.</p>
+          <EmptyState compact title="No active operational alerts" description="Current health payload shows no active incidents that need operator follow-up." />
         )}
       </SectionCard>
 
@@ -286,5 +294,5 @@ function AlertRow({ alert }) {
 }
 
 function PanelFallback({ message }) {
-  return <p className="text-sm text-slate-500">{message}</p>;
+  return <EmptyState compact title="No section data available" description={message} />;
 }

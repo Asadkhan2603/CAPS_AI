@@ -50,6 +50,66 @@ export async function updateAiRuntimeConfig(payload) {
   return response.data;
 }
 
+export async function getAiSemanticRolloutConfig() {
+  const response = await apiClient.get('/ai/admin/semantic-rollout-config');
+  return response.data;
+}
+
+export async function updateAiSemanticRolloutConfig(payload) {
+  const response = await apiClient.put('/ai/admin/semantic-rollout-config', payload);
+  return response.data;
+}
+
+export async function applyAiSemanticRolloutRecommendations(payload) {
+  const response = await apiClient.post('/ai/admin/semantic-rollout-config/apply-recommendations', payload);
+  return response.data;
+}
+
+export async function approveAiSemanticRolloutRecommendations(payload) {
+  const response = await apiClient.post('/ai/admin/semantic-rollout-config/approve-recommendations', payload);
+  return response.data;
+}
+
+export async function activateAiSemanticRolloutSnapshot(payload) {
+  const response = await apiClient.post('/ai/admin/semantic-rollout-config/activate', payload);
+  return response.data;
+}
+
+export async function rollbackAiSemanticRolloutSnapshot(payload) {
+  const response = await apiClient.post('/ai/admin/semantic-rollout-config/rollback', payload);
+  return response.data;
+}
+
+export async function getAiSemanticRolloutHistory(params = {}) {
+  const response = await apiClient.get('/ai/admin/semantic-rollout-config/history', { params });
+  return response.data;
+}
+
+export async function getAiOpsSemanticThresholdRecommendations() {
+  const response = await apiClient.get('/ai/ops/semantic-threshold-recommendations');
+  return response.data;
+}
+
+export async function applyAiOpsSemanticThresholds(payload) {
+  const response = await apiClient.post('/ai/ops/semantic-thresholds/apply', payload);
+  return response.data;
+}
+
+export async function activateAiOpsSemanticThresholds(payload) {
+  const response = await apiClient.post('/ai/ops/semantic-thresholds/activate', payload);
+  return response.data;
+}
+
+export async function rollbackAiOpsSemanticThresholds(payload) {
+  const response = await apiClient.post('/ai/ops/semantic-thresholds/rollback', payload);
+  return response.data;
+}
+
+export async function getAiOpsSemanticThresholdHistory(params = {}) {
+  const response = await apiClient.get('/ai/ops/semantic-threshold-history', { params });
+  return response.data;
+}
+
 export async function listAiJobs(params = {}) {
   const response = await apiClient.get('/ai/jobs', { params });
   return response.data;

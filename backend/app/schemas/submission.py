@@ -32,6 +32,11 @@ class SubmissionOut(BaseModel):
     page_count: int | None = None
     extraction_confidence: float | None = Field(default=None, ge=0, le=1)
     low_text_reason: str | None = None
+    ocr_result_state: str | None = None
+    ocr_retry_count: int | None = None
+    ocr_timeout_seconds: int | None = None
+    ocr_error: str | None = None
+    ocr_retry_guidance: str | None = None
     created_at: datetime | None = None
 
 

@@ -1,0 +1,154 @@
+{
+  "generated_at": "2026-04-14T05:38:29.429382+00:00",
+  "thresholds": {
+    "similarity_threshold": 0.8,
+    "semantic_advantage_trigger": 0.15,
+    "min_effective_excerpt_overlap": 0.18,
+    "min_non_prompt_shared_tokens": 2,
+    "min_extraction_confidence": 0.5,
+    "max_formula_delta": 1.25
+  },
+  "cases": [
+    {
+      "id": "prompt_heavy_original",
+      "kind": "similarity",
+      "lexical_score": 0.8466,
+      "semantic_shadow_score": 0.8327,
+      "decision_mode": "assist_only",
+      "suppression_reason": "prompt_heavy_overlap",
+      "semantic_review_candidate": false,
+      "tokenization_mode_applied": "ascii_legacy",
+      "risk_signals": {
+        "prompt_overlap_ratio": 0.6154,
+        "generic_overlap_ratio": 0.2308,
+        "non_prompt_shared_tokens": 5,
+        "effective_excerpt_count": 1,
+        "min_effective_excerpt_overlap": 0.3571,
+        "min_extraction_confidence": 1.0,
+        "low_extraction_block": false,
+        "language_mismatch": false,
+        "boilerplate_risk": false
+      },
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "short_generic_boilerplate",
+      "kind": "similarity",
+      "lexical_score": 1.0,
+      "semantic_shadow_score": 1.0,
+      "decision_mode": "suppressed",
+      "suppression_reason": "short_generic_overlap",
+      "semantic_review_candidate": false,
+      "tokenization_mode_applied": "ascii_legacy",
+      "risk_signals": {
+        "prompt_overlap_ratio": 0.2857,
+        "generic_overlap_ratio": 1.0,
+        "non_prompt_shared_tokens": 5,
+        "effective_excerpt_count": 1,
+        "min_effective_excerpt_overlap": 0.7143,
+        "min_extraction_confidence": 1.0,
+        "low_extraction_block": false,
+        "language_mismatch": false,
+        "boilerplate_risk": true
+      },
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "paraphrased_copy",
+      "kind": "similarity",
+      "lexical_score": 0.1274,
+      "semantic_shadow_score": 0.3069,
+      "decision_mode": "assist_only",
+      "suppression_reason": "semantic_review_candidate",
+      "semantic_review_candidate": true,
+      "tokenization_mode_applied": "ascii_legacy",
+      "risk_signals": {
+        "prompt_overlap_ratio": 0.0,
+        "generic_overlap_ratio": 0.5,
+        "non_prompt_shared_tokens": 4,
+        "effective_excerpt_count": 1,
+        "min_effective_excerpt_overlap": 0.2857,
+        "min_extraction_confidence": 1.0,
+        "low_extraction_block": false,
+        "language_mismatch": false,
+        "boilerplate_risk": false
+      },
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "mixed_language_copy",
+      "kind": "similarity",
+      "lexical_score": 0.5852,
+      "semantic_shadow_score": 0.8618,
+      "decision_mode": "assist_only",
+      "suppression_reason": "semantic_review_candidate",
+      "semantic_review_candidate": true,
+      "tokenization_mode_applied": "unicode_words",
+      "risk_signals": {
+        "prompt_overlap_ratio": 0.0,
+        "generic_overlap_ratio": 0.1818,
+        "non_prompt_shared_tokens": 11,
+        "effective_excerpt_count": 1,
+        "min_effective_excerpt_overlap": 0.7857,
+        "min_extraction_confidence": 1.0,
+        "low_extraction_block": false,
+        "language_mismatch": true,
+        "boilerplate_risk": false
+      },
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "low_text_extraction_hold",
+      "kind": "similarity",
+      "lexical_score": 1.0,
+      "semantic_shadow_score": 1.0,
+      "decision_mode": "suppressed",
+      "suppression_reason": "low_extraction_hold",
+      "semantic_review_candidate": true,
+      "tokenization_mode_applied": "ascii_legacy",
+      "risk_signals": {
+        "prompt_overlap_ratio": 0.0,
+        "generic_overlap_ratio": 0.3,
+        "non_prompt_shared_tokens": 10,
+        "effective_excerpt_count": 1,
+        "min_effective_excerpt_overlap": 1.0,
+        "min_extraction_confidence": 0.22,
+        "low_extraction_block": true,
+        "language_mismatch": false,
+        "boilerplate_risk": false
+      },
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "formula_heavy_fairness",
+      "kind": "evaluation",
+      "baseline_score": 7.23,
+      "comparison_score": 7.5,
+      "delta": 0.27,
+      "max_allowed_delta": 1.25,
+      "passed": true,
+      "failure_reason": null
+    }
+  ],
+  "summary": {
+    "case_count": 6,
+    "passed_count": 6,
+    "failed_count": 0,
+    "flagged_count": 0,
+    "assist_only_count": 3,
+    "suppressed_count": 2
+  },
+  "recommendations": {
+    "keep_semantic_shadow_review_only": true,
+    "next_focus": "Validate these decision-mode protections against real reviewer outcomes before any threshold promotion."
+  },
+  "gates": {
+    "passed": true,
+    "failures": []
+  }
+}

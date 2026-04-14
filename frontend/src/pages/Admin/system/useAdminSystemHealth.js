@@ -136,7 +136,7 @@ export function useAdminSystemHealth({ pushToast }) {
       const message = formatApiError(err, 'Failed to load system health');
       setError(message);
       if (!silent) {
-        pushToast({ type: 'error', message });
+        pushToast({ title: 'Load failed', description: message, variant: 'error' });
       }
     } finally {
       setIsRefreshing(false);
@@ -158,16 +158,16 @@ export function useAdminSystemHealth({ pushToast }) {
       anchor.download = `caps-system-health-${Date.now()}.json`;
       anchor.click();
       window.URL.revokeObjectURL(url);
-      pushToast({ type: 'success', message: 'System health snapshots exported.' });
+      pushToast({ title: 'Export complete', description: 'System health snapshots exported.', variant: 'success' });
     } catch (err) {
-      pushToast({ type: 'error', message: formatApiError(err, 'Failed to export snapshots') });
+      pushToast({ title: 'Export failed', description: formatApiError(err, 'Failed to export snapshots'), variant: 'error' });
     }
   }
 
   function clearSnapshots() {
     setLocalSnapshots([]);
     saveStoredSnapshots([]);
-    pushToast({ type: 'success', message: 'Stored local system health snapshots cleared.' });
+    pushToast({ title: 'Local history cleared', description: 'Stored local system health snapshots cleared.', variant: 'success' });
   }
 
   return {

@@ -1,9 +1,14 @@
 from typing import Any, Dict
 
 from app.core.schema_versions import SIMILARITY_LOG_SCHEMA_VERSION, normalize_schema_version
+from app.services.semantic_rollout_readiness import calibration_eligible, language_bucket_for_row
 
 
 def similarity_log_public(document: Dict[str, Any], *, include_evidence: bool = False) -> Dict[str, Any]:
+    review_status = document.get("review_status")
+    review_finalized_at = document.get("review_finalized_at")
+    semantic_shadow_score = document.get("semantic_shadow_score")
+    is_calibration_eligible = calibration_eligible(document)
     return {
         "id": str(document["_id"]),
         "source_submission_id": document.get("source_submission_id"),
@@ -20,16 +25,27 @@ def similarity_log_public(document: Dict[str, Any], *, include_evidence: bool = 
         "overlap_stats": document.get("overlap_stats") if include_evidence else None,
         "extraction_quality": document.get("extraction_quality"),
         "extraction_diagnostics": document.get("extraction_diagnostics"),
-        "semantic_shadow_score": document.get("semantic_shadow_score"),
+        "semantic_shadow_score": semantic_shadow_score,
+        "decision_mode": document.get("decision_mode"),
+        "suppression_reason": document.get("suppression_reason"),
+        "risk_signals": document.get("risk_signals"),
+        "tokenization_mode_applied": document.get("tokenization_mode_applied"),
+        "semantic_review_candidate": bool(document.get("semantic_review_candidate")),
         "match_scope": document.get("match_scope"),
         "language_profile": document.get("language_profile"),
         "candidate_count": document.get("candidate_count"),
         "cap_reached": document.get("cap_reached", False),
-        "review_status": document.get("review_status"),
+        "review_status": review_status,
         "review_reason_code": document.get("review_reason_code"),
         "review_notes": document.get("review_notes"),
         "reviewed_by_user_id": document.get("reviewed_by_user_id"),
         "reviewed_at": document.get("reviewed_at"),
+        "review_updated_at": document.get("review_updated_at"),
+        "review_finalized_at": review_finalized_at,
+        "review_finalized_by_user_id": document.get("review_finalized_by_user_id"),
+        "counts_toward_calibration": is_calibration_eligible,
+        "calibration_eligible": is_calibration_eligible,
+        "language_bucket": language_bucket_for_row(document),
         "engine_version": document.get("engine_version"),
         "created_at": document.get("created_at"),
         "schema_version": normalize_schema_version(

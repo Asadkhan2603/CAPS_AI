@@ -40,6 +40,8 @@ def _serialize_empty_scope_response(
             "evaluations_with_ai": 0,
             "trace_runs_total": 0,
             "similarity_flags_total": 0,
+            "similarity_assist_only_total": 0,
+            "similarity_suppressed_total": 0,
             "chat_threads_total": 0,
             "jobs_total": 0,
             "jobs_queued": 0,
@@ -60,6 +62,58 @@ def _serialize_empty_scope_response(
             "generated_at": None,
             "default_queues": [],
             "shared_views": [],
+        },
+        "reviewer_outcome_pipeline": {
+            "open_count": 0,
+            "in_progress_count": 0,
+            "finalized_count": 0,
+            "finalized_fixed_count": 0,
+            "finalized_reopened_count": 0,
+            "stale_open_count": 0,
+            "stale_in_progress_count": 0,
+            "finalization_rate_7d": 0.0,
+            "median_hours_to_finalize": None,
+            "minimum_sample_target": 5,
+            "minimum_sample_gap": 5,
+            "calibration_blocker_reason": "No accessible finalized reviewer outcomes yet.",
+            "stale_threshold_hours": {"open": 48, "in_progress": 72},
+        },
+        "semantic_rollout_readiness": {
+            "same_assignment": {
+                "eligible_sample_count": 0,
+                "finalized_outcomes": {"fixed": 0, "reopened": 0},
+                "drift_separation": {"fixed_drift_p25": None, "reopened_drift_p90": None, "drift_gap": None},
+                "configured_thresholds": {},
+                "recommended_thresholds": {},
+                "promotion_ready": False,
+                "blocker_reasons": ["No accessible finalized reviewer outcomes yet."],
+            },
+            "cross_assignment": {
+                "eligible_sample_count": 0,
+                "finalized_outcomes": {"fixed": 0, "reopened": 0},
+                "drift_separation": {"fixed_drift_p25": None, "reopened_drift_p90": None, "drift_gap": None},
+                "configured_thresholds": {},
+                "recommended_thresholds": {},
+                "promotion_ready": False,
+                "blocker_reasons": ["No accessible finalized reviewer outcomes yet."],
+            },
+            "language_coverage": {
+                "minimum_sample_size": 0,
+                "coverage": {},
+                "coverage_ready": False,
+            },
+            "language_buckets": {},
+            "blocker_reasons": ["No accessible finalized reviewer outcomes yet."],
+            "blocker_aging": [
+                {
+                    "reason": "No accessible finalized reviewer outcomes yet.",
+                    "first_seen_date": None,
+                    "latest_seen_date": None,
+                    "days_active": None,
+                }
+            ],
+            "readiness_trend": [],
+            "manual_promotion_guidance_only": True,
         },
         "quality_gates": {
             **build_ai_quality_gate_snapshot(),
@@ -99,6 +153,15 @@ def _serialize_empty_scope_response(
                     "top_reopened_reasons": [],
                     "reopened_reason_trends": [],
                     "threshold_trend": [],
+                    "readiness_trend": [],
+                    "legacy_validation": {
+                        "finalized_rows": 0,
+                        "invalid_finalized_rows": 0,
+                        "eligible_finalized_rows": 0,
+                        "invalid_rate": 0.0,
+                        "reason_counts": [],
+                        "examples": [],
+                    },
                 },
             },
         },
@@ -165,6 +228,12 @@ async def build_ai_operations_overview_payload(
         "similarity_flags_total": await database.similarity_logs.count_documents(
             _and_query(similarity_scope_query, {"is_flagged": True})
         ),
+        "similarity_assist_only_total": await database.similarity_logs.count_documents(
+            _and_query(similarity_scope_query, {"decision_mode": "assist_only"})
+        ),
+        "similarity_suppressed_total": await database.similarity_logs.count_documents(
+            _and_query(similarity_scope_query, {"decision_mode": "suppressed"})
+        ),
         "chat_threads_total": await database.ai_evaluation_chats.count_documents(chat_scope_query),
         "jobs_total": await database.ai_jobs.count_documents(job_scope_query),
         "jobs_queued": await database.ai_jobs.count_documents(_and_query(job_scope_query, {"status": "queued"})),
@@ -194,6 +263,8 @@ async def build_ai_operations_overview_payload(
         semantic_drift_threshold=semantic_drift_threshold,
     )
     similarity_queue_forecast = build_similarity_queue_forecast(similarity_queue_metrics)
+    reviewer_outcome_pipeline = reviewer_outcome_calibration.get("reviewer_outcome_pipeline") or {}
+    semantic_rollout_readiness = reviewer_outcome_calibration.get("semantic_rollout_readiness") or {}
 
     return {
         "scope": {
@@ -241,6 +312,8 @@ async def build_ai_operations_overview_payload(
         "recent_jobs": [serialize_ai_job(item) for item in recent_jobs],
         "similarity_queue_metrics": similarity_queue_metrics,
         "similarity_queue_forecast": similarity_queue_forecast,
+        "reviewer_outcome_pipeline": reviewer_outcome_pipeline,
+        "semantic_rollout_readiness": semantic_rollout_readiness,
         "quality_gates": {
             **build_ai_quality_gate_snapshot(),
             "reviewer_outcome_calibration": {

@@ -132,6 +132,25 @@ def _criterion_rationales(criterion_scores: list[dict[str, Any]]) -> list[str]:
     return [str(item.get("rationale") or "") for item in criterion_scores if str(item.get("rationale") or "").strip()][:8]
 
 
+def _blend_fallback_score_with_rubric(
+    *,
+    ai_score: float,
+    ai_status: str | None,
+    ai_provider: str | None,
+    criterion_scores: list[dict[str, Any]],
+) -> float:
+    if ai_status == "completed" and ai_provider and ai_provider != "local":
+        return round(ai_score, 2)
+    if not criterion_scores:
+        return round(ai_score, 2)
+    max_total = sum(float(item.get("max_score") or 0.0) for item in criterion_scores)
+    awarded_total = sum(float(item.get("awarded_score") or 0.0) for item in criterion_scores)
+    if max_total <= 0:
+        return round(ai_score, 2)
+    rubric_score = (awarded_total / max_total) * 10.0
+    return round((0.45 * ai_score) + (0.55 * rubric_score), 2)
+
+
 def build_ai_insight(
     *,
     submission_text: str,
@@ -149,6 +168,12 @@ def build_ai_insight(
     normalized_rubric_criteria = normalize_rubric_criteria(rubric_criteria)
     criterion_scores = _score_rubric_criteria(submission_text, normalized_rubric_criteria)
     criterion_rationales = _criterion_rationales(criterion_scores)
+    ai_score = _blend_fallback_score_with_rubric(
+        ai_score=ai_score,
+        ai_status=str(ai.get("status") or "fallback"),
+        ai_provider=str(ai.get("provider") or "local"),
+        criterion_scores=criterion_scores,
+    )
 
     confidence = 0.45
     if ai.get("status") == "completed":
@@ -220,6 +245,12 @@ def build_ai_payload_from_summary(
     normalized_rubric_criteria = normalize_rubric_criteria(rubric_criteria)
     criterion_scores = _score_rubric_criteria(submission_text, normalized_rubric_criteria)
     criterion_rationales = _criterion_rationales(criterion_scores)
+    score_value = _blend_fallback_score_with_rubric(
+        ai_score=score_value,
+        ai_status=str(ai_status or "fallback"),
+        ai_provider=str(ai_provider or "local"),
+        criterion_scores=criterion_scores,
+    )
     confidence = 0.45
     if ai_status == "completed":
         confidence = 0.8

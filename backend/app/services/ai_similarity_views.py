@@ -17,7 +17,7 @@ def _utc_now() -> datetime:
 
 
 async def _resolve_user_label(user_id: str | None, *, database: Any = db) -> str | None:
-    database = database or db
+    database = db if database is None else database
     if not user_id or not ObjectId.is_valid(user_id):
         return None
     user = await database.users.find_one({"_id": ObjectId(user_id)})
@@ -30,7 +30,15 @@ def _normalize_filters(filters: dict[str, Any]) -> dict[str, Any]:
     return {
         "search": str(filters.get("search") or "").strip(),
         "review_status": str(filters.get("review_status") or "").strip(),
+        "decision_mode": str(filters.get("decision_mode") or "").strip(),
+        "awaiting_final_decision": bool(filters.get("awaiting_final_decision")),
+        "stale_review": bool(filters.get("stale_review")),
+        "counts_toward_calibration": bool(filters.get("counts_toward_calibration")),
+        "calibration_eligible": bool(filters.get("calibration_eligible")),
+        "semantic_review_candidate": bool(filters.get("semantic_review_candidate")),
         "semantic_drift_present": bool(filters.get("semantic_drift_present")),
+        "match_scope": str(filters.get("match_scope") or "").strip().lower(),
+        "language_bucket": str(filters.get("language_bucket") or "").strip().lower(),
         "cap_reached": bool(filters.get("cap_reached")),
         "low_extraction_quality": bool(filters.get("low_extraction_quality")),
         "min_score": (
@@ -61,7 +69,7 @@ def similarity_view_public(document: dict[str, Any], *, created_by_label: str | 
 
 
 async def list_shared_similarity_views(*, database: Any | None = None) -> list[dict[str, Any]]:
-    database = database or db
+    database = db if database is None else database
     rows = await database.ai_similarity_views.find(
         {"library_key": SHARED_SIMILARITY_LIBRARY_KEY}
     ).sort([("updated_at", -1), ("created_at", -1)]).limit(MAX_SHARED_SIMILARITY_VIEWS).to_list(length=MAX_SHARED_SIMILARITY_VIEWS)
@@ -83,7 +91,7 @@ async def save_shared_similarity_view(
     current_user_id: str,
     database: Any | None = None,
 ) -> dict[str, Any]:
-    database = database or db
+    database = db if database is None else database
     now = _utc_now()
     document = {
         "library_key": SHARED_SIMILARITY_LIBRARY_KEY,
@@ -110,7 +118,7 @@ async def delete_shared_similarity_view(
     is_admin: bool,
     database: Any | None = None,
 ) -> bool:
-    database = database or db
+    database = db if database is None else database
     if not ObjectId.is_valid(view_id):
         return False
     query: dict[str, Any] = {
@@ -124,7 +132,7 @@ async def delete_shared_similarity_view(
 
 
 async def _prune_shared_similarity_views(*, database: Any | None = None) -> None:
-    database = database or db
+    database = db if database is None else database
     rows = await database.ai_similarity_views.find(
         {"library_key": SHARED_SIMILARITY_LIBRARY_KEY}
     ).sort([("updated_at", -1), ("created_at", -1)]).to_list(length=MAX_SHARED_SIMILARITY_VIEWS + 20)

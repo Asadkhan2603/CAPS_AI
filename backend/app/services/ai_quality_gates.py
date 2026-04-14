@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.services.false_positive_negative_regression import run_false_positive_negative_regression_suite
 from app.services.fairness_regression import run_fairness_regression_suite
 from app.services.semantic_shadow_calibration import run_semantic_shadow_calibration
 
@@ -13,6 +14,7 @@ _ARTIFACT_DIR = _REPO_ROOT / "artifacts"
 _BENCHMARK_ARTIFACT = _ARTIFACT_DIR / "ai_similarity_benchmark_report.json"
 _SEMANTIC_ARTIFACT = _ARTIFACT_DIR / "ai_semantic_shadow_calibration_report.json"
 _FAIRNESS_ARTIFACT = _ARTIFACT_DIR / "ai_fairness_regression_report.json"
+_FALSE_POSITIVE_NEGATIVE_ARTIFACT = _ARTIFACT_DIR / "ai_false_positive_negative_regression_report.json"
 
 
 def _load_artifact(path: Path) -> dict[str, Any] | None:
@@ -45,6 +47,7 @@ def _fairness_regression_snapshot() -> dict[str, Any]:
     summary = artifact.get("summary") if isinstance(artifact.get("summary"), dict) else {}
     gates = artifact.get("gates") if isinstance(artifact.get("gates"), dict) else {}
     thresholds = artifact.get("thresholds") if isinstance(artifact.get("thresholds"), dict) else {}
+    coverage = artifact.get("coverage") if isinstance(artifact.get("coverage"), dict) else {}
     return {
         "status": "passed" if bool(gates.get("passed")) else "failed",
         "generated_at": artifact.get("generated_at"),
@@ -53,6 +56,7 @@ def _fairness_regression_snapshot() -> dict[str, Any]:
         "failed_count": int(summary.get("failed_count") or 0),
         "max_observed_delta": summary.get("max_observed_delta"),
         "thresholds": thresholds,
+        "coverage": coverage,
         "failures": gates.get("failures") or [],
     }
 
@@ -89,9 +93,32 @@ def _benchmark_snapshot() -> dict[str, Any]:
     }
 
 
+def _false_positive_negative_regression_snapshot() -> dict[str, Any]:
+    artifact_payload = _load_artifact(_FALSE_POSITIVE_NEGATIVE_ARTIFACT)
+    artifact = artifact_payload or run_false_positive_negative_regression_suite()
+    summary = artifact.get("summary") if isinstance(artifact.get("summary"), dict) else {}
+    gates = artifact.get("gates") if isinstance(artifact.get("gates"), dict) else {}
+    thresholds = artifact.get("thresholds") if isinstance(artifact.get("thresholds"), dict) else {}
+    coverage = artifact.get("coverage") if isinstance(artifact.get("coverage"), dict) else {}
+    return {
+        "status": "passed" if bool(gates.get("passed")) else "failed",
+        "generated_at": artifact.get("generated_at"),
+        "source": "artifact" if artifact_payload else "live",
+        "case_count": int(summary.get("case_count") or 0),
+        "failed_count": int(summary.get("failed_count") or 0),
+        "flagged_count": int(summary.get("flagged_count") or 0),
+        "assist_only_count": int(summary.get("assist_only_count") or 0),
+        "suppressed_count": int(summary.get("suppressed_count") or 0),
+        "thresholds": thresholds,
+        "coverage": coverage,
+        "failures": gates.get("failures") or [],
+    }
+
+
 def build_ai_quality_gate_snapshot() -> dict[str, Any]:
     return {
         "semantic_calibration": _semantic_calibration_snapshot(),
         "fairness_regression": _fairness_regression_snapshot(),
+        "false_positive_negative_regression": _false_positive_negative_regression_snapshot(),
         "benchmark": _benchmark_snapshot(),
     }
