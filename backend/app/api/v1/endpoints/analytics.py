@@ -9,10 +9,22 @@ from app.core.config import settings
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.redis_store import redis_store
-from app.core.security import require_roles
+from app.core.security import require_admin_or_teacher_extensions, require_roles
 from app.models.notices import notice_public
 from app.api.v1.endpoints.notices import _filter_visible_notices, _notice_is_expired
+from app.schemas.academic_predictive import (
+    PredictiveOverviewOut,
+    SectionRiskSummaryResponseOut,
+    StaffingForecastResponseOut,
+    StudentRiskForecastResponseOut,
+)
 from app.services.analytics_snapshot import compute_platform_snapshot, get_latest_snapshot
+from app.services.academic_predictive import (
+    build_predictive_overview,
+    build_section_risk_summary,
+    build_staffing_forecast,
+    build_student_risk_forecast,
+)
 
 router = APIRouter()
 
@@ -1152,3 +1164,90 @@ async def academic_structure(
     }
     await _set_cached_json(cache_key, payload)
     return payload
+
+
+@router.get('/academic/predictive-overview', response_model=PredictiveOverviewOut)
+async def academic_predictive_overview(
+    batch_id: str | None = Query(default=None),
+    semester_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
+    current_user=Depends(require_admin_or_teacher_extensions(['year_head', 'class_coordinator'])),
+) -> PredictiveOverviewOut:
+    role = current_user.get('role')
+    user_id = str(current_user.get('_id'))
+    cache_key = f'analytics:predictive-overview:{role}:{user_id}:{batch_id or "-"}:{semester_id or "-"}:{department_id or "-"}'
+    cached = await _get_cached_json(cache_key)
+    if cached:
+        return PredictiveOverviewOut(**cached)
+
+    payload = await build_predictive_overview(
+        current_user=current_user,
+        batch_id=batch_id,
+        semester_id=semester_id,
+        department_id=department_id,
+        database=db,
+    )
+    await _set_cached_json(cache_key, payload.model_dump())
+    return payload
+
+
+@router.get('/academic/staffing-forecast', response_model=StaffingForecastResponseOut)
+async def academic_staffing_forecast(
+    batch_id: str | None = Query(default=None),
+    semester_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
+    section_id: str | None = Query(default=None),
+    teacher_user_id: str | None = Query(default=None),
+    risk_level: str | None = Query(default=None),
+    current_user=Depends(require_admin_or_teacher_extensions(['year_head', 'class_coordinator'])),
+) -> StaffingForecastResponseOut:
+    return await build_staffing_forecast(
+        current_user=current_user,
+        batch_id=batch_id,
+        semester_id=semester_id,
+        department_id=department_id,
+        section_id=section_id,
+        teacher_user_id=teacher_user_id,
+        risk_level=risk_level,
+        database=db,
+    )
+
+
+@router.get('/academic/student-risk', response_model=StudentRiskForecastResponseOut)
+async def academic_student_risk(
+    batch_id: str | None = Query(default=None),
+    semester_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
+    section_id: str | None = Query(default=None),
+    risk_level: str | None = Query(default=None),
+    current_user=Depends(require_admin_or_teacher_extensions(['year_head', 'class_coordinator'])),
+) -> StudentRiskForecastResponseOut:
+    return await build_student_risk_forecast(
+        current_user=current_user,
+        batch_id=batch_id,
+        semester_id=semester_id,
+        department_id=department_id,
+        section_id=section_id,
+        risk_level=risk_level,
+        database=db,
+    )
+
+
+@router.get('/academic/section-risk', response_model=SectionRiskSummaryResponseOut)
+async def academic_section_risk(
+    batch_id: str | None = Query(default=None),
+    semester_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
+    section_id: str | None = Query(default=None),
+    risk_level: str | None = Query(default=None),
+    current_user=Depends(require_admin_or_teacher_extensions(['year_head', 'class_coordinator'])),
+) -> SectionRiskSummaryResponseOut:
+    return await build_section_risk_summary(
+        current_user=current_user,
+        batch_id=batch_id,
+        semester_id=semester_id,
+        department_id=department_id,
+        section_id=section_id,
+        risk_level=risk_level,
+        database=db,
+    )

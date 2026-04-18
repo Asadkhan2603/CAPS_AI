@@ -5,6 +5,7 @@ import Modal from '../components/ui/Modal';
 import { apiClient } from '../services/apiClient';
 import { getSections } from '../services/sectionsApi';
 import { useToast } from '../hooks/useToast';
+import { useAuth } from '../hooks/useAuth';
 import { formatApiError } from '../utils/apiError';
 
 function prettyLabel(value) {
@@ -18,7 +19,9 @@ function countByCollection(referenceCounts = []) {
 }
 
 export default function StudentsPage() {
+  const { user } = useAuth();
   const { pushToast } = useToast();
+  const canManageDuplicateResolution = user?.role === 'admin';
   const [sections, setSections] = useState([]);
   const [groups, setGroups] = useState([]);
   const [duplicateAudit, setDuplicateAudit] = useState(null);
@@ -36,11 +39,19 @@ export default function StudentsPage() {
 
   async function loadStudentContext() {
     try {
-      const [sectionsRes, groupsRes, duplicateAuditRes, duplicateCasesRes] = await Promise.allSettled([
+      const baseRequests = [
         getSections({ skip: 0, limit: 100 }),
-        apiClient.get('/groups/', { params: { skip: 0, limit: 100, is_active: true } }),
-        apiClient.get('/students/duplicate-audit'),
-        apiClient.get('/students/duplicate-cases', { params: { limit: 12 } })
+        apiClient.get('/groups/', { params: { skip: 0, limit: 100, is_active: true } })
+      ];
+      const duplicateRequests = canManageDuplicateResolution
+        ? [
+            apiClient.get('/students/duplicate-audit'),
+            apiClient.get('/students/duplicate-cases', { params: { limit: 12 } })
+          ]
+        : [Promise.resolve({ data: null }), Promise.resolve({ data: [] })];
+      const [sectionsRes, groupsRes, duplicateAuditRes, duplicateCasesRes] = await Promise.allSettled([
+        ...baseRequests,
+        ...duplicateRequests
       ]);
       setSections(sectionsRes.status === 'fulfilled' ? sectionsRes.value.data || [] : []);
       setGroups(groupsRes.status === 'fulfilled' ? groupsRes.value.data || [] : []);
@@ -56,7 +67,7 @@ export default function StudentsPage() {
 
   useEffect(() => {
     loadStudentContext();
-  }, []);
+  }, [canManageDuplicateResolution]);
 
   async function loadMergePreview(caseItem, preferredPrimaryStudentId = null) {
     if (!caseItem?.member_student_ids?.length) {

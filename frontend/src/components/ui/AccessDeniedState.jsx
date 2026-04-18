@@ -33,12 +33,16 @@ export default function AccessDeniedState({
   pathname,
   allowedRoles = [],
   requiredTeacherExtensions = [],
+  requiredStudentExtensions = [],
   requiredAdminTypes = []
 }) {
   const homePath = getWorkspaceHomeItemPath(user);
   const currentRoleLabel = titleize(user?.role);
   const currentAdminTypeLabel = user?.role === 'admin' ? titleize(user?.admin_type || 'admin') : 'Not applicable';
   const currentTeacherExtensions = user?.role === 'teacher'
+    ? ((user?.extended_roles || []).length ? formatList(user.extended_roles) : 'None')
+    : 'Not applicable';
+  const currentStudentExtensions = user?.role === 'student'
     ? ((user?.extended_roles || []).length ? formatList(user.extended_roles) : 'None')
     : 'Not applicable';
 
@@ -81,6 +85,9 @@ export default function AccessDeniedState({
           <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
             Teacher Extensions: {currentTeacherExtensions}
           </p>
+          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+            Student Extensions: {currentStudentExtensions}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
@@ -93,6 +100,9 @@ export default function AccessDeniedState({
           </p>
           <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
             Teacher Extensions: {formatList(requiredTeacherExtensions)}
+          </p>
+          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+            Student Extensions: {formatList(requiredStudentExtensions)}
           </p>
         </div>
       </div>

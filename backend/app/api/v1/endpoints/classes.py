@@ -1,8 +1,10 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from app.core.config import settings
 from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.schema_versions import CLASS_SCHEMA_VERSION
@@ -10,24 +12,81 @@ from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.classes import class_public
 from app.schemas.class_item import ClassCreate, ClassOut, ClassUpdate
-from app.schemas.section import SectionDashboardResponse, SectionOperationalSummaryOut
+from app.schemas.section import (
+    SectionDashboardResponse,
+    SectionOperationalSummaryOut,
+    SectionRepresentativeAssignmentIn,
+    SectionRepresentativeAssignmentOut,
+    SectionRepresentativeAuthorityContactOut,
+    SectionRepresentativeDashboardResponse,
+    SectionRepresentativeRemoveIn,
+    SectionRepresentativesResponse,
+)
 from app.services.academic_hierarchy import validate_batch_specialization_scope
-from app.services.audit import log_destructive_action_event
+from app.services.academic_students import list_students_for_section
+from app.services.audit import log_audit_event, log_destructive_action_event
 from app.services.attendance_summary import build_attendance_section_summary
 from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query
+from app.services.class_representative_governance import (
+    assign_section_class_representative,
+    clear_section_class_representative,
+    normalize_class_representatives,
+)
 from app.services.course_offering_read_models import sync_course_offering_read_models_for_query
 from app.services.governance import enforce_review_approval
 from app.services.public_ids import persist_public_id, persist_public_id_update
-from app.services.rbac import build_batch_scope_filter, merge_query_with_scope_filter
+from app.services.rbac import build_batch_scope_filter, is_document_in_batch_scope, merge_query_with_scope_filter
 from app.services.section_read_models import (
     get_section_read_model,
     hydrate_sections_from_read_models,
     sync_section_read_model,
 )
-from app.services.section_mapping import coordinator_scope_class_id
+from app.services.section_mapping import coordinator_scope_class_id, is_section_coordinator
 from app.api.v1.endpoints.timetables import _compute_sync_snapshot
 
 router = APIRouter()
+logger = logging.getLogger("caps_api.sections")
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+async def _record_cr_telemetry(
+    *,
+    event: str,
+    outcome: str = "success",
+    actor_user_id: str | None = None,
+    section_id: str | None = None,
+    severity: str = "low",
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    document = {
+        "event": event,
+        "outcome": outcome,
+        "actor_user_id": actor_user_id,
+        "scope": "class_representatives",
+        "severity": severity,
+        "metadata": {"section_id": section_id, **(metadata or {})},
+        "created_at": _utc_now(),
+    }
+    if settings.users_admin_telemetry_enabled and getattr(db, "users_admin_telemetry", None) is not None:
+        try:
+            await db.users_admin_telemetry.insert_one(document)
+        except Exception:
+            logger.warning({"event": "cr.telemetry.persist_failed", "telemetry_event": event, "outcome": outcome})
+
+    log_level = logger.warning if outcome == "error" or severity in {"medium", "high"} else logger.info
+    log_level(
+        {
+            "event": "cr.telemetry",
+            "telemetry_event": event,
+            "outcome": outcome,
+            "actor_user_id": actor_user_id,
+            "section_id": section_id,
+            "metadata": metadata or {},
+        }
+    )
 
 
 async def _apply_admin_scope_to_query(current_user: dict[str, Any], query: dict[str, Any]) -> dict[str, Any]:
@@ -40,6 +99,227 @@ async def _apply_admin_scope_to_query(current_user: dict[str, Any], query: dict[
         database=db,
     )
     return merge_query_with_scope_filter(query, scope_filter)
+
+
+async def _ensure_admin_can_access_section(current_user: dict[str, Any], section: dict[str, Any] | None) -> None:
+    if current_user.get("role") != "admin":
+        return
+    if await is_document_in_batch_scope(
+        current_user,
+        document=section,
+        department_field="department_id",
+        batch_field="batch_id",
+        database=db,
+    ):
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Section is outside your assigned scope")
+
+
+def _teacher_is_year_head(current_user: dict[str, Any] | None) -> bool:
+    if not current_user or current_user.get("role") != "teacher":
+        return False
+    return "year_head" in set(current_user.get("extended_roles") or [])
+
+
+async def _admin_users_for_role(role_code: str, *, department_id: str | None = None) -> list[dict[str, Any]]:
+    normalized_role_code = role_code.strip().upper()
+    query = {
+        "role": "admin",
+        "is_active": True,
+        "$or": [{"admin_type": normalized_role_code.lower()}, {"rbac_role_code": normalized_role_code}],
+    }
+    rows = await db.users.find(query).to_list(length=200)
+    if normalized_role_code not in {"HOD", "DEAN"} or not department_id:
+        return rows
+    scopes_collection = getattr(db, "scopes", None)
+    if scopes_collection is None:
+        return rows
+    user_ids = [str(item.get("_id")) for item in rows if item.get("_id")]
+    if not user_ids:
+        return []
+    scopes = await scopes_collection.find({"user_id": {"$in": user_ids}, "department_id": department_id}).to_list(length=200)
+    scoped_user_ids = {str(scope.get("user_id")) for scope in scopes if scope.get("user_id")}
+    return [row for row in rows if str(row.get("_id")) in scoped_user_ids]
+
+
+async def _fallback_authorities() -> list[dict[str, Any]]:
+    return await db.users.find(
+        {
+            "role": "admin",
+            "is_active": True,
+            "$or": [
+                {"admin_type": {"$in": ["academic_admin", "super_admin"]}},
+                {"rbac_role_code": {"$in": ["ACADEMIC_ADMIN", "SUPER_ADMIN"]}},
+            ],
+        }
+    ).to_list(length=50)
+
+
+def _authority_contact(label: str, user: dict[str, Any] | None) -> SectionRepresentativeAuthorityContactOut | None:
+    if not user:
+        return None
+    profile = user.get("profile", {}) or {}
+    email = str(user.get("email") or "").strip() or None
+    phone = str(profile.get("phone") or "").strip() or None
+    return SectionRepresentativeAuthorityContactOut(
+        label=label,
+        user_id=str(user.get("_id")) if user.get("_id") else None,
+        full_name=user.get("full_name"),
+        email=email,
+        phone=phone,
+        role=user.get("admin_type") or user.get("rbac_role_code") or user.get("role"),
+        has_email=bool(email),
+        has_phone=bool(phone),
+    )
+
+
+async def _ensure_representative_manage_access(current_user: dict[str, Any], section: dict[str, Any]) -> None:
+    if current_user.get("role") == "admin":
+        await _ensure_admin_can_access_section(current_user, section)
+        return
+    if current_user.get("role") == "teacher" and _teacher_is_year_head(current_user):
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin, HOD, or Year Head can manage class representatives")
+
+
+async def _ensure_representative_dashboard_access(current_user: dict[str, Any], section: dict[str, Any]) -> None:
+    if current_user.get("role") == "admin":
+        await _ensure_admin_can_access_section(current_user, section)
+        return
+    if current_user.get("role") == "teacher":
+        if _teacher_is_year_head(current_user) or is_section_coordinator(current_user, section):
+            return
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this representative dashboard")
+    if current_user.get("role") == "student":
+        extensions = set(current_user.get("extended_roles") or [])
+        role_scope = current_user.get("role_scope") or {}
+        scope = role_scope.get("class_representative", {}) if isinstance(role_scope, dict) else {}
+        if "class_representative" not in extensions or str(scope.get("class_id") or "") != str(section.get("_id") or ""):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this representative dashboard")
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this representative dashboard")
+
+
+async def _representative_candidates(section_id: str) -> list[SectionRepresentativeAssignmentOut]:
+    students = await list_students_for_section(section_id, database=db)
+    items: list[SectionRepresentativeAssignmentOut] = []
+    for student in students:
+        user_id = str(student.get("user_id") or "").strip()
+        if not user_id:
+            continue
+        user = await db.users.find_one({"_id": parse_object_id(user_id), "is_active": True}, {"_id": 1, "full_name": 1})
+        if not user:
+            continue
+        items.append(
+            SectionRepresentativeAssignmentOut(
+                section_id=section_id,
+                seat="",
+                student_user_id=user_id,
+                full_name=user.get("full_name") or student.get("full_name"),
+                section_name=None,
+            )
+        )
+    return items
+
+
+async def _build_representative_dashboard_payload(section: dict[str, Any], current_user: dict[str, Any]) -> SectionRepresentativeDashboardResponse:
+    section_id = str(section.get("_id") or "")
+    seat = "cr_1"
+    if current_user.get("role") == "student":
+        role_scope = current_user.get("role_scope") or {}
+        seat = str((role_scope.get("class_representative", {}) if isinstance(role_scope, dict) else {}).get("seat") or "cr_1")
+
+    attendance_summary = await build_attendance_section_summary(section_id=section_id, database=db)
+    attendance_risk_students = [
+        item.model_dump() if hasattr(item, "model_dump") else item
+        for item in (attendance_summary.students or [])
+        if bool(getattr(item, "shortage_risk", False) if hasattr(item, "shortage_risk") else item.get("shortage_risk"))
+    ]
+
+    students = await list_students_for_section(section_id, database=db)
+    student_rows = [
+        {
+            "student_id": str(item.get("_id") or ""),
+            "student_user_id": str(item.get("user_id") or ""),
+            "student_name": item.get("full_name"),
+            "roll_number": item.get("roll_number"),
+        }
+        for item in students
+    ]
+    student_user_ids = [item["student_user_id"] for item in student_rows if item["student_user_id"]]
+
+    assignment_rows = await db.assignments.find(
+        {"class_id": section_id, "status": "open"},
+        {"_id": 1, "title": 1, "due_date": 1, "status": 1},
+    ).sort([("due_date", 1), ("created_at", -1)]).to_list(length=100)
+    assignment_summaries: list[dict[str, Any]] = []
+    for assignment in assignment_rows:
+        assignment_id = str(assignment.get("_id") or "")
+        submission_user_ids = set(
+            str(value)
+            for value in await db.submissions.distinct("student_user_id", {"assignment_id": assignment_id})
+            if value
+        )
+        missing_students = [
+            {
+                "student_id": item["student_id"],
+                "student_user_id": item["student_user_id"] or None,
+                "student_name": item["student_name"],
+                "roll_number": item["roll_number"],
+            }
+            for item in student_rows
+            if item["student_user_id"] and item["student_user_id"] not in submission_user_ids
+        ]
+        assignment_summaries.append(
+            {
+                "assignment_id": assignment_id,
+                "title": assignment.get("title") or "Assignment",
+                "due_date": assignment.get("due_date"),
+                "status": assignment.get("status"),
+                "total_students": len(student_user_ids),
+                "missing_submission_count": len(missing_students),
+                "missing_students": missing_students,
+            }
+        )
+
+    authority_contacts: list[SectionRepresentativeAuthorityContactOut] = []
+    coordinator = None
+    if section.get("class_coordinator_user_id"):
+        coordinator = await db.users.find_one({"_id": parse_object_id(str(section.get("class_coordinator_user_id"))), "is_active": True})
+    year_heads = await db.users.find({"role": "teacher", "extended_roles": {"$in": ["year_head"]}, "is_active": True}).to_list(length=10)
+    hods = await _admin_users_for_role("HOD", department_id=section.get("department_id"))
+    deans = await _admin_users_for_role("DEAN", department_id=section.get("department_id"))
+    fallbacks = await _fallback_authorities()
+
+    seen_contact_ids: set[str] = set()
+    for label, users in (
+        ("Class Coordinator", [coordinator] if coordinator else []),
+        ("Year Head", year_heads[:1]),
+        ("HOD", hods[:1]),
+        ("Dean", deans[:1]),
+        ("Higher Authority", fallbacks[:1]),
+    ):
+        for user in users:
+            contact = _authority_contact(label, user)
+            if not contact:
+                continue
+            dedupe_key = contact.user_id or f"{contact.label}:{contact.email or contact.full_name or ''}"
+            if dedupe_key in seen_contact_ids:
+                continue
+            seen_contact_ids.add(dedupe_key)
+            authority_contacts.append(contact)
+
+    return SectionRepresentativeDashboardResponse(
+        section_id=section_id,
+        section_name=str(section.get("name") or ""),
+        seat=seat,
+        assigned_user_id=str(current_user.get("_id") or ""),
+        generated_at=_utc_now(),
+        attendance_summary=attendance_summary.model_dump() if hasattr(attendance_summary, "model_dump") else {},
+        attendance_risk_students=attendance_risk_students,
+        assignments=assignment_summaries,
+        authority_contacts=authority_contacts,
+    )
 
 
 async def _validate_section_relations(
@@ -210,7 +490,13 @@ async def list_classes(
         query['name'] = {'$regex': q, '$options': 'i'}
     apply_is_active_filter(query, is_active)
     if current_user.get('role') == 'teacher':
-        query['class_coordinator_user_id'] = str(current_user.get('_id'))
+        scoped_class_id = coordinator_scope_class_id(current_user)
+        if scoped_class_id:
+            query["_id"] = parse_object_id(scoped_class_id)
+        elif _teacher_is_year_head(current_user):
+            query.setdefault('is_active', True)
+        else:
+            query['class_coordinator_user_id'] = str(current_user.get('_id'))
         query.setdefault('is_active', True)
     else:
         query = await _apply_admin_scope_to_query(current_user, query)
@@ -249,6 +535,8 @@ async def section_dashboard(
         scoped_class_id = coordinator_scope_class_id(current_user)
         if scoped_class_id:
             query["_id"] = parse_object_id(scoped_class_id)
+        elif _teacher_is_year_head(current_user):
+            query.setdefault("is_active", True)
         else:
             query["class_coordinator_user_id"] = str(current_user.get("_id"))
     else:
@@ -275,6 +563,164 @@ async def section_dashboard(
         global_unmapped_students=global_unmapped_students,
         sections=items,
     )
+
+
+@router.get('/{class_id}/representatives', response_model=SectionRepresentativesResponse)
+async def get_section_representatives(
+    class_id: str,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> SectionRepresentativesResponse:
+    section = await db.classes.find_one({"_id": parse_object_id(class_id), "is_active": True})
+    if not section:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+    await _ensure_representative_manage_access(current_user, section)
+    await _record_cr_telemetry(
+        event="sections.class_representatives.list",
+        actor_user_id=str(current_user.get("_id") or ""),
+        section_id=class_id,
+        metadata={"role": current_user.get("role")},
+    )
+    return SectionRepresentativesResponse(
+        section_id=class_id,
+        section_name=str(section.get("name") or ""),
+        representatives=normalize_class_representatives(section),
+        candidate_students=await _representative_candidates(class_id),
+    )
+
+
+@router.put('/{class_id}/representatives/{seat}', response_model=SectionRepresentativesResponse)
+async def assign_section_representative(
+    class_id: str,
+    seat: str,
+    payload: SectionRepresentativeAssignmentIn,
+    request: Request,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> SectionRepresentativesResponse:
+    section = await db.classes.find_one({"_id": parse_object_id(class_id), "is_active": True})
+    if not section:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+    await _ensure_representative_manage_access(current_user, section)
+    previous_representatives = normalize_class_representatives(section)
+    previous_user_id_for_seat = str(previous_representatives.get(seat, {}).get("user_id") or "").strip() or None
+    updated_section, updated_user, previous_user_id = await assign_section_class_representative(
+        section_id=class_id,
+        seat=seat,
+        student_user_id=payload.student_user_id,
+        database=db,
+    )
+    replacement = bool(previous_user_id_for_seat and previous_user_id_for_seat != payload.student_user_id)
+    await log_audit_event(
+        actor_user_id=str(current_user.get("_id") or ""),
+        action="sections.assign_class_representative",
+        entity_type="section",
+        entity_id=class_id,
+        detail=f"Assigned {seat.upper()} for {updated_section.get('name')}. Reason: {payload.reason}",
+        old_value={"seat": seat, "previous_user_id": previous_user_id_for_seat},
+        new_value={
+            "seat": seat,
+            "student_user_id": payload.student_user_id,
+            "student_name": (updated_user or {}).get("full_name"),
+            "previous_user_id": previous_user_id,
+            "reason": payload.reason,
+        },
+        ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+        user_agent=request.headers.get("user-agent"),
+        severity="medium",
+    )
+    await _record_cr_telemetry(
+        event="sections.class_representatives.replace" if replacement else "sections.class_representatives.assign",
+        actor_user_id=str(current_user.get("_id") or ""),
+        section_id=class_id,
+        severity="medium",
+        metadata={"seat": seat, "replacement": replacement, "student_user_id": payload.student_user_id},
+    )
+    return SectionRepresentativesResponse(
+        section_id=class_id,
+        section_name=str(updated_section.get("name") or ""),
+        representatives=normalize_class_representatives(updated_section),
+        candidate_students=await _representative_candidates(class_id),
+    )
+
+
+@router.delete('/{class_id}/representatives/{seat}', response_model=SectionRepresentativesResponse)
+async def remove_section_representative(
+    class_id: str,
+    seat: str,
+    payload: SectionRepresentativeRemoveIn,
+    request: Request,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> SectionRepresentativesResponse:
+    section = await db.classes.find_one({"_id": parse_object_id(class_id), "is_active": True})
+    if not section:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+    await _ensure_representative_manage_access(current_user, section)
+    updated_section, previous_user_id = await clear_section_class_representative(section_id=class_id, seat=seat, database=db)
+    await log_audit_event(
+        actor_user_id=str(current_user.get("_id") or ""),
+        action="sections.remove_class_representative",
+        entity_type="section",
+        entity_id=class_id,
+        detail=f"Removed {seat.upper()} for {updated_section.get('name')}. Reason: {payload.reason}",
+        old_value={"seat": seat, "previous_user_id": previous_user_id},
+        new_value={"seat": seat, "reason": payload.reason},
+        ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+        user_agent=request.headers.get("user-agent"),
+        severity="medium",
+    )
+    await _record_cr_telemetry(
+        event="sections.class_representatives.remove",
+        actor_user_id=str(current_user.get("_id") or ""),
+        section_id=class_id,
+        severity="medium",
+        metadata={"seat": seat, "previous_user_id": previous_user_id},
+    )
+    return SectionRepresentativesResponse(
+        section_id=class_id,
+        section_name=str(updated_section.get("name") or ""),
+        representatives=normalize_class_representatives(updated_section),
+        candidate_students=await _representative_candidates(class_id),
+    )
+
+
+@router.get('/{class_id}/representative-dashboard', response_model=SectionRepresentativeDashboardResponse)
+async def get_section_representative_dashboard(
+    class_id: str,
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
+) -> SectionRepresentativeDashboardResponse:
+    section = await db.classes.find_one({"_id": parse_object_id(class_id), "is_active": True})
+    if not section:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+    try:
+        await _ensure_representative_dashboard_access(current_user, section)
+    except HTTPException:
+        await _record_cr_telemetry(
+            event="sections.class_representatives.dashboard_access_denied",
+            outcome="error",
+            actor_user_id=str(current_user.get("_id") or ""),
+            section_id=class_id,
+            severity="medium",
+            metadata={"role": current_user.get("role")},
+        )
+        raise
+    try:
+        payload = await _build_representative_dashboard_payload(section, current_user)
+    except Exception:
+        await _record_cr_telemetry(
+            event="sections.class_representatives.dashboard_load",
+            outcome="error",
+            actor_user_id=str(current_user.get("_id") or ""),
+            section_id=class_id,
+            severity="high",
+            metadata={"role": current_user.get("role")},
+        )
+        raise
+    await _record_cr_telemetry(
+        event="sections.class_representatives.dashboard_load",
+        actor_user_id=str(current_user.get("_id") or ""),
+        section_id=class_id,
+        metadata={"role": current_user.get("role"), "seat": payload.seat},
+    )
+    return payload
 
 
 @router.get('/{class_id}', response_model=ClassOut)

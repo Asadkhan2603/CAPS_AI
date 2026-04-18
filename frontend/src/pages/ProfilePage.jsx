@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, GraduationCap, Mail, MapPin, Phone, ShieldCheck, Sparkles } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { CalendarDays, GraduationCap, Mail, MapPin, Phone, ShieldCheck, Sparkles, Activity, BarChart3 } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import FormInput from '../components/ui/FormInput';
 import { apiClient } from '../services/apiClient';
@@ -8,6 +8,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { formatApiError } from '../utils/apiError';
 import { useAuthorizedImage } from '../hooks/useAuthorizedImage';
+import { ActivityDashboard } from '../components/auth/ActivityDashboard';
+import { SecurityTab } from '../components/auth/SecurityTab';
 
 const personalFields = [
   { name: 'full_name', label: 'Full Name' },
@@ -54,6 +56,13 @@ const communicationPreferenceFields = [
     description: 'Receive notification emails in addition to in-app alerts.'
   }
 ];
+
+const PROFILE_TABS = new Set(['profile', 'security', 'activity']);
+
+function resolveProfileTab(searchParams) {
+  const requestedTab = searchParams.get('tab');
+  return PROFILE_TABS.has(requestedTab) ? requestedTab : 'profile';
+}
 
 function initialProfileForm(user) {
   const profile = user?.profile || {};
@@ -118,6 +127,7 @@ function CommunicationPreferencesCard({ preferences, onToggle, saving }) {
 }
 
 export default function ProfilePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, refreshUser } = useAuth();
   const { pushToast } = useToast();
   const [form, setForm] = useState(() => initialProfileForm(user));
@@ -125,6 +135,8 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState(() => resolveProfileTab(searchParams));
+  const [showActivityDashboard, setShowActivityDashboard] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
     current_password: '',
     new_password: '',
@@ -144,6 +156,10 @@ export default function ProfilePage() {
     setForm(initialProfileForm(user));
     setPreferences(initialCommunicationPreferences(user));
   }, [user]);
+
+  useEffect(() => {
+    setActiveTab(resolveProfileTab(searchParams));
+  }, [searchParams]);
 
   useEffect(() => {
     async function loadStudentSnapshot() {
@@ -174,6 +190,17 @@ export default function ProfilePage() {
 
     loadStudentSnapshot();
   }, [user?.role]);
+
+  function handleTabChange(tab) {
+    setActiveTab(tab);
+    const nextSearchParams = new URLSearchParams(searchParams);
+    if (tab === 'profile') {
+      nextSearchParams.delete('tab');
+    } else {
+      nextSearchParams.set('tab', tab);
+    }
+    setSearchParams(nextSearchParams, { replace: true });
+  }
 
   function onChange(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -401,7 +428,10 @@ export default function ProfilePage() {
         <CommunicationPreferencesCard preferences={preferences} onToggle={onTogglePreference} saving={saving} />
 
         <Card className="space-y-3">
-          <h2 className="text-lg font-semibold">Security</h2>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <ShieldCheck size={16} className="text-blue-600" />
+            Security
+          </h2>
           <form className="grid gap-3 sm:grid-cols-3" onSubmit={onChangePassword}>
             <FormInput
               type="password"
@@ -429,6 +459,26 @@ export default function ProfilePage() {
           </form>
         </Card>
 
+        <SecurityTab userId={user?.id} />
+
+        <Card className="space-y-3">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Activity size={16} className="text-purple-600" />
+            Account Activity
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Monitor your login history and active sessions to ensure your account security.
+          </p>
+          <button
+            onClick={() => setShowActivityDashboard(true)}
+            className="btn-primary w-full"
+          >
+            View Account Activity Dashboard
+          </button>
+        </Card>
+
+        <ActivityDashboard userId={user?.id} isOpen={showActivityDashboard} onClose={() => setShowActivityDashboard(false)} />
+
         <Card className="grid gap-3 sm:grid-cols-3">
           <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700">
             <Phone size={14} className="text-slate-500" /> {form.phone || 'Add phone number'}
@@ -446,8 +496,14 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-4 page-fade">
+      {/* Header */}
       <Card className="space-y-4">
-        <h1 className="text-2xl font-semibold">Manage Profile</h1>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Manage Profile</h1>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Update your profile, security settings, and account activity</p>
+          </div>
+        </div>
         <div className="flex flex-wrap items-center gap-4">
           {avatarSrc ? (
             <img src={avatarSrc} alt="Profile" className="h-20 w-20 rounded-full border border-slate-200 object-cover dark:border-slate-700" />
@@ -472,71 +528,173 @@ export default function ProfilePage() {
         </div>
       </Card>
 
-      <form onSubmit={onSave} className="space-y-4">
-        <Card className="space-y-3">
-          <h2 className="text-lg font-semibold">Personal Details</h2>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {personalFields.map((field) => (
-              <FormInput
-                key={field.name}
-                label={field.label}
-                value={form[field.name] || ''}
-                onChange={(e) => onChange(field.name, e.target.value)}
-              />
-            ))}
-          </div>
-        </Card>
+      {/* Tab Navigation */}
+      <Card className="!p-0 overflow-hidden">
+        <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+          <button
+            onClick={() => handleTabChange('profile')}
+            className={`flex-1 px-4 py-3 font-medium transition-all border-b-2 ${
+              activeTab === 'profile'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+            }`}
+          >
+            Profile
+          </button>
+          <button
+            onClick={() => handleTabChange('security')}
+            className={`flex-1 px-4 py-3 font-medium transition-all border-b-2 flex items-center justify-center gap-2 ${
+              activeTab === 'security'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+            }`}
+          >
+            <ShieldCheck size={16} />
+            Security & Settings
+          </button>
+          <button
+            onClick={() => handleTabChange('activity')}
+            className={`flex-1 px-4 py-3 font-medium transition-all border-b-2 flex items-center justify-center gap-2 ${
+              activeTab === 'activity'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+            }`}
+          >
+            <Activity size={16} />
+            Account Activity
+          </button>
+        </div>
 
-        <Card className="space-y-3">
-          <h2 className="text-lg font-semibold">Professional Details</h2>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {professionalFields.map((field) => (
-              <FormInput
-                key={field.name}
-                label={field.label}
-                value={form[field.name] || ''}
-                onChange={(e) => onChange(field.name, e.target.value)}
-              />
-            ))}
-          </div>
-          <div className="flex justify-end">
-            <button className="btn-primary" type="submit" disabled={saving}>
-              {saving ? 'Saving...' : 'Save Profile'}
-            </button>
-          </div>
-        </Card>
+        {/* Tab Content */}
+        <div className="p-4">
+          {/* Profile Tab */}
+          {activeTab === 'profile' && (
+            <form onSubmit={onSave} className="space-y-4">
+              <Card className="space-y-3">
+                <h2 className="text-lg font-semibold">Personal Details</h2>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {personalFields.map((field) => (
+                    <FormInput
+                      key={field.name}
+                      label={field.label}
+                      value={form[field.name] || ''}
+                      onChange={(e) => onChange(field.name, e.target.value)}
+                    />
+                  ))}
+                </div>
+              </Card>
 
-        <CommunicationPreferencesCard preferences={preferences} onToggle={onTogglePreference} saving={saving} />
+              <Card className="space-y-3">
+                <h2 className="text-lg font-semibold">Professional Details</h2>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {professionalFields.map((field) => (
+                    <FormInput
+                      key={field.name}
+                      label={field.label}
+                      value={form[field.name] || ''}
+                      onChange={(e) => onChange(field.name, e.target.value)}
+                    />
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button className="btn-primary" type="submit" disabled={saving}>
+                    {saving ? 'Saving...' : 'Save Profile'}
+                  </button>
+                </div>
+              </Card>
 
-        <Card className="space-y-3">
-          <h2 className="text-lg font-semibold">Security</h2>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <FormInput
-              type="password"
-              label="Current Password"
-              value={passwordForm.current_password}
-              onChange={(e) => setPasswordForm((prev) => ({ ...prev, current_password: e.target.value }))}
-            />
-            <FormInput
-              type="password"
-              label="New Password"
-              value={passwordForm.new_password}
-              onChange={(e) => setPasswordForm((prev) => ({ ...prev, new_password: e.target.value }))}
-            />
-            <FormInput
-              type="password"
-              label="Confirm Password"
-              value={passwordForm.confirm_password}
-              onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirm_password: e.target.value }))}
-            />
-          </div>
-          <div className="flex justify-end">
-            <button className="btn-secondary" type="button" onClick={onChangePassword} disabled={passwordSaving}>
-              {passwordSaving ? 'Updating...' : 'Change Password'}
-            </button>
-          </div>
-        </Card>
-      </form>
+              <CommunicationPreferencesCard preferences={preferences} onToggle={onTogglePreference} saving={saving} />
+            </form>
+          )}
+
+          {/* Security Tab */}
+          {activeTab === 'security' && (
+            <div className="space-y-4">
+              <SecurityTab userId={user?.id} />
+              
+              {/* Password Change Section */}
+              <Card className="space-y-3">
+                <h3 className="text-lg font-semibold">Change Password</h3>
+                <form onSubmit={onChangePassword} className="grid gap-3 sm:grid-cols-3">
+                  <FormInput
+                    type="password"
+                    label="Current Password"
+                    value={passwordForm.current_password}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, current_password: e.target.value }))}
+                  />
+                  <FormInput
+                    type="password"
+                    label="New Password"
+                    value={passwordForm.new_password}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, new_password: e.target.value }))}
+                  />
+                  <FormInput
+                    type="password"
+                    label="Confirm Password"
+                    value={passwordForm.confirm_password}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirm_password: e.target.value }))}
+                  />
+                  <div className="sm:col-span-3 flex justify-end">
+                    <button className="btn-secondary" type="submit" disabled={passwordSaving}>
+                      {passwordSaving ? 'Updating...' : 'Change Password'}
+                    </button>
+                  </div>
+                </form>
+              </Card>
+            </div>
+          )}
+
+          {/* Activity Tab */}
+          {activeTab === 'activity' && (
+            <div className="space-y-4">
+              <Card className="space-y-3">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-blue-600" />
+                  Account Activity & Sessions
+                </h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Monitor your login history, active sessions, and unusual activity. Manage devices and sign out from other sessions.
+                </p>
+                <button
+                  onClick={() => setShowActivityDashboard(true)}
+                  className="btn-primary w-full"
+                >
+                  View Full Activity Dashboard
+                </button>
+              </Card>
+
+              {/* Quick Stats */}
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Card className="!p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Active Now</p>
+                  <p className="mt-2 text-3xl font-bold text-blue-600">1</p>
+                  <p className="mt-1 text-xs text-slate-600">This browser session</p>
+                </Card>
+                <Card className="!p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Today's Logins</p>
+                  <p className="mt-2 text-3xl font-bold text-green-600">-</p>
+                  <p className="mt-1 text-xs text-slate-600">Check full dashboard</p>
+                </Card>
+                <Card className="!p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Last Updated</p>
+                  <p className="mt-2 text-sm font-bold">Just now</p>
+                  <p className="mt-1 text-xs text-slate-600">Real-time monitoring</p>
+                </Card>
+              </div>
+
+              <Card className="space-y-3 border-l-4 border-l-blue-500">
+                <h4 className="font-semibold">💡 Security Tip</h4>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Regularly review your active sessions and sign out from devices you no longer use. Enable two-factor authentication for additional security.
+                </p>
+              </Card>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Activity Dashboard Modal */}
+      <ActivityDashboard userId={user?.id} isOpen={showActivityDashboard} onClose={() => setShowActivityDashboard(false)} />
     </div>
   );
 }

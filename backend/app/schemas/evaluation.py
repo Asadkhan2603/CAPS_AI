@@ -96,8 +96,11 @@ class EvaluationOut(BaseModel):
     public_id: str | None = None
     display_label: str | None = None
     submission_id: str
+    submission_label: str | None = None
     student_user_id: str
+    student_label: str | None = None
     teacher_user_id: str
+    teacher_label: str | None = None
     attendance_percent: int
     skill: float
     behavior: float

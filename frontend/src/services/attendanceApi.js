@@ -1,8 +1,10 @@
 import { apiClient } from './apiClient';
 
 export async function getAttendanceMarkingLookups() {
-  const response = await apiClient.get('/attendance-records/marking-lookups');
-  return response.data?.items || [];
+  const response = await apiClient.get('/class-slots/', {
+    params: { skip: 0, limit: 200, is_active: true }
+  });
+  return response.data || [];
 }
 
 export async function getAttendanceRoster(classSlotId) {

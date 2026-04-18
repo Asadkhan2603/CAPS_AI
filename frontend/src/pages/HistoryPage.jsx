@@ -16,6 +16,7 @@ export default function HistoryPage() {
   const [submissionRows, setSubmissionRows] = useState([]);
   const [evaluationRows, setEvaluationRows] = useState([]);
   const [notificationRows, setNotificationRows] = useState([]);
+  const [assignmentRows, setAssignmentRows] = useState([]);
   const [query, setQuery] = useState('');
   const [section, setSection] = useState('all');
 
@@ -23,23 +24,26 @@ export default function HistoryPage() {
     setLoading(true);
     setError('');
     try {
-      const [registrationsRes, submissionsRes, evaluationsRes, notificationsRes] = await Promise.all([
+      const [registrationsRes, submissionsRes, evaluationsRes, notificationsRes, assignmentsRes] = await Promise.all([
         apiClient.get('/event-registrations/', { params: { skip: 0, limit: 50 } }),
         apiClient.get('/submissions/', { params: { skip: 0, limit: 50 } }),
         apiClient.get('/evaluations/', { params: { skip: 0, limit: 50 } }),
-        apiClient.get('/notifications/', { params: { skip: 0, limit: 50 } })
+        apiClient.get('/notifications/', { params: { skip: 0, limit: 50 } }),
+        apiClient.get('/assignments/', { params: { skip: 0, limit: 100 } })
       ]);
 
       setRegistrationRows(registrationsRes.data || []);
       setSubmissionRows(submissionsRes.data || []);
       setEvaluationRows(evaluationsRes.data || []);
       setNotificationRows(notificationsRes.data || []);
+      setAssignmentRows(assignmentsRes.data || []);
     } catch (err) {
       setError(formatApiError(err, 'Failed to load history logs'));
       setRegistrationRows([]);
       setSubmissionRows([]);
       setEvaluationRows([]);
       setNotificationRows([]);
+      setAssignmentRows([]);
     } finally {
       setLoading(false);
     }
@@ -59,26 +63,48 @@ export default function HistoryPage() {
     []
   );
 
+  const assignmentLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        assignmentRows.map((item) => [
+          item.id,
+          item.display_label || (item.title ? `${item.title} (${item.public_id || item.id})` : item.public_id || item.id)
+        ])
+      ),
+    [assignmentRows]
+  );
+
+  const submissionLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        submissionRows.map((item) => [
+          item.id,
+          item.display_label || `${item.original_filename || 'Submission'} (${item.public_id || item.id})`
+        ])
+      ),
+    [submissionRows]
+  );
+
   const submissionColumns = useMemo(
     () => [
-      { key: 'assignment_id', label: 'Assignment ID' },
+      { key: 'assignment_id', label: 'Assignment', render: (row) => assignmentLabelById[row.assignment_id] || row.assignment_id },
       { key: 'original_filename', label: 'File' },
       { key: 'status', label: 'Status' },
       { key: 'ai_status', label: 'AI Status' },
       { key: 'created_at', label: 'Created At', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') }
     ],
-    []
+    [assignmentLabelById]
   );
 
   const evaluationColumns = useMemo(
     () => [
-      { key: 'submission_id', label: 'Submission ID' },
+      { key: 'submission_id', label: 'Submission', render: (row) => submissionLabelById[row.submission_id] || row.submission_id },
       { key: 'grand_total', label: 'Total' },
       { key: 'grade', label: 'Grade' },
       { key: 'is_finalized', label: 'Finalized', render: (row) => (row.is_finalized ? 'Yes' : 'No') },
       { key: 'created_at', label: 'Created At', render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString() : '-') }
     ],
-    []
+    [submissionLabelById]
   );
 
   const notificationColumns = useMemo(
@@ -104,14 +130,14 @@ export default function HistoryPage() {
   const filteredSubmissionRows = useMemo(() => {
     if (!query.trim()) return submissionRows;
     const q = query.toLowerCase();
-    return submissionRows.filter((item) => `${item.original_filename || ''} ${item.assignment_id || ''} ${item.status || ''}`.toLowerCase().includes(q));
-  }, [query, submissionRows]);
+    return submissionRows.filter((item) => `${item.original_filename || ''} ${assignmentLabelById[item.assignment_id] || item.assignment_id || ''} ${item.status || ''}`.toLowerCase().includes(q));
+  }, [assignmentLabelById, query, submissionRows]);
 
   const filteredEvaluationRows = useMemo(() => {
     if (!query.trim()) return evaluationRows;
     const q = query.toLowerCase();
-    return evaluationRows.filter((item) => `${item.submission_id || ''} ${item.grade || ''} ${item.remarks || ''}`.toLowerCase().includes(q));
-  }, [evaluationRows, query]);
+    return evaluationRows.filter((item) => `${submissionLabelById[item.submission_id] || item.submission_id || ''} ${item.grade || ''} ${item.remarks || ''}`.toLowerCase().includes(q));
+  }, [evaluationRows, query, submissionLabelById]);
 
   const filteredNotificationRows = useMemo(() => {
     if (!query.trim()) return notificationRows;

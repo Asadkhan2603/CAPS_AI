@@ -4,12 +4,35 @@ from app.core.schema_versions import EVALUATION_SCHEMA_VERSION, normalize_schema
 from app.services.public_ids import apply_public_identity
 
 
+def _stringify_reference(value: Any) -> Any:
+    return str(value) if value is not None else None
+
+
+def _normalize_rubric_criteria(value: Any) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for item in list(value or []):
+        if not isinstance(item, dict):
+            continue
+        output.append(
+            {
+                "label": item.get("label") or item.get("name") or "Criterion",
+                "max_score": item.get("max_score") if item.get("max_score") is not None else item.get("marks", 0),
+                "keywords": list(item.get("keywords") or []),
+                "notes": item.get("notes"),
+            }
+        )
+    return output
+
+
 def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
     payload = {
         "id": str(document["_id"]),
-        "submission_id": document.get("submission_id"),
-        "student_user_id": document.get("student_user_id"),
-        "teacher_user_id": document.get("teacher_user_id"),
+        "submission_id": _stringify_reference(document.get("submission_id")),
+        "submission_label": document.get("submission_label"),
+        "student_user_id": _stringify_reference(document.get("student_user_id")),
+        "student_label": document.get("student_label"),
+        "teacher_user_id": _stringify_reference(document.get("teacher_user_id")),
+        "teacher_label": document.get("teacher_label"),
         "attendance_percent": document.get("attendance_percent", 0),
         "skill": document.get("skill", 0.0),
         "behavior": document.get("behavior", 0.0),
@@ -19,7 +42,7 @@ def evaluation_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "internal_total": document.get("internal_total", 0.0),
         "grand_total": document.get("grand_total", 0.0),
         "grade": document.get("grade", "Needs Improvement"),
-        "rubric_criteria": list(document.get("rubric_criteria") or []),
+        "rubric_criteria": _normalize_rubric_criteria(document.get("rubric_criteria")),
         "ai_score": document.get("ai_score"),
         "ai_feedback": document.get("ai_feedback"),
         "ai_status": document.get("ai_status"),

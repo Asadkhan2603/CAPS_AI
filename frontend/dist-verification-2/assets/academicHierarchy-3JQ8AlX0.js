@@ -1,1 +1,0 @@
-const s="University -> Faculty -> Department -> Program -> (optional) Specialization -> Batch -> Semester -> Section -> Group",a={1:2,2:4,3:6,4:8,5:10},o=Object.entries(a).map(([e,t])=>({value:Number(e),label:`${e} year${Number(e)===1?"":"s"} (${t} semesters)`}));export{s as A,o as P,a};

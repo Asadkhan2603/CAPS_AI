@@ -36,7 +36,7 @@ def _queue_age_bucket(value: datetime | None) -> str:
 
 
 async def _resolve_user_label(user_id: str | None, *, database: Any = db) -> str | None:
-    database = database or db
+    database = database if database is not None else db
     if not user_id or not ObjectId.is_valid(user_id):
         return None
     user = await database.users.find_one({"_id": ObjectId(user_id)})
@@ -89,7 +89,7 @@ async def list_shared_queue_views(
     queue_type: str,
     database: Any | None = None,
 ) -> list[dict[str, Any]]:
-    database = database or db
+    database = database if database is not None else db
     rows = await database.club_queue_views.find(
         {
             "scope_type": scope_type,
@@ -113,7 +113,7 @@ async def save_shared_queue_view(
     current_user_id: str,
     database: Any | None = None,
 ) -> dict[str, Any]:
-    database = database or db
+    database = database if database is not None else db
     now = _utc_now()
     document = {
         "scope_type": scope_type,
@@ -147,7 +147,7 @@ async def delete_shared_queue_view(
     queue_type: str,
     database: Any | None = None,
 ) -> bool:
-    database = database or db
+    database = database if database is not None else db
     if not ObjectId.is_valid(view_id):
         return False
     result = await database.club_queue_views.delete_one(
@@ -168,7 +168,7 @@ async def _prune_shared_queue_views(
     queue_type: str,
     database: Any | None = None,
 ) -> None:
-    database = database or db
+    database = database if database is not None else db
     rows = await database.club_queue_views.find(
         {
             "scope_type": scope_type,
@@ -188,7 +188,7 @@ async def list_shared_queue_snapshots(
     limit: int = 12,
     database: Any | None = None,
 ) -> list[dict[str, Any]]:
-    database = database or db
+    database = database if database is not None else db
     scoped_limit = max(1, min(MAX_SHARED_QUEUE_SNAPSHOTS, int(limit)))
     rows = await database.club_queue_snapshots.find(
         {
@@ -213,7 +213,7 @@ async def _persist_shared_queue_snapshot(
     source_action: str | None,
     database: Any | None = None,
 ) -> dict[str, Any]:
-    database = database or db
+    database = database if database is not None else db
     latest = await database.club_queue_snapshots.find_one(
         {
             "scope_type": scope_type,
@@ -257,7 +257,7 @@ async def _prune_shared_queue_snapshots(
     queue_type: str,
     database: Any | None = None,
 ) -> None:
-    database = database or db
+    database = database if database is not None else db
     rows = await database.club_queue_snapshots.find(
         {
             "scope_type": scope_type,
@@ -301,7 +301,7 @@ async def record_membership_queue_snapshot(
     source_action: str | None = None,
     database: Any | None = None,
 ) -> dict[str, Any]:
-    database = database or db
+    database = database if database is not None else db
     rows = await database.club_applications.find(
         {
             "club_id": club_id,
@@ -327,7 +327,7 @@ async def record_event_queue_snapshot(
     source_action: str | None = None,
     database: Any | None = None,
 ) -> dict[str, Any]:
-    database = database or db
+    database = database if database is not None else db
     rows = await database.event_registrations.find(
         {
             "event_id": event_id,

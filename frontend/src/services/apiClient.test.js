@@ -5,6 +5,7 @@ import {
   USER_KEY,
   clearAuthStorage,
   getAccessToken,
+  isRefreshExemptAuthPath,
   readAuthStorage,
   setAccessToken,
   writeAuthStorage
@@ -65,5 +66,16 @@ describe('apiClient auth storage', () => {
     expect(getAccessToken()).toBe('');
     expect(readAuthStorage(REFRESH_TOKEN_KEY)).toBe('');
     expect(readAuthStorage(USER_KEY)).toBe('');
+  });
+
+  it('treats MFA verification endpoints as auth requests that must not auto-refresh', () => {
+    expect(isRefreshExemptAuthPath('/auth/mfa/verify')).toBe(true);
+    expect(isRefreshExemptAuthPath('/auth/mfa/webauthn/authenticate/finish')).toBe(true);
+    expect(isRefreshExemptAuthPath('/auth/mfa/sms/challenge/send')).toBe(true);
+  });
+
+  it('keeps regular protected resource requests eligible for token refresh', () => {
+    expect(isRefreshExemptAuthPath('/users')).toBe(false);
+    expect(isRefreshExemptAuthPath('/auth/profile')).toBe(false);
   });
 });

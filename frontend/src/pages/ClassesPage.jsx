@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import Table from '../components/ui/Table';
-import { createSection, getSections } from '../services/sectionsApi';
+import {
+  assignSectionRepresentative,
+  createSection,
+  getSectionRepresentatives,
+  getSections,
+  removeSectionRepresentative
+} from '../services/sectionsApi';
 import { apiClient } from '../services/apiClient';
 import { searchLookupOptions } from '../services/paginatedLookups';
 import { useToast } from '../hooks/useToast';
@@ -12,6 +18,9 @@ import { formatApiError } from '../utils/apiError';
 export default function ClassesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isYearHead = user?.role === 'teacher' && (user?.extended_roles || []).includes('year_head');
+  const canManageRepresentatives = isAdmin || isYearHead;
+  const canHydrateUserProfiles = isAdmin;
   const { pushToast } = useToast();
 
   const [rows, setRows] = useState([]);
@@ -25,6 +34,15 @@ export default function ClassesPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedRepresentativeSectionId, setSelectedRepresentativeSectionId] = useState('');
+  const [representativesData, setRepresentativesData] = useState(null);
+  const [representativesLoading, setRepresentativesLoading] = useState(false);
+  const [representativeDrafts, setRepresentativeDrafts] = useState({
+    cr_1: { student_user_id: '', reason: '' },
+    cr_2: { student_user_id: '', reason: '' }
+  });
+  const [representativeActionSeat, setRepresentativeActionSeat] = useState('');
+  const [representativeConfirmSeat, setRepresentativeConfirmSeat] = useState('');
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(10);
 
@@ -170,6 +188,9 @@ export default function ClassesPage() {
     const knownSemesterIds = new Set(semesters.map((item) => item.id));
     const knownTeacherIds = new Set(teachers.map((item) => item.id));
 
+    const teacherProfileRequests = canHydrateUserProfiles
+      ? Promise.allSettled(teacherIds.filter((id) => !knownTeacherIds.has(id)).map((id) => apiClient.get(`/users/${id}`)))
+      : Promise.resolve([]);
     const [facultyResponses, departmentResponses, programResponses, specializationResponses, batchResponses, semesterResponses, teacherResponses] =
       await Promise.all([
         Promise.allSettled(facultyIds.filter((id) => !knownFacultyIds.has(id)).map((id) => apiClient.get(`/faculties/${id}`))),
@@ -178,7 +199,7 @@ export default function ClassesPage() {
         Promise.allSettled(specializationIds.filter((id) => !knownSpecializationIds.has(id)).map((id) => apiClient.get(`/specializations/${id}`))),
         Promise.allSettled(batchIds.filter((id) => !knownBatchIds.has(id)).map((id) => apiClient.get(`/batches/${id}`))),
         Promise.allSettled(semesterIds.filter((id) => !knownSemesterIds.has(id)).map((id) => apiClient.get(`/semesters/${id}`))),
-        Promise.allSettled(teacherIds.filter((id) => !knownTeacherIds.has(id)).map((id) => apiClient.get(`/users/${id}`)))
+        teacherProfileRequests
       ]);
 
     mergeRows(setFaculties, facultyResponses.filter((result) => result.status === 'fulfilled').map((result) => result.value.data));
@@ -322,6 +343,91 @@ export default function ClassesPage() {
     }
   }
 
+  function hydrateRepresentativeDrafts(data) {
+    const reps = data?.representatives || {};
+    setRepresentativeConfirmSeat('');
+    setRepresentativeDrafts({
+      cr_1: {
+        student_user_id: reps?.cr_1?.user_id || '',
+        reason: ''
+      },
+      cr_2: {
+        student_user_id: reps?.cr_2?.user_id || '',
+        reason: ''
+      }
+    });
+  }
+
+  async function loadRepresentatives(sectionId) {
+    if (!sectionId || !canManageRepresentatives) return;
+    setSelectedRepresentativeSectionId(sectionId);
+    setRepresentativesLoading(true);
+    try {
+      const data = await getSectionRepresentatives(sectionId);
+      setRepresentativesData(data || null);
+      hydrateRepresentativeDrafts(data);
+    } catch (err) {
+      const message = formatApiError(err, 'Failed to load class representatives');
+      pushToast({ title: 'Representative load failed', description: message, variant: 'error' });
+    } finally {
+      setRepresentativesLoading(false);
+    }
+  }
+
+  async function handleAssignRepresentative(seat) {
+    const sectionId = selectedRepresentativeSectionId;
+    const draft = representativeDrafts[seat] || {};
+    const seatState = representativesData?.representatives?.[seat] || {};
+    if (!sectionId || !draft.student_user_id || !draft.reason.trim()) {
+      pushToast({ title: 'Missing details', description: 'Select a student and provide a reason before assigning the seat.', variant: 'error' });
+      return;
+    }
+    if (seatState.user_id && seatState.user_id !== draft.student_user_id && representativeConfirmSeat !== seat) {
+      setRepresentativeConfirmSeat(seat);
+      pushToast({ title: 'Confirm replacement', description: 'Click Confirm Replace to replace the existing CR seat occupant.', variant: 'info' });
+      return;
+    }
+    setRepresentativeActionSeat(seat);
+    try {
+      const data = await assignSectionRepresentative(sectionId, seat, {
+        student_user_id: draft.student_user_id,
+        reason: draft.reason.trim()
+      });
+      setRepresentativeConfirmSeat('');
+      setRepresentativesData(data || null);
+      hydrateRepresentativeDrafts(data);
+      await loadSections();
+      pushToast({ title: 'Representative updated', description: `${seat.toUpperCase()} assignment saved.`, variant: 'success' });
+    } catch (err) {
+      const message = formatApiError(err, 'Failed to assign class representative');
+      pushToast({ title: 'Assignment failed', description: message, variant: 'error' });
+    } finally {
+      setRepresentativeActionSeat('');
+    }
+  }
+
+  async function handleRemoveRepresentative(seat) {
+    const sectionId = selectedRepresentativeSectionId;
+    const draft = representativeDrafts[seat] || {};
+    if (!sectionId || !draft.reason.trim()) {
+      pushToast({ title: 'Reason required', description: 'Provide a reason before removing the representative seat.', variant: 'error' });
+      return;
+    }
+    setRepresentativeActionSeat(seat);
+    try {
+      const data = await removeSectionRepresentative(sectionId, seat, { reason: draft.reason.trim() });
+      setRepresentativesData(data || null);
+      hydrateRepresentativeDrafts(data);
+      await loadSections();
+      pushToast({ title: 'Representative removed', description: `${seat.toUpperCase()} has been cleared.`, variant: 'success' });
+    } catch (err) {
+      const message = formatApiError(err, 'Failed to remove class representative');
+      pushToast({ title: 'Remove failed', description: message, variant: 'error' });
+    } finally {
+      setRepresentativeActionSeat('');
+    }
+  }
+
   useEffect(() => {
     loadSections();
   }, [skip, limit, filters]);
@@ -405,13 +511,39 @@ export default function ClassesPage() {
           row.class_coordinator_user_id
             ? teacherNameById[row.class_coordinator_user_id] || '-'
             : '-'
-      }
+      },
+      {
+        key: 'cr_1',
+        label: 'CR-1',
+        render: (row) => row.class_representatives?.cr_1?.full_name || '-'
+      },
+      {
+        key: 'cr_2',
+        label: 'CR-2',
+        render: (row) => row.class_representatives?.cr_2?.full_name || '-'
+      },
+      ...(canManageRepresentatives
+        ? [
+            {
+              key: 'manage_representatives',
+              label: 'Representatives',
+              render: (row) => (
+                <button type="button" className="btn-secondary !px-3 !py-1.5 text-xs" onClick={() => void loadRepresentatives(row.id)}>
+                  {selectedRepresentativeSectionId === row.id ? 'Refresh CRs' : 'Manage CRs'}
+                </button>
+              )
+            }
+          ]
+        : [])
     ],
     [
       batchNameById,
+      canManageRepresentatives,
       departmentNameById,
       facultyNameById,
+      loadRepresentatives,
       programNameById,
+      selectedRepresentativeSectionId,
       semesterLabelById,
       specializationNameById,
       teacherNameById
@@ -603,6 +735,151 @@ export default function ClassesPage() {
               <button type="submit" className="btn-primary w-full">Create</button>
             </div>
           </form>
+        </Card>
+      ) : null}
+
+      {canManageRepresentatives && selectedRepresentativeSectionId ? (
+        <Card className="space-y-4 border-brand-100 bg-gradient-to-br from-white via-brand-50/40 to-slate-50 dark:border-brand-950/40 dark:from-slate-950 dark:via-slate-900 dark:to-brand-950/20">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-600">Section Governance</p>
+              <h2 className="mt-1 text-lg font-semibold">Class Representative Seats</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Manage CR-1 and CR-2 for {representativesData?.section_name || selectedRepresentativeSectionId}.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  Read-only student access
+                </span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  Max 2 seats per section
+                </span>
+                <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+                  Reason required for audit
+                </span>
+              </div>
+            </div>
+            <button type="button" className="btn-secondary" onClick={() => void loadRepresentatives(selectedRepresentativeSectionId)} disabled={representativesLoading}>
+              {representativesLoading ? 'Refreshing...' : 'Refresh Seats'}
+            </button>
+          </div>
+
+          {representativesLoading ? <p className="text-sm text-slate-500">Loading representative seats...</p> : null}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {['cr_1', 'cr_2'].map((seat) => {
+              const seatState = representativesData?.representatives?.[seat] || {};
+              const draft = representativeDrafts[seat] || { student_user_id: '', reason: '' };
+              const seatCandidates = representativesData?.candidate_students || [];
+              const seatLabel = seat.replace('_', '-').toUpperCase();
+              const replacingSeat = Boolean(seatState.user_id && draft.student_user_id && seatState.user_id !== draft.student_user_id);
+              const readyToAssign = Boolean(draft.student_user_id && draft.reason?.trim());
+              const readyToClear = Boolean(seatState.user_id && draft.reason?.trim());
+              const selectedCandidate = seatCandidates.find((candidate) => candidate.student_user_id === draft.student_user_id);
+              return (
+                <div key={seat} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950/50">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-600">{seatLabel}</p>
+                      <p className="mt-2 text-base font-semibold text-slate-900 dark:text-slate-100">{seatState.full_name || 'Unassigned'}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {seatState.user_id ? 'Changing this seat requires a reason and replacement confirmation.' : 'Assign one active student from this section.'}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${seatState.user_id ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                      {seatState.user_id ? 'Assigned' : 'Empty'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
+                      <span className="font-semibold text-slate-800 dark:text-slate-100">Current holder:</span>{' '}
+                      {seatState.full_name || 'No student assigned yet'}
+                    </div>
+
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Student</span>
+                      <select
+                        className="input"
+                        value={draft.student_user_id || ''}
+                        onChange={(event) => {
+                          setRepresentativeDrafts((prev) => ({
+                            ...prev,
+                            [seat]: { ...(prev[seat] || {}), student_user_id: event.target.value }
+                          }));
+                          setRepresentativeConfirmSeat('');
+                        }}
+                      >
+                        <option value="">Select Student</option>
+                        {seatCandidates.map((candidate) => (
+                          <option key={candidate.student_user_id} value={candidate.student_user_id}>
+                            {candidate.full_name}
+                          </option>
+                        ))}
+                      </select>
+                      {!seatCandidates.length ? (
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">No active student candidates were found for this section.</p>
+                      ) : null}
+                    </label>
+
+                    {selectedCandidate ? (
+                      <div className="rounded-2xl border border-brand-100 bg-brand-50/70 px-3 py-2 text-xs text-brand-800 dark:border-brand-900/40 dark:bg-brand-950/20 dark:text-brand-200">
+                        <span className="font-semibold">Selected candidate:</span> {selectedCandidate.full_name}
+                        {replacingSeat ? ' will replace the current holder after confirmation.' : ' will receive read-only CR access for this section.'}
+                      </div>
+                    ) : null}
+
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Reason</span>
+                      <input
+                        className="input"
+                        value={draft.reason || ''}
+                        onChange={(event) =>
+                          setRepresentativeDrafts((prev) => ({
+                            ...prev,
+                            [seat]: { ...(prev[seat] || {}), reason: event.target.value }
+                          }))
+                        }
+                        placeholder={`Reason for ${seat.replace('_', '-').toUpperCase()} change`}
+                      />
+                      <p className="text-xs text-slate-500">Reason is saved to the audit log for assignment, replacement, and removal.</p>
+                    </label>
+
+                    {replacingSeat ? (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
+                        This will replace {seatState.full_name || 'the current CR'} for {seatLabel}. Review the reason, then confirm replace.
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={representativeActionSeat === seat || !readyToAssign}
+                        onClick={() => void handleAssignRepresentative(seat)}
+                      >
+                        {representativeActionSeat === seat
+                          ? 'Saving...'
+                          : replacingSeat && representativeConfirmSeat === seat
+                            ? 'Confirm Replace'
+                            : replacingSeat
+                              ? 'Review Replace'
+                              : 'Assign Seat'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={representativeActionSeat === seat || !readyToClear}
+                        onClick={() => void handleRemoveRepresentative(seat)}
+                      >
+                        Clear Seat
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       ) : null}
 

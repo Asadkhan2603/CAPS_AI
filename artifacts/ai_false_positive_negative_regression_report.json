@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-14T05:38:29.429382+00:00",
+  "generated_at": "2026-04-14T09:53:20.867459+00:00",
   "thresholds": {
     "similarity_threshold": 0.8,
     "semantic_advantage_trigger": 0.15,
@@ -12,6 +12,8 @@
     {
       "id": "prompt_heavy_original",
       "kind": "similarity",
+      "source": "default",
+      "bucket": "false_positive",
       "lexical_score": 0.8466,
       "semantic_shadow_score": 0.8327,
       "decision_mode": "assist_only",
@@ -35,6 +37,8 @@
     {
       "id": "short_generic_boilerplate",
       "kind": "similarity",
+      "source": "default",
+      "bucket": "false_positive",
       "lexical_score": 1.0,
       "semantic_shadow_score": 1.0,
       "decision_mode": "suppressed",
@@ -58,6 +62,8 @@
     {
       "id": "paraphrased_copy",
       "kind": "similarity",
+      "source": "default",
+      "bucket": "false_negative",
       "lexical_score": 0.1274,
       "semantic_shadow_score": 0.3069,
       "decision_mode": "assist_only",
@@ -81,6 +87,8 @@
     {
       "id": "mixed_language_copy",
       "kind": "similarity",
+      "source": "default",
+      "bucket": "false_negative",
       "lexical_score": 0.5852,
       "semantic_shadow_score": 0.8618,
       "decision_mode": "assist_only",
@@ -104,6 +112,8 @@
     {
       "id": "low_text_extraction_hold",
       "kind": "similarity",
+      "source": "default",
+      "bucket": "false_negative",
       "lexical_score": 1.0,
       "semantic_shadow_score": 1.0,
       "decision_mode": "suppressed",
@@ -127,20 +137,106 @@
     {
       "id": "formula_heavy_fairness",
       "kind": "evaluation",
+      "source": "default",
+      "bucket": "fairness",
       "baseline_score": 7.23,
       "comparison_score": 7.5,
       "delta": 0.27,
       "max_allowed_delta": 1.25,
       "passed": true,
       "failure_reason": null
+    },
+    {
+      "id": "high_lexical_strong_evidence_flagged",
+      "kind": "similarity",
+      "source": "default",
+      "bucket": "true_positive",
+      "lexical_score": 1.0,
+      "semantic_shadow_score": 1.0,
+      "decision_mode": "flagged",
+      "suppression_reason": null,
+      "semantic_review_candidate": false,
+      "tokenization_mode_applied": "ascii_legacy",
+      "risk_signals": {
+        "prompt_overlap_ratio": 0.0,
+        "generic_overlap_ratio": 0.2,
+        "non_prompt_shared_tokens": 20,
+        "effective_excerpt_count": 1,
+        "min_effective_excerpt_overlap": 1.0,
+        "min_extraction_confidence": 1.0,
+        "low_extraction_block": false,
+        "language_mismatch": false,
+        "boilerplate_risk": false
+      },
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "multilingual_non_latin_semantic_candidate",
+      "kind": "similarity",
+      "source": "default",
+      "bucket": "false_negative",
+      "lexical_score": 0.0,
+      "semantic_shadow_score": 0.0,
+      "decision_mode": "assist_only",
+      "suppression_reason": "semantic_review_candidate",
+      "semantic_review_candidate": true,
+      "tokenization_mode_applied": "unicode_words",
+      "risk_signals": {
+        "prompt_overlap_ratio": 0.0,
+        "generic_overlap_ratio": 0.0,
+        "non_prompt_shared_tokens": 0,
+        "effective_excerpt_count": 0,
+        "min_effective_excerpt_overlap": 0.0,
+        "min_extraction_confidence": 1.0,
+        "low_extraction_block": false,
+        "language_mismatch": true,
+        "boilerplate_risk": true
+      },
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "concise_vs_verbose_fairness_pair",
+      "kind": "evaluation",
+      "source": "default",
+      "bucket": "fairness",
+      "baseline_score": 7.07,
+      "comparison_score": 7.48,
+      "delta": 0.41,
+      "max_allowed_delta": 1.1,
+      "passed": true,
+      "failure_reason": null
+    },
+    {
+      "id": "unicode_vs_english_eval_pair",
+      "kind": "evaluation",
+      "source": "default",
+      "bucket": "fairness",
+      "baseline_score": 7.07,
+      "comparison_score": 5.05,
+      "delta": 2.02,
+      "max_allowed_delta": 2.25,
+      "passed": true,
+      "failure_reason": null
     }
   ],
+  "coverage": {
+    "case_count": 10,
+    "default_case_count": 10,
+    "external_case_count": 0,
+    "minimum_required_case_count": 10,
+    "minimum_required_external_case_count": 0,
+    "meets_minimum_case_count": true,
+    "meets_minimum_external_case_count": true,
+    "dataset_path": null
+  },
   "summary": {
-    "case_count": 6,
-    "passed_count": 6,
+    "case_count": 10,
+    "passed_count": 10,
     "failed_count": 0,
-    "flagged_count": 0,
-    "assist_only_count": 3,
+    "flagged_count": 1,
+    "assist_only_count": 4,
     "suppressed_count": 2
   },
   "recommendations": {

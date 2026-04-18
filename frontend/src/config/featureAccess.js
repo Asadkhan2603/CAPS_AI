@@ -49,6 +49,10 @@ export const FEATURE_ACCESS = {
   courseOfferings: { allowedRoles: ['admin', 'teacher'] },
   classSlots: { allowedRoles: ['admin', 'teacher', 'student'] },
   attendanceRecords: { allowedRoles: ['admin', 'teacher', 'student'] },
+  sectionRepresentative: {
+    allowedRoles: ['student'],
+    requiredStudentExtensions: ['class_representative']
+  },
   assignments: { allowedRoles: ['admin', 'teacher'] },
   submissions: { allowedRoles: ['admin', 'teacher', 'student'] },
   aiModule: { allowedRoles: ['admin', 'teacher'] },

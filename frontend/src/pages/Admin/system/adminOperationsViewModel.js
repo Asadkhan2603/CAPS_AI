@@ -251,12 +251,17 @@ export function buildObservabilityDiagnosticsModel({
   localHistoryData,
   localSnapshots,
   snapshotStore,
+  usersAdminDashboard,
+  usersAdminAlerts,
 }) {
   const requestMetrics = data?.observability?.request_metrics || {};
   const clubsMetrics = data?.observability?.clubs_metrics || {};
   const schedulerMetrics = data?.observability?.scheduler_metrics || {};
   const topPaths = requestMetrics.top_paths_15m || [];
   const clubTopPaths = clubsMetrics.top_paths_15m || [];
+  const usersLatency = usersAdminDashboard?.latency || {};
+  const usersPagination = usersAdminDashboard?.pagination || {};
+  const usersAlerts = Array.isArray(usersAdminAlerts) ? usersAdminAlerts : [];
 
   return {
     summaryCards: [
@@ -303,6 +308,37 @@ export function buildObservabilityDiagnosticsModel({
         detail: 'Recent traffic volume inside the clubs workspace.',
       },
     ],
+    usersAdminCards: [
+      {
+        label: 'Users Requests (Window)',
+        value: usersLatency.request_count ?? 0,
+        detail: 'Requests sampled by users admin dashboard.',
+      },
+      {
+        label: 'Users Error Rate',
+        value: formatPercent(usersLatency.error_rate_pct),
+        detail: 'Users admin list error-rate from dashboard source.',
+      },
+      {
+        label: 'Users P95 Latency',
+        value: formatDuration(usersLatency.p95_duration_ms),
+        detail: 'Users admin list p95 latency.',
+      },
+      {
+        label: 'Users Empty Page Rate',
+        value: formatPercent(usersPagination.empty_page_rate_pct),
+        detail: 'Pagination quality signal for users list.',
+      },
+    ],
+    usersAdminAlertRows: usersAlerts.map((alert) => ({
+      code: alert.code || '-',
+      level: String(alert.level || 'warning').toUpperCase(),
+      message: alert.message || '',
+      threshold:
+        alert.threshold_value !== undefined && alert.current_value !== undefined
+          ? `${alert.current_value} ${alert.comparison || '>'} ${alert.threshold_value}`
+          : '-',
+    })),
     snapshotCards: [
       {
         label: 'Retained Rows',
@@ -340,5 +376,6 @@ export function buildObservabilityDiagnosticsModel({
     clubTopPaths,
     hasTopPaths: topPaths.length > 0,
     hasClubTopPaths: clubTopPaths.length > 0,
+    hasUsersAdminAlerts: usersAlerts.length > 0,
   };
 }

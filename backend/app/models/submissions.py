@@ -4,6 +4,29 @@ from app.core.schema_versions import SUBMISSION_SCHEMA_VERSION, normalize_schema
 from app.services.public_ids import apply_public_identity
 
 
+def _normalize_score(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return max(0.0, min(float(value), 1.0))
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        quality_map = {
+            "excellent": 1.0,
+            "high": 0.9,
+            "good": 0.75,
+            "medium": 0.5,
+            "moderate": 0.5,
+            "low": 0.2,
+            "poor": 0.1,
+        }
+        if normalized in quality_map:
+            return quality_map[normalized]
+        try:
+            return max(0.0, min(float(normalized), 1.0))
+        except ValueError:
+            return None
+    return None
+
+
 def submission_public(document: Dict[str, Any]) -> Dict[str, Any]:
     payload = {
         'id': str(document['_id']),
@@ -25,12 +48,12 @@ def submission_public(document: Dict[str, Any]) -> Dict[str, Any]:
         'schema_version': normalize_schema_version(document.get('schema_version'), default=SUBMISSION_SCHEMA_VERSION),
         'similarity_score': document.get('similarity_score'),
         'extracted_text': document.get('extracted_text'),
-        'extraction_quality': document.get('extraction_quality'),
+        'extraction_quality': _normalize_score(document.get('extraction_quality')),
         'ocr_attempted': document.get('ocr_attempted'),
         'ocr_provider': document.get('ocr_provider'),
         'ocr_chars_added': document.get('ocr_chars_added'),
         'page_count': document.get('page_count'),
-        'extraction_confidence': document.get('extraction_confidence'),
+        'extraction_confidence': _normalize_score(document.get('extraction_confidence')),
         'low_text_reason': document.get('low_text_reason'),
         'ocr_result_state': document.get('ocr_result_state'),
         'ocr_retry_count': document.get('ocr_retry_count'),

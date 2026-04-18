@@ -227,7 +227,7 @@ async def get_ai_runtime_settings() -> dict[str, Any]:
 
 
 async def get_ai_semantic_rollout_settings(*, database: Any | None = None) -> dict[str, Any]:
-    active_db = database or db
+    active_db = database if database is not None else db
     defaults = _default_semantic_rollout_settings()
     record = await active_db.settings.find_one({"key": AI_SEMANTIC_ROLLOUT_SETTINGS_KEY})
     overrides = normalize_semantic_rollout_overrides(record.get("value") if record else {}, base=defaults)
@@ -235,7 +235,7 @@ async def get_ai_semantic_rollout_settings(*, database: Any | None = None) -> di
 
 
 async def get_ai_semantic_rollout_history(*, database: Any | None = None) -> dict[str, Any]:
-    active_db = database or db
+    active_db = database if database is not None else db
     defaults = _default_semantic_rollout_history()
     record = await active_db.settings.find_one({"key": AI_SEMANTIC_ROLLOUT_HISTORY_KEY})
     value = record.get("value") if record else {}
@@ -271,7 +271,7 @@ async def save_ai_semantic_rollout_settings(
     actor_user_id: str | None = None,
     database: Any | None = None,
 ) -> dict[str, Any]:
-    active_db = database or db
+    active_db = database if database is not None else db
     current = await get_ai_semantic_rollout_settings(database=active_db)
     merged = {**current, **(payload or {})}
     normalized = normalize_semantic_rollout_overrides(merged, base=current)
@@ -296,7 +296,7 @@ async def save_ai_semantic_rollout_history(
     actor_user_id: str | None = None,
     database: Any | None = None,
 ) -> dict[str, Any]:
-    active_db = database or db
+    active_db = database if database is not None else db
     history = _default_semantic_rollout_history()
     history["last_version"] = _normalize_int(payload.get("last_version"), 0, minimum=0, maximum=1_000_000)
     history["items"] = list(payload.get("items") or [])

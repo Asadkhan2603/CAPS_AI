@@ -1,9 +1,12 @@
 from typing import Any
 
+from bson import ObjectId
+
 from app.models.ai_evaluation_runs import ai_evaluation_run_public
 from app.services.ai_quality_gates import build_ai_quality_gate_snapshot
 from app.services.ai_jobs import serialize_ai_job
 from app.services.ai_similarity_queue_metrics import build_similarity_queue_forecast, build_similarity_queue_metrics
+from app.services.public_ids import build_display_label, build_public_id, build_user_label
 from app.services.reviewer_outcome_calibration import build_reviewer_outcome_calibration_report
 
 
@@ -168,6 +171,42 @@ def _serialize_empty_scope_response(
     }
 
 
+def _build_submission_label(document: dict[str, Any] | None, submission_id: Any) -> str | None:
+    if isinstance(document, dict):
+        public_id = document.get("public_id") or build_public_id("submission", document)
+        label = build_display_label(
+            "submission",
+            document,
+            public_id=public_id,
+            display_name=document.get("original_filename"),
+        )
+        if label:
+            return str(label)
+    if isinstance(submission_id, str) and submission_id.strip():
+        if ObjectId.is_valid(submission_id):
+            return build_public_id("submission", {"_id": submission_id}) or submission_id
+        return submission_id
+    return None
+
+
+def _build_assignment_label(document: dict[str, Any] | None, assignment_id: Any) -> str | None:
+    if isinstance(document, dict):
+        public_id = document.get("public_id") or build_public_id("assignment", document)
+        label = build_display_label(
+            "assignment",
+            document,
+            public_id=public_id,
+            display_name=document.get("title"),
+        )
+        if label:
+            return str(label)
+    if isinstance(assignment_id, str) and assignment_id.strip():
+        if ObjectId.is_valid(assignment_id):
+            return build_public_id("assignment", {"_id": assignment_id}) or assignment_id
+        return assignment_id
+    return None
+
+
 async def build_ai_operations_overview_payload(
     *,
     database: Any,
@@ -248,6 +287,81 @@ async def build_ai_operations_overview_payload(
     ).sort("created_at", -1).limit(limit).to_list(length=limit)
     recent_chat_threads = await database.ai_evaluation_chats.find(chat_scope_query).sort("updated_at", -1).limit(limit).to_list(length=limit)
     recent_jobs = await database.ai_jobs.find(job_scope_query).sort("requested_at", -1).limit(limit).to_list(length=limit)
+
+    recent_run_submission_ids = {
+        str(item.get("submission_id"))
+        for item in recent_evaluation_runs
+        if isinstance(item.get("submission_id"), str) and ObjectId.is_valid(str(item.get("submission_id")))
+    }
+    recent_similarity_submission_ids = {
+        str(value)
+        for item in recent_similarity_flags
+        for value in (
+            item.get("source_submission_id"),
+            item.get("matched_submission_id"),
+        )
+        if isinstance(value, str) and ObjectId.is_valid(str(value))
+    }
+    recent_assignment_ids = {
+        str(value)
+        for item in recent_similarity_flags
+        for value in (
+            item.get("source_assignment_id"),
+            item.get("matched_assignment_id"),
+        )
+        if isinstance(value, str) and ObjectId.is_valid(str(value))
+    }
+    recent_chat_assignment_ids = {
+        str(item.get("exam_id"))
+        for item in recent_chat_threads
+        if isinstance(item.get("exam_id"), str) and ObjectId.is_valid(str(item.get("exam_id")))
+    }
+    recent_chat_student_ids = {
+        str(item.get("student_id"))
+        for item in recent_chat_threads
+        if isinstance(item.get("student_id"), str) and ObjectId.is_valid(str(item.get("student_id")))
+    }
+
+    submission_lookup_ids = sorted(recent_run_submission_ids | recent_similarity_submission_ids)
+    assignment_lookup_ids = sorted(recent_assignment_ids | recent_chat_assignment_ids)
+    user_lookup_ids = sorted(recent_chat_student_ids)
+
+    submission_lookup = {}
+    if submission_lookup_ids:
+        submission_docs = await database.submissions.find(
+            {"_id": {"$in": [ObjectId(item) for item in submission_lookup_ids]}},
+            {"_id": 1, "public_id": 1, "original_filename": 1},
+        ).to_list(length=len(submission_lookup_ids))
+        submission_lookup = {
+            str(item.get("_id")): item
+            for item in submission_docs
+            if item.get("_id")
+        }
+
+    assignment_lookup = {}
+    if assignment_lookup_ids:
+        assignment_docs = await database.assignments.find(
+            {"_id": {"$in": [ObjectId(item) for item in assignment_lookup_ids]}},
+            {"_id": 1, "public_id": 1, "title": 1},
+        ).to_list(length=len(assignment_lookup_ids))
+        assignment_lookup = {
+            str(item.get("_id")): item
+            for item in assignment_docs
+            if item.get("_id")
+        }
+
+    user_lookup = {}
+    if user_lookup_ids:
+        user_docs = await database.users.find(
+            {"_id": {"$in": [ObjectId(item) for item in user_lookup_ids]}},
+            {"_id": 1, "full_name": 1, "email": 1},
+        ).to_list(length=len(user_lookup_ids))
+        user_lookup = {
+            str(item.get("_id")): item
+            for item in user_docs
+            if item.get("_id")
+        }
+
     reviewer_outcome_calibration = await build_reviewer_outcome_calibration_report(
         database=database,
         similarity_scope_query=similarity_scope_query,
@@ -279,6 +393,10 @@ async def build_ai_operations_overview_payload(
         "recent_evaluation_runs": [
             {
                 **ai_evaluation_run_public(item),
+                "submission_label": _build_submission_label(
+                    submission_lookup.get(str(item.get("submission_id"))),
+                    item.get("submission_id"),
+                ),
                 "created_at": serialize_dt(item.get("created_at")),
             }
             for item in recent_evaluation_runs
@@ -288,8 +406,24 @@ async def build_ai_operations_overview_payload(
                 "id": str(item.get("_id")),
                 "source_submission_id": item.get("source_submission_id"),
                 "matched_submission_id": item.get("matched_submission_id"),
+                "source_submission_label": _build_submission_label(
+                    submission_lookup.get(str(item.get("source_submission_id"))),
+                    item.get("source_submission_id"),
+                ),
+                "matched_submission_label": _build_submission_label(
+                    submission_lookup.get(str(item.get("matched_submission_id"))),
+                    item.get("matched_submission_id"),
+                ),
                 "source_assignment_id": item.get("source_assignment_id"),
                 "matched_assignment_id": item.get("matched_assignment_id"),
+                "source_assignment_label": _build_assignment_label(
+                    assignment_lookup.get(str(item.get("source_assignment_id"))),
+                    item.get("source_assignment_id"),
+                ),
+                "matched_assignment_label": _build_assignment_label(
+                    assignment_lookup.get(str(item.get("matched_assignment_id"))),
+                    item.get("matched_assignment_id"),
+                ),
                 "score": item.get("score"),
                 "threshold": item.get("threshold"),
                 "created_at": serialize_dt(item.get("created_at")),
@@ -302,6 +436,15 @@ async def build_ai_operations_overview_payload(
                 "teacher_id": item.get("teacher_id"),
                 "student_id": item.get("student_id"),
                 "exam_id": item.get("exam_id"),
+                "student_label": build_user_label(
+                    item.get("student_id"),
+                    full_name=(user_lookup.get(str(item.get("student_id"))) or {}).get("full_name"),
+                    email=(user_lookup.get(str(item.get("student_id"))) or {}).get("email"),
+                ),
+                "assignment_label": _build_assignment_label(
+                    assignment_lookup.get(str(item.get("exam_id"))),
+                    item.get("exam_id"),
+                ),
                 "question_id": item.get("question_id"),
                 "message_count": len(item.get("messages") or []),
                 "last_role": (item.get("messages") or [{}])[-1].get("role"),

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, List
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.config import settings
@@ -31,9 +32,19 @@ from app.services.academic_students import (
     resolve_student_academic_context_for_user,
 )
 from app.services.attendance_summary import build_attendance_analytics, build_attendance_section_summary
-from app.services.class_slot_read_models import sync_class_slot_read_models_for_offering_query, sync_class_slot_read_models_for_query
+from app.services.course_offering_read_models import hydrate_course_offerings_from_read_models
 
 router = APIRouter()
+
+
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_value(item) for item in value]
+    return value
 
 
 async def _resolve_student(student_id: str) -> dict | None:
@@ -157,6 +168,86 @@ async def _attendance_percent_for_student(*, student: dict, section_id: str, gro
     return round((present_like / total) * 100, 2) if total else None
 
 
+async def _attendance_percent_map_for_students(*, students: list[dict], section_id: str) -> dict[str, float | None]:
+    if not students:
+        return {}
+
+    offerings = await db.course_offerings.find(
+        {"section_id": section_id, "is_active": True},
+        {"_id": 1, "group_id": 1},
+    ).to_list(length=2000)
+    if not offerings:
+        return {str(student["_id"]): None for student in students if student.get("_id")}
+
+    offering_group_map = {
+        str(item["_id"]): item.get("group_id")
+        for item in offerings
+        if item.get("_id")
+    }
+    offering_ids = list(offering_group_map.keys())
+    if not offering_ids:
+        return {str(student["_id"]): None for student in students if student.get("_id")}
+
+    slots = await db.class_slots.find(
+        {"course_offering_id": {"$in": offering_ids}, "is_active": True},
+        {"_id": 1, "course_offering_id": 1},
+    ).to_list(length=5000)
+    if not slots:
+        return {str(student["_id"]): None for student in students if student.get("_id")}
+
+    allowed_slots_by_group: dict[str | None, set[str]] = {}
+    all_slot_ids: list[str] = []
+    for slot in slots:
+        slot_id = str(slot.get("_id") or "")
+        offering_id = str(slot.get("course_offering_id") or "")
+        if not slot_id or not offering_id:
+            continue
+        all_slot_ids.append(slot_id)
+        offering_group_id = offering_group_map.get(offering_id)
+        allowed_slots_by_group.setdefault(offering_group_id, set()).add(slot_id)
+
+    if not all_slot_ids:
+        return {str(student["_id"]): None for student in students if student.get("_id")}
+
+    student_ids = [str(student["_id"]) for student in students if student.get("_id")]
+    records = await db.attendance_records.find(
+        {"class_slot_id": {"$in": all_slot_ids}, "student_id": {"$in": student_ids}},
+        {"class_slot_id": 1, "student_id": 1, "status": 1},
+    ).to_list(length=20000)
+
+    records_by_student: dict[str, list[dict]] = {}
+    for record in records:
+        student_id = str(record.get("student_id") or "")
+        if not student_id:
+            continue
+        records_by_student.setdefault(student_id, []).append(record)
+
+    percent_map: dict[str, float | None] = {}
+    default_slots = allowed_slots_by_group.get(None, set())
+    for student in students:
+        student_id = str(student.get("_id") or "")
+        if not student_id:
+            continue
+        allowed_slot_ids = set(default_slots)
+        student_group_id = student.get("group_id")
+        if student_group_id in allowed_slots_by_group:
+            allowed_slot_ids.update(allowed_slots_by_group[student_group_id])
+
+        student_records = [
+            record
+            for record in records_by_student.get(student_id, [])
+            if record.get("class_slot_id") in allowed_slot_ids
+        ]
+        if not student_records:
+            percent_map[student_id] = None
+            continue
+
+        present_like = sum(1 for item in student_records if item.get("status") in {"present", "late", "excused"})
+        percent_map[student_id] = round((present_like / len(student_records)) * 100, 2)
+
+    return percent_map
+
+
 def _auto_logout_cutoff(clock_in_at: datetime) -> datetime:
     return clock_in_at + timedelta(hours=max(1, settings.internship_auto_logout_hours))
 
@@ -249,35 +340,68 @@ async def mark_attendance_bulk(
 async def attendance_marking_lookups(
     current_user=Depends(require_roles(["admin", "teacher"])),
 ) -> dict:
-    slot_rows: list[dict] = []
-    if current_user.get("role") == "admin":
-        await sync_class_slot_read_models_for_query(query={"is_active": True}, database=db)
-        slot_rows = await db.class_slot_read_models.find({"is_active": True}).to_list(length=5000)
-    else:
+    offering_query: dict[str, Any] = {"is_active": True}
+    if current_user.get("role") != "admin":
         teacher_user_id = str(current_user.get("_id"))
-        coordinator_section_ids = await db.classes.distinct(
-            "_id",
+        coordinator_rows = await db.classes.find(
             {"class_coordinator_user_id": teacher_user_id, "is_active": True},
-        )
-        offering_rows = await db.course_offering_read_models.find(
-            {
-                "is_active": True,
-                "$or": [
-                    {"teacher_user_id": teacher_user_id},
-                    {"section_id": {"$in": [str(item) for item in coordinator_section_ids if item]}},
-                ],
-            }
-        ).to_list(length=5000)
-        offering_ids = [str(item["_id"]) for item in offering_rows if item.get("_id")]
-        if offering_ids:
-            await sync_class_slot_read_models_for_offering_query(
-                offering_query={"_id": {"$in": [parse_object_id(value) for value in offering_ids]}},
-                database=db,
-            )
-            slot_rows = await db.class_slot_read_models.find(
-                {"course_offering_id": {"$in": offering_ids}, "is_active": True}
-            ).to_list(length=5000)
+            {"_id": 1},
+        ).to_list(length=2000)
+        coordinator_section_ids = [str(item.get("_id")) for item in coordinator_rows if item.get("_id")]
+        scope_clauses: list[dict[str, Any]] = [{"teacher_user_id": teacher_user_id}]
+        if coordinator_section_ids:
+            scope_clauses.append({"section_id": {"$in": coordinator_section_ids}})
 
+        if len(scope_clauses) == 1:
+            offering_query.update(scope_clauses[0])
+        else:
+            offering_query["$or"] = scope_clauses
+
+    offering_rows = await db.course_offerings.find(offering_query).to_list(length=5000)
+    if not offering_rows:
+        return {"items": []}
+
+    hydrated_offerings = await hydrate_course_offerings_from_read_models(
+        source_offerings=offering_rows,
+        database=db,
+    )
+    offering_map = {
+        str(item.get("_id")): item
+        for item in hydrated_offerings
+        if item.get("_id")
+    }
+    offering_ids = list(offering_map.keys())
+    if not offering_ids:
+        return {"items": []}
+
+    slot_rows = await db.class_slots.find(
+        {"course_offering_id": {"$in": offering_ids}, "is_active": True}
+    ).to_list(length=5000)
+    slot_rows = [
+        {
+            **item,
+            "class_slot_id": str(item.get("_id") or ""),
+            "course_offering_id": str(item.get("course_offering_id") or ""),
+            "subject_id": item.get("subject_id") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("subject_id"),
+            "subject_name": item.get("subject_name") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("subject_name"),
+            "subject_code": item.get("subject_code") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("subject_code"),
+            "teacher_user_id": item.get("teacher_user_id") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("teacher_user_id"),
+            "teacher_name": item.get("teacher_name") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("teacher_name"),
+            "batch_id": item.get("batch_id") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("batch_id"),
+            "batch_name": item.get("batch_name") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("batch_name"),
+            "semester_id": item.get("semester_id") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("semester_id"),
+            "semester_label": item.get("semester_label") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("semester_label"),
+            "section_id": item.get("section_id") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("section_id"),
+            "section_name": item.get("section_name") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("section_name"),
+            "group_id": item.get("group_id") if item.get("group_id") is not None else (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("group_id"),
+            "group_name": item.get("group_name") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("group_name"),
+            "academic_year": item.get("academic_year") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("academic_year"),
+            "offering_type": item.get("offering_type") or (offering_map.get(str(item.get("course_offering_id") or "")) or {}).get("offering_type"),
+        }
+        for item in slot_rows
+    ]
+
+    slot_rows = [_json_safe_value(item) for item in slot_rows]
     slot_rows.sort(key=lambda item: (str(item.get("section_name") or ""), str(item.get("day") or ""), str(item.get("start_time") or "")))
     return {"items": slot_rows}
 
@@ -290,12 +414,15 @@ async def attendance_roster(
     slot, offering = await _get_slot_with_offering(class_slot_id)
     await _ensure_mark_access(current_user=current_user, offering=offering)
 
-    await db.class_slot_read_models.find_one({"_id": parse_object_id(class_slot_id)})  # warm fake db compatibility
     read_slot = await db.class_slot_read_models.find_one({"_id": parse_object_id(class_slot_id)}) or slot
     students = await list_students_for_section(
         offering["section_id"],
         group_id=offering.get("group_id"),
         database=db,
+    )
+    attendance_percent_map = await _attendance_percent_map_for_students(
+        students=students,
+        section_id=offering["section_id"],
     )
     student_ids = [str(item["_id"]) for item in students if item.get("_id")]
     existing_rows = await db.attendance_records.find(
@@ -321,11 +448,7 @@ async def attendance_roster(
                 group_name=read_slot.get("group_name"),
                 status=status,
                 note=existing.get("note") if existing else None,
-                attendance_percent=await _attendance_percent_for_student(
-                    student=student,
-                    section_id=offering["section_id"],
-                    group_id=student.get("group_id"),
-                ),
+                attendance_percent=attendance_percent_map.get(str(student["_id"])),
             )
         )
 

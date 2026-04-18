@@ -7,8 +7,14 @@ class SimilarityLogOut(BaseModel):
     id: str
     source_submission_id: str
     matched_submission_id: str
+    source_submission_public_id: str | None = None
+    matched_submission_public_id: str | None = None
     source_assignment_id: str | None = None
     matched_assignment_id: str | None = None
+    source_assignment_label: str | None = None
+    matched_assignment_label: str | None = None
+    source_submission_summary: dict | None = None
+    matched_submission_summary: dict | None = None
     source_class_id: str | None = None
     matched_class_id: str | None = None
     visible_to_extensions: list[str] = Field(default_factory=list)

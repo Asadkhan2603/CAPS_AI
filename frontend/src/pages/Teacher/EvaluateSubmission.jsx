@@ -144,14 +144,22 @@ export default function EvaluateSubmissionPage() {
       const submissionData = submissionRes.data;
       setSubmission(submissionData);
 
-      const [assignmentRes, usersRes, evalRes] = await Promise.all([
+      const [assignmentRes, evalRes] = await Promise.all([
         apiClient.get(`/assignments/${submissionData.assignment_id}`),
-        apiClient.get('/users/'),
         apiClient.get('/evaluations/', { params: { submission_id: submissionId, skip: 0, limit: 1 } })
       ]);
       setAssignment(assignmentRes.data || null);
-      const matchedStudent = (usersRes.data || []).find((item) => item.id === submissionData.student_user_id);
-      setStudent(matchedStudent || null);
+      if (user?.role === 'admin') {
+        try {
+          const usersRes = await apiClient.get('/users/');
+          const matchedStudent = (usersRes.data || []).find((item) => item.id === submissionData.student_user_id);
+          setStudent(matchedStudent || null);
+        } catch {
+          setStudent(null);
+        }
+      } else {
+        setStudent(null);
+      }
       const existingEvaluation = (evalRes.data || [])[0];
       applyEvaluation(existingEvaluation || null);
     } catch (err) {

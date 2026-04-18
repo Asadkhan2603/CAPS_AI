@@ -28,6 +28,8 @@ export default function AdminObservabilityPage() {
     persistedHistoryData,
     setIsAutoRefresh,
     snapshotStore,
+    usersAdminAlerts,
+    usersAdminDashboard,
   } = useAdminSystemHealth({ pushToast });
 
   const model = buildObservabilityDiagnosticsModel({
@@ -37,6 +39,8 @@ export default function AdminObservabilityPage() {
     localHistoryData,
     localSnapshots,
     snapshotStore,
+    usersAdminDashboard,
+    usersAdminAlerts,
   });
   const initialLoading = !data && !error && isRefreshing;
 
@@ -155,6 +159,42 @@ export default function AdminObservabilityPage() {
               emptyMessage="No recent clubs workspace path activity is available in the latest health payload."
             />
           </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Users Admin Diagnostics"
+        description="Users workspace dashboard metrics and routed alert state from /users/admin/dashboard."
+      >
+        <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {model.usersAdminCards.map((card) => (
+              <MetricCard key={card.label} {...card} />
+            ))}
+          </div>
+          {model.hasUsersAdminAlerts ? (
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900/60">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Users Alert State</p>
+              {model.usersAdminAlertRows.map((alert) => (
+                <div key={`${alert.code}-${alert.level}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium text-slate-900 dark:text-slate-100">{alert.code}</p>
+                    <Badge variant={alert.level === 'CRITICAL' ? 'danger' : 'warning'}>{alert.level}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{alert.message}</p>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    Threshold check: {alert.threshold}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              compact
+              title="No active users-admin alerts"
+              description="Users workspace thresholds are currently within configured bounds."
+            />
+          )}
         </div>
       </SectionCard>
 

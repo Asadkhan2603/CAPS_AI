@@ -20,6 +20,7 @@ from app.services.system_health_snapshots import (
     get_system_health_snapshot_store_status,
     persist_system_health_snapshot,
 )
+from app.services.users_admin_observability import build_users_admin_dashboard
 
 router = APIRouter()
 _APP_BOOT_TIME = datetime.now(timezone.utc)
@@ -56,6 +57,8 @@ async def admin_system_health(
         if cached_payload:
             cached_payload["snapshot_served_from"] = "snapshot"
             cached_payload["snapshot_age_seconds"] = snapshot_age_seconds
+            cached_payload["users_admin_dashboard"] = cached_payload.get("users_admin_dashboard")
+            cached_payload["users_admin_alerts"] = cached_payload.get("users_admin_alerts") or []
             cached_payload["alert_routing"] = {
                 **(cached_payload.get("alert_routing") or {}),
                 "notifications_created": 0,
@@ -147,6 +150,22 @@ async def admin_system_health(
         scheduler_lock=scheduler_lock_doc,
         snapshot=observability,
     )
+    users_admin_dashboard = None
+    users_admin_alerts: list[dict] = []
+    try:
+        users_admin_dashboard = await build_users_admin_dashboard(window_minutes=60, bucket_minutes=5, database=db)
+        users_admin_alerts = [alert.model_dump(mode="json") for alert in (users_admin_dashboard.alerts or [])]
+        alerts.extend(users_admin_alerts)
+    except Exception:
+        users_admin_dashboard = None
+        users_admin_alerts = []
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "users.admin.dashboard.unavailable",
+                "message": "Users admin dashboard aggregation is currently unavailable.",
+            }
+        )
 
     payload = {
         'timestamp': now,
@@ -155,6 +174,8 @@ async def admin_system_health(
         'scheduler_lock': scheduler_lock,
         'scheduled_notice_dispatch': scheduled_notice_dispatch,
         'observability': observability,
+        'users_admin_dashboard': users_admin_dashboard.model_dump(mode="json") if users_admin_dashboard else None,
+        'users_admin_alerts': users_admin_alerts,
         'alerts': alerts,
         'alert_count': len(alerts),
         'uptime_seconds': int((now - _APP_BOOT_TIME).total_seconds()),

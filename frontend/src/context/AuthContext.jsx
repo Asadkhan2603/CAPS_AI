@@ -61,6 +61,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => parseStoredUser());
   const [sessionBootstrap, setSessionBootstrap] = useState(() => parseStoredBootstrap());
   const [checking, setChecking] = useState(Boolean(readAuthStorage(TOKEN_KEY)));
+  const [loginAnomaly, setLoginAnomaly] = useState(null);
 
   const clearClientSession = useCallback(() => {
     clearAuthStorage();
@@ -193,12 +194,22 @@ export function AuthProvider({ children }) {
     return me;
   }, [token, applySessionBootstrap, clearClientSession, isSessionExpired]);
 
-  const login = useCallback(async (email, password) => {
-    const response = await apiClient.post('/auth/login', { email, password });
-    const nextToken = response.data.access_token;
-    const nextRefreshToken = response.data.refresh_token || '';
-    const nextUser = response.data.user;
+  const persistAuthenticatedSession = useCallback(async (loginPayload) => {
+    const nextToken = loginPayload?.access_token || '';
+    const nextRefreshToken = loginPayload?.refresh_token || '';
+    const nextUser = loginPayload?.user || null;
+    const anomaly = loginPayload?.anomaly || null;
     const now = Date.now();
+
+    if (!nextToken || !nextUser) {
+      throw new Error('Authenticated session payload is incomplete');
+    }
+
+    if (anomaly?.new_device || anomaly?.new_network) {
+      setLoginAnomaly(anomaly);
+    } else {
+      setLoginAnomaly(null);
+    }
 
     writeAuthStorage(TOKEN_KEY, nextToken);
     if (nextRefreshToken) {
@@ -210,6 +221,7 @@ export function AuthProvider({ children }) {
     writeAuthStorage(SESSION_STARTED_AT_KEY, String(now));
     writeAuthStorage(LAST_ACTIVITY_AT_KEY, String(now));
     setToken(nextToken);
+
     try {
       const payload = await fetchSessionBootstrap(apiClient);
       const bootstrapUser = applySessionBootstrap(payload);
@@ -229,6 +241,54 @@ export function AuthProvider({ children }) {
     }
   }, [applySessionBootstrap]);
 
+  const login = useCallback(async (email, password) => {
+    const response = await apiClient.post('/auth/login', { email, password });
+    const payload = response?.data || {};
+
+    if (payload?.mfa_required) {
+      return {
+        mfaRequired: true,
+        pendingMfaToken: payload.pending_mfa_token,
+        mfaMethods: payload.mfa_methods || [],
+        primaryMethod: payload.mfa_primary_method || null,
+        challenge: payload.mfa_challenge || null,
+        user: payload.user || null
+      };
+    }
+
+    const user = await persistAuthenticatedSession(payload);
+    return {
+      mfaRequired: false,
+      user
+    };
+  }, [persistAuthenticatedSession]);
+
+  const completeMfaLogin = useCallback(async ({ pendingMfaToken, method, code }) => {
+    const response = await apiClient.post('/auth/mfa/verify', {
+      pending_mfa_token: pendingMfaToken,
+      mfa_method: method,
+      mfa_code: code
+    });
+    const user = await persistAuthenticatedSession(response.data);
+    return { user };
+  }, [persistAuthenticatedSession]);
+
+  const beginWebAuthnMfaLogin = useCallback(async (pendingMfaToken) => {
+    const response = await apiClient.post('/auth/mfa/webauthn/authenticate/begin', {
+      pending_mfa_token: pendingMfaToken
+    });
+    return response.data;
+  }, []);
+
+  const completeWebAuthnMfaLogin = useCallback(async ({ pendingMfaToken, credential }) => {
+    const response = await apiClient.post('/auth/mfa/webauthn/authenticate/finish', {
+      pending_mfa_token: pendingMfaToken,
+      credential
+    });
+    const user = await persistAuthenticatedSession(response.data);
+    return { user };
+  }, [persistAuthenticatedSession]);
+
   const register = useCallback((payload) => apiClient.post('/auth/register', payload), []);
 
   const logout = useCallback(async () => {
@@ -247,14 +307,31 @@ export function AuthProvider({ children }) {
       user,
       sessionBootstrap,
       checking,
+      loginAnomaly,
       isAuthenticated: Boolean(token),
       login,
+      completeMfaLogin,
+      beginWebAuthnMfaLogin,
+      completeWebAuthnMfaLogin,
       register,
       logout,
       refreshUser,
       refreshBootstrap: refreshUser
     }),
-    [token, user, sessionBootstrap, checking, login, register, logout, refreshUser]
+    [
+      token,
+      user,
+      sessionBootstrap,
+      checking,
+      loginAnomaly,
+      login,
+      completeMfaLogin,
+      beginWebAuthnMfaLogin,
+      completeWebAuthnMfaLogin,
+      register,
+      logout,
+      refreshUser
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

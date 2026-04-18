@@ -11,6 +11,7 @@ import ProfilePage from '../pages/ProfilePage';
 
 const LoginPage = lazyWithRetry(() => import('../pages/LoginPage'));
 const RegisterPage = lazyWithRetry(() => import('../pages/RegisterPage'));
+const ForgotPasswordPage = lazyWithRetry(() => import('../pages/ForgotPasswordPage'));
 const DashboardPage = lazyWithRetry(() => import('../pages/DashboardPage'));
 const AdminDashboardPage = lazyWithRetry(() => import('../pages/Admin/AdminDashboardPage'));
 const AdminOnboardingPage = lazyWithRetry(() => import('../pages/Admin/AdminOnboardingPage'));
@@ -40,6 +41,7 @@ const SubjectsPage = lazyWithRetry(() => import('../pages/SubjectsPage'));
 const CourseOfferingsPage = lazyWithRetry(() => import('../pages/CourseOfferingsPage'));
 const ClassSlotsPage = lazyWithRetry(() => import('../pages/ClassSlotsPage'));
 const AttendanceRecordsPage = lazyWithRetry(() => import('../pages/AttendanceRecordsPage'));
+const SectionRepresentativePage = lazyWithRetry(() => import('../pages/SectionRepresentativePage'));
 const AssignmentsPage = lazyWithRetry(() => import('../pages/AssignmentsPage'));
 const SubmissionsPage = lazyWithRetry(() => import('../pages/SubmissionsPage'));
 const AIModulePage = lazyWithRetry(() => import('../pages/AIModulePage'));
@@ -92,6 +94,7 @@ const workspaceRouteMap = {
   '/course-offerings': { access: FEATURE_ACCESS.courseOfferings, element: <CourseOfferingsPage /> },
   '/class-slots': { access: FEATURE_ACCESS.classSlots, element: <ClassSlotsPage /> },
   '/attendance-records': { access: FEATURE_ACCESS.attendanceRecords, element: <AttendanceRecordsPage /> },
+  '/section-representative': { access: FEATURE_ACCESS.sectionRepresentative, element: <SectionRepresentativePage /> },
   '/assignments': { access: FEATURE_ACCESS.assignments, element: <AssignmentsPage /> },
   '/submissions': { access: FEATURE_ACCESS.submissions, element: <SubmissionsPage /> },
   '/ai-operations': { access: FEATURE_ACCESS.aiModule, element: <AIModulePage /> },
@@ -180,6 +183,7 @@ export function AppRoutes() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
 
         <Route
           element={
@@ -245,6 +249,7 @@ export function AppRoutes() {
           <Route path="/course-offerings" element={<WorkspaceRedirect path="/course-offerings" />} />
           <Route path="/class-slots" element={<WorkspaceRedirect path="/class-slots" />} />
           <Route path="/attendance-records" element={<WorkspaceRedirect path="/attendance-records" />} />
+          <Route path="/section-representative" element={<WorkspaceRedirect path="/section-representative" />} />
           <Route path="/assignments" element={<WorkspaceRedirect path="/assignments" />} />
           <Route path="/submissions" element={<WorkspaceRedirect path="/submissions" />} />
           <Route path="/ai-operations" element={<WorkspaceRedirect path="/ai-operations" />} />

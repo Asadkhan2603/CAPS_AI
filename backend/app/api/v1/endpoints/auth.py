@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
@@ -316,4 +316,340 @@ async def get_profile_avatar(
     return FileResponse(
         file_path,
         headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=86400"},
+    )
+
+
+# =====================
+# MFA Endpoints (Phase 5)
+# =====================
+
+@router.post("/mfa/totp/enable")
+async def enable_totp(current_user=Depends(get_current_user)) -> dict:
+    """Generate TOTP secret and QR code for enabling TOTP-based MFA."""
+    return await auth_service.enable_totp(str(current_user["_id"]))
+
+
+@router.post("/mfa/totp/confirm")
+async def confirm_totp(
+    otp_code: str = Body(..., embed=True),
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Confirm TOTP setup by verifying an OTP code."""
+    return await auth_service.confirm_totp(str(current_user["_id"]), otp_code)
+
+
+@router.post("/mfa/totp/disable")
+async def disable_totp(current_user=Depends(get_current_user)) -> dict:
+    """Disable TOTP for the current user."""
+    return await auth_service.disable_totp(str(current_user["_id"]))
+
+
+@router.post("/mfa/verify")
+async def verify_pending_mfa(
+    pending_mfa_token: str = Body(..., embed=True),
+    mfa_method: str = Body(..., embed=True),
+    mfa_code: str = Body(..., embed=True),
+    request: Request = None,
+) -> Token:
+    """Complete login-time MFA verification and issue full session tokens."""
+    return await auth_service.verify_pending_mfa(
+        pending_mfa_token=pending_mfa_token,
+        mfa_method=mfa_method,
+        mfa_code=mfa_code,
+        user_agent=request.headers.get("user-agent") if request else None,
+        ip_address=(request.headers.get("x-forwarded-for") if request else None) or (request.client.host if request and request.client else None),
+        device_fingerprint=request.headers.get("x-device-fingerprint") if request else None,
+    )
+
+
+@router.post("/mfa/sms/enroll/send")
+async def send_sms_otp(
+    phone_number: str = Body(..., embed=True),
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Send SMS OTP for phone enrollment."""
+    return await auth_service.send_sms_enrollment_code(str(current_user["_id"]), phone_number)
+
+
+@router.post("/mfa/sms/enroll/verify")
+async def verify_sms_enrollment(
+    otp_code: str = Body(..., embed=True),
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Verify SMS enrollment OTP and enable SMS MFA."""
+    return await auth_service.verify_sms_enrollment_code(str(current_user["_id"]), otp_code)
+
+
+@router.post("/mfa/sms/disable")
+async def disable_sms_mfa(current_user=Depends(get_current_user)) -> dict:
+    """Disable SMS MFA for the current user."""
+    return await auth_service.disable_sms(str(current_user["_id"]))
+
+
+@router.post("/mfa/sms/challenge/send")
+async def send_sms_login_challenge(
+    pending_mfa_token: str = Body(..., embed=True),
+) -> dict:
+    """Send SMS challenge for a pending MFA login session."""
+    return await auth_service.send_sms_login_challenge(pending_mfa_token, resend=False)
+
+
+@router.post("/mfa/sms/challenge/resend")
+async def resend_sms_login_challenge(
+    pending_mfa_token: str = Body(..., embed=True),
+) -> dict:
+    """Resend SMS challenge for a pending MFA login session."""
+    return await auth_service.send_sms_login_challenge(pending_mfa_token, resend=True)
+
+
+@router.post("/mfa/webauthn/register/begin")
+async def begin_webauthn_register(
+    label: str | None = Body(default=None, embed=True),
+    authenticator_attachment: str | None = Body(default=None, embed=True),
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Begin WebAuthn registration ceremony for account settings."""
+    return await auth_service.begin_webauthn_registration(
+        str(current_user["_id"]),
+        label=label,
+        authenticator_attachment=authenticator_attachment,
+    )
+
+
+@router.post("/mfa/webauthn/register/finish")
+async def finish_webauthn_register(
+    credential: dict = Body(..., embed=True),
+    label: str | None = Body(default=None, embed=True),
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Finish WebAuthn registration ceremony and persist credential."""
+    return await auth_service.finish_webauthn_registration(
+        str(current_user["_id"]),
+        credential=credential,
+        label=label,
+    )
+
+
+@router.post("/mfa/webauthn/authenticate/begin")
+async def begin_webauthn_authentication(
+    pending_mfa_token: str = Body(..., embed=True),
+) -> dict:
+    """Begin WebAuthn authentication ceremony for pending login MFA."""
+    return await auth_service.begin_webauthn_authentication(pending_mfa_token)
+
+
+@router.post("/mfa/webauthn/authenticate/finish")
+async def finish_webauthn_authentication(
+    pending_mfa_token: str = Body(..., embed=True),
+    credential: dict = Body(..., embed=True),
+    request: Request = None,
+) -> Token:
+    """Finish WebAuthn authentication and issue full session tokens."""
+    return await auth_service.finish_webauthn_authentication(
+        pending_mfa_token=pending_mfa_token,
+        credential=credential,
+        user_agent=request.headers.get("user-agent") if request else None,
+        ip_address=(request.headers.get("x-forwarded-for") if request else None) or (request.client.host if request and request.client else None),
+        device_fingerprint=request.headers.get("x-device-fingerprint") if request else None,
+    )
+
+
+@router.get("/mfa/webauthn/credentials")
+async def list_webauthn_credentials(current_user=Depends(get_current_user)) -> dict:
+    """List registered WebAuthn credentials for the current user."""
+    return await auth_service.list_webauthn_credentials(str(current_user["_id"]))
+
+
+@router.delete("/mfa/webauthn/credentials/{credential_id}")
+async def remove_webauthn_credential(
+    credential_id: str,
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Remove one registered WebAuthn credential."""
+    return await auth_service.remove_webauthn_credential(str(current_user["_id"]), credential_id)
+
+
+@router.post("/mfa/webauthn/disable")
+async def disable_webauthn(current_user=Depends(get_current_user)) -> dict:
+    """Disable WebAuthn MFA and remove all credentials for the current user."""
+    return await auth_service.disable_webauthn(str(current_user["_id"]))
+
+
+@router.get("/mfa/status")
+async def get_mfa_status(current_user=Depends(get_current_user)) -> dict:
+    """Get MFA status for current user."""
+    return await auth_service.get_mfa_status(str(current_user["_id"]))
+
+
+# =============================
+# Security Settings Endpoints
+# =============================
+
+@router.get("/security-settings/me")
+async def get_my_security_settings(current_user=Depends(get_current_user)) -> dict:
+    """Get the authenticated user's security settings."""
+    return await get_security_settings(str(current_user["_id"]), current_user=current_user)
+
+
+@router.post("/security-settings/me/mfa/toggle")
+async def toggle_my_mfa_method(
+    method: str | None = Body(default=None, embed=True),
+    current_user=Depends(get_current_user)
+) -> dict:
+    """Toggle MFA method for the authenticated user."""
+    return await toggle_mfa_method(str(current_user["_id"]), method=method, current_user=current_user)
+
+
+@router.get("/account-activity/me")
+async def get_my_account_activity(request: Request, current_user=Depends(get_current_user)) -> dict:
+    """Get login history and active sessions for the authenticated user."""
+    return await get_account_activity_endpoint(str(current_user["_id"]), request=request, current_user=current_user)
+
+
+@router.get("/security-settings/{user_id}")
+async def get_security_settings(user_id: str, current_user=Depends(get_current_user)) -> dict:
+    """Get user's security settings including MFA status and recovery codes."""
+    # Keep the literal `/me` route above this dynamic route so FastAPI does not
+    # treat "me" as a user id and incorrectly reject self-service requests.
+    if str(current_user["_id"]) != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only access your own security settings",
+        )
+
+    mfa_status = await auth_service.get_mfa_status(user_id)
+    user = await auth_service.repository.find_user_by_id(parse_object_id(user_id))
+
+    return {
+        "mfa_enabled": mfa_status.get("mfa_enabled", False),
+        "mfa_methods": mfa_status.get("mfa_methods", mfa_status.get("methods", [])),
+        "primary_method": mfa_status.get("primary_method"),
+        "method_status": mfa_status.get("method_status", {}),
+        "webauthn_credentials": mfa_status.get("webauthn_credentials", []),
+        "password_strength": user.get("password_strength", "unknown") if user else "unknown",
+        "password_last_changed": user.get("password_updated_at") if user else None,
+        "sessions_active": len(await auth_service.repository.find_recent_sessions(user_id, limit=100)),
+        "recovery_codes_remaining": mfa_status.get("recovery_codes_remaining", mfa_status.get("backup_codes_count", 0)),
+    }
+
+
+@router.post("/security-settings/{user_id}/mfa/toggle")
+async def toggle_mfa_method(
+    user_id: str,
+    method: str | None = Body(default=None, embed=True),
+    current_user=Depends(get_current_user)
+) -> dict:
+    """Toggle MFA method on/off (totp, sms, webauthn)."""
+    # Keep the literal `/me/mfa/toggle` route above this dynamic route so
+    # self-service MFA updates are not interpreted as user_id="me".
+    if str(current_user["_id"]) != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only modify your own security settings",
+        )
+
+    if not method:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA method is required",
+        )
+
+    method = method.lower()
+    if method not in ["totp", "sms", "webauthn"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid MFA method: {method}. Must be totp, sms, or webauthn",
+        )
+
+    try:
+        if method == "totp":
+            # Check if TOTP is currently enabled
+            mfa_status = await auth_service.get_mfa_status(user_id)
+            if "totp" in mfa_status.get("methods", []):
+                # Disable TOTP
+                result = await auth_service.disable_totp(user_id)
+            else:
+                # Enable TOTP
+                result = await auth_service.enable_totp(user_id)
+            return result
+
+        elif method == "sms":
+            mfa_status = await auth_service.get_mfa_status(user_id)
+            if "sms" in mfa_status.get("mfa_methods", mfa_status.get("methods", [])):
+                return await auth_service.disable_sms(user_id)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SMS MFA is not enabled. Use /auth/mfa/sms/enroll/send and /auth/mfa/sms/enroll/verify to enable it.",
+            )
+
+        elif method == "webauthn":
+            mfa_status = await auth_service.get_mfa_status(user_id)
+            if "webauthn" in mfa_status.get("mfa_methods", mfa_status.get("methods", [])):
+                return await auth_service.disable_webauthn(user_id)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="WebAuthn is not enabled. Use /auth/mfa/webauthn/register/begin and /auth/mfa/webauthn/register/finish to enable it.",
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle MFA method: {str(e)}",
+        )
+
+
+# =============================
+# Account Activity Endpoints
+# =============================
+
+@router.get("/account-activity/{user_id}")
+async def get_account_activity_endpoint(user_id: str, request: Request, current_user=Depends(get_current_user)) -> dict:
+    """Get login history and active sessions."""
+    # Keep the literal `/me` route above this dynamic route so FastAPI does not
+    # treat "me" as a user id and reject the authenticated user's own request.
+    if str(current_user["_id"]) != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own account activity",
+        )
+
+    return await auth_service.get_account_activity(
+        user_id,
+        current_device_fingerprint=request.headers.get("x-device-fingerprint"),
+        current_user_agent=request.headers.get("user-agent"),
+        current_ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+    )
+
+
+@router.post("/sessions/{session_id}/terminate")
+async def terminate_session(
+    session_id: str,
+    request: Request,
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Terminate one non-current active session owned by the authenticated user."""
+    return await auth_service.terminate_session(
+        current_user=current_user,
+        session_id=session_id,
+        current_device_fingerprint=request.headers.get("x-device-fingerprint"),
+        current_user_agent=request.headers.get("user-agent"),
+        current_ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+    )
+
+
+@router.post("/account/logout-session")
+async def logout_from_session(
+    request: Request,
+    session_id: str = Body(..., embed=True),
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Compatibility wrapper for terminating a specific session."""
+    return await auth_service.terminate_session(
+        current_user=current_user,
+        session_id=session_id,
+        current_device_fingerprint=request.headers.get("x-device-fingerprint"),
+        current_user_agent=request.headers.get("user-agent"),
+        current_ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
     )

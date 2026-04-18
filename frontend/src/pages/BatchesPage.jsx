@@ -400,6 +400,7 @@ export default function BatchesPage() {
                     className="btn-secondary !p-2"
                     onClick={() => openEditModal(batch)}
                     title="Edit batch"
+                    aria-label="Edit batch"
                   >
                     <Pencil size={16} />
                   </button>
@@ -409,6 +410,7 @@ export default function BatchesPage() {
                       className="btn-secondary !p-2 !text-rose-600"
                       onClick={() => deleteBatch(batch)}
                       title="Archive batch"
+                      aria-label="Archive batch"
                     >
                       <Trash2 size={16} />
                     </button>

@@ -122,41 +122,70 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 
+def _should_skip_response_envelope(request: Request, response: Response) -> bool:
+    skip_paths = tuple(settings.response_envelope_skip_paths or [])
+    content_type = response.headers.get("content-type") or ""
+    return (
+        not settings.response_envelope_enabled
+        or request.url.path in {"/health", "/"}
+        or any(request.url.path == path or request.url.path.startswith(f"{path}/") for path in skip_paths)
+        or not request.url.path.startswith(settings.api_prefix)
+        or response.status_code >= 400
+        or "application/json" not in content_type
+    )
+
+
+def _can_wrap_response_body(response: Response) -> bool:
+    content_length = response.headers.get("content-length")
+    if content_length:
+        try:
+            return int(content_length) <= 1024 * 1024
+        except ValueError:
+            return False
+    return hasattr(response, "body")
+
+
+async def _read_response_body(response: Response) -> bytes:
+    body = getattr(response, "body", None)
+    if isinstance(body, bytes):
+        return body
+
+    payload = b""
+    async for chunk in response.body_iterator:
+        payload += chunk
+    return payload
+
+
+def _wrap_response_payload(body: bytes) -> dict:
+    if not body:
+        return success_envelope(data=None, trace_id=trace_id_ctx.get() or None)
+
+    try:
+        import json
+
+        decoded = json.loads(body.decode("utf-8"))
+        if is_enveloped_payload(decoded):
+            return decoded
+        return success_envelope(data=decoded, trace_id=trace_id_ctx.get() or None)
+    except Exception:
+        return success_envelope(
+            data={"raw": body.decode("utf-8", errors="replace")},
+            trace_id=trace_id_ctx.get() or None,
+        )
+
+
 class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         headers = {k: v for k, v in dict(response.headers).items() if k.lower() != "content-length"}
-        skip_paths = tuple(settings.response_envelope_skip_paths or [])
-        if (
-            not settings.response_envelope_enabled
-            or request.url.path in {"/health", "/"}
-            or any(request.url.path == path or request.url.path.startswith(f"{path}/") for path in skip_paths)
-            or not request.url.path.startswith(settings.api_prefix)
-            or response.status_code >= 400
-            or "application/json" not in (response.headers.get("content-type") or "")
-        ):
+        if _should_skip_response_envelope(request, response):
             return response
 
-        body = b""
-        async for chunk in response.body_iterator:
-            body += chunk
+        if not _can_wrap_response_body(response):
+            return response
 
-        if not body:
-            payload = success_envelope(data=None, trace_id=trace_id_ctx.get() or None)
-        else:
-            try:
-                import json
-
-                decoded = json.loads(body.decode("utf-8"))
-                if is_enveloped_payload(decoded):
-                    return JSONResponse(status_code=response.status_code, content=decoded, headers=headers)
-                payload = success_envelope(data=decoded, trace_id=trace_id_ctx.get() or None)
-            except Exception:
-                return JSONResponse(
-                    status_code=response.status_code,
-                    content=success_envelope(data={"raw": body.decode("utf-8", errors="replace")}, trace_id=trace_id_ctx.get() or None),
-                    headers=headers,
-                )
+        body = await _read_response_body(response)
+        payload = _wrap_response_payload(body)
         return JSONResponse(status_code=response.status_code, content=payload, headers=headers)
 
 

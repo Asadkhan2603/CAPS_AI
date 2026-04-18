@@ -26,10 +26,11 @@ export default function Alert({ title, message, priority = 'info', onDismiss }) 
         <button
           className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border transition ${
             urgent
-              ? 'border-rose-200 bg-white/80 text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-slate-900/80 dark:text-rose-200 dark:hover:bg-rose-950/70'
-              : 'border-slate-200 bg-white/80 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+              ? 'border-rose-200 bg-white/80 text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-slate-900/80 dark:text-rose-100 dark:hover:bg-rose-950/70'
+              : 'border-slate-200 bg-white/80 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800'
           }`}
           onClick={onDismiss}
+          aria-label="Dismiss alert"
         >
           <X size={14} />
         </button>

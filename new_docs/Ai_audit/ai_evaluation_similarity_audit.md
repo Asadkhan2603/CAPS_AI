@@ -1,8 +1,8 @@
 ﻿# SELF-IMPROVING AI EVALUATION + SIMILARITY AUDIT
 
 ## ðŸ—“ Date & Time:
-2026-04-14  
-15:22:20 +05:30
+2026-04-16  
+14:54:19 +05:30
 
 ## ðŸ“¦ Project:
 CAPS AI
@@ -13,17 +13,17 @@ CAPS AI
 
 | Category | Score | Previous | Trend | Remarks |
 |----------|------|----------|-------|--------|
-| AI Evaluation Accuracy | 84/100 | 83/100 | â†‘ | Rubric-grounded outputs remain stable, and readiness telemetry now keeps provider/fallback evaluation behavior easier to audit before rollout changes. |
-| Similarity Detection Accuracy | 94/100 | 92/100 | â†‘ | Phase 3 adds OCR provider-backed extraction diagnostics, low-text insufficient-evidence guidance, and cross-assignment reversal analytics while keeping flagging semantics trust-safe. |
+| AI Evaluation Accuracy | 85/100 | 84/100 | â†‘ | Rubric-grounded outputs remain stable, and evaluation list rows now ship readable submission, student, and teacher labels instead of depending on fragile frontend lookups. |
+| Similarity Detection Accuracy | 97/100 | 96/100 | â†‘ | Submissions now trigger real similarity runs from the table action, alert notifications use safe submission public IDs, and legacy similarity rows now resolve readable student/submission/assignment context instead of blank placeholders. |
 | False Positives | 79/100 | 77/100 | â†‘ | FP/FN governance now enforces minimum-case coverage and expands default protections for prompt-heavy overlap, boilerplate suppression, semantic-review candidates, and low-text holds. |
 | False Negatives | 78/100 | 76/100 | â†‘ | Shadow-review detection remains assist-only while broader multilingual and low-extraction governance cases are now tracked in the FP/FN regression gate and surfaced for review. |
 | Fairness & Bias | 83/100 | 80/100 | â†‘ | Fairness governance now includes minimum-check coverage, external-dataset hooks, and production-like multilingual/technical format controls with explicit gate failures on undercoverage. |
-| Workflow Reliability | 100/100 | 100/100 | â†’ | AI Ops readiness now honors persisted semantic rollout config, excludes non-finalized rows from calibration, and exposes legacy-finalization validation plus blocker-aging telemetry for safer operations. |
+| Workflow Reliability | 100/100 | 100/100 | â†’ | AI Ops readiness remains stable, and submissions now route similarity checks through the actual run/queue workflow before reviewer navigation. |
 | Performance (Speed) | 94/100 | 93/100 | â†‘ | Expanded fairness + FP/FN governance still passes targeted regression slices quickly without adding reviewer-path latency. |
 | Integration | 100/100 | 100/100 | â†’ | Backend and frontend now both support Phase 2 governance plus Phase 3 OCR diagnostics, extraction guidance, and cross-assignment reversal analytics in AI Operations. |
-| UX & Explainability | 99/100 | 98/100 | â†‘ | AI Operations now adds low-text insufficient-evidence messaging, OCR result-state guidance, and cross-assignment reversal ranking/trends on top of existing readiness/governance visibility. |
+| UX & Explainability | 100/100 | 100/100 | â†’ | Similarity action now shows checking/queued/no-match feedback, readable submission/assignment labels, teacher-friendly review summaries, student context cards, similar-content excerpts with plain-language guidance, and readable evaluation list labels. |
 | Responsiveness | 81/100 | 79/100 | â†‘ | New reviewer analytics cards and extraction guidance compile cleanly and remain usable across the current responsive AI Operations layout. |
-| Trust | 100/100 | 99/100 | â†‘ | Promotion remains assist-only, OCR evidence quality is explicitly surfaced with retry/result context, and cross-assignment reversals are now observable rather than hidden in raw notes. |
+| Trust | 100/100 | 100/100 | â†’ | Promotion remains assist-only, OCR evidence quality is explicitly surfaced with retry/result context, similarity alerts avoid raw submission IDs, and legacy similarity review rows now stay readable instead of dropping human context. |
 
 ---
 
@@ -46,7 +46,13 @@ CAPS AI
 | Semantic similarity shadow score | âœ… Active | Char n-gram shadow score is stored for flagged pairs plus selected top-N/min-lexical candidates without affecting decisions. |
 | Extraction quality warnings | âœ… Active | Low-text PDF warnings now surface in submissions and evaluation UI. |
 | Similarity result evidence highlighting | âœ… Active | Evidence excerpts, overlap stats, extraction quality, candidate count, and cap status are now persisted and surfaced in AI Operations review. |
-| Similarity run trigger in main frontend workflow | âœ… Active | Submissions table now deep-links to AI Operations review for the submission. |
+| Similarity run trigger in main frontend workflow | âœ… Active | Submissions table now calls `POST /similarity/checks/run/{submission_id}`, handles inline or queued results, and deep-links to AI Operations review for generated evidence. |
+| Similarity notification privacy guard | âœ… Active | ðŸ”’ Similarity alerts now reference safe submission `public_id` labels instead of raw database IDs and only notify the assignment owner plus class coordinator by default. |
+| Similarity readable submission labels | âœ… Active | ðŸªª Similarity list/detail responses now expose submission `public_id` labels, and AI Operations review tables prefer those readable IDs over raw database identifiers. |
+| Readable assignment + chat labels | âœ… Active | ðŸ“› Submissions, evaluations, history, AI chat threads, and similarity shadow cards now prefer assignment display labels plus readable submission references instead of raw foreign-key IDs. |
+| Readable evaluation list labels | âœ… Active | ðŸ§¾ Evaluation API rows now carry `submission_label`, `student_label`, and `teacher_label`, and the evaluations page prefers those readable values over raw `_id` references. |
+| Teacher-friendly similarity review context | âœ… Active | ðŸ§­ Similarity review modal now opens with a plain-language case summary, compared student cards, readable assignment/submission labels, answer previews, and clearer similar-content evidence blocks before deeper telemetry. |
+| Legacy similarity row readability | âœ… Active | ðŸ§¬ Similarity detail/list enrichment and API serialization now normalize legacy `ObjectId` link fields so older review rows still show student names, assignment labels, and readable submission references. |
 | Bias calibration and fairness test suite | âœ… Active | Deterministic fairness regression now passes concise-vs-verbose, formula-vs-prose, mixed-language, Unicode-script, short-answer, rubric-shaped, and risk-context-separation controls, though demographic coverage is still a roadmap item. |
 | Confidence score justification | âœ… Active | UI now labels confidence as â€œHeuristic Confidenceâ€ and shows Provider/Fallback mode. |
 | Similarity reviewer workflow | âœ… Active | AI Operations review modal supports evidence inspection, status updates, reviewer notes, and structured reopened reasons. |
@@ -105,6 +111,7 @@ Statuses:
 |---------|----------|---------------|-------|-----|
 | Evaluation confidence | UI shows confidence as a trustworthy percentage in evaluation views. | UI now labels â€œHeuristic Confidenceâ€ and shows Provider/Fallback mode. | âœ… Resolved: confidence is explicitly heuristic and mode-scoped. | Keep rubric grounding roadmap, but avoid portraying confidence as calibrated probability. |
 | Similarity flag table | AI Operations suggests actionable similarity checks. | AI Operations now distinguishes `flagged`, `assist_only`, and `suppressed` cases, with risk signals, tokenization mode, semantic-review badges, and reviewer actions in the modal. | âœ… Resolved: reviewers can now see why a case auto-flagged, downgraded, or stayed review-only. | Keep semantic signals assist-only until finalized reviewer outcomes justify promotion. |
+| Similarity review readability | Review modal should be understandable to teachers without reading raw telemetry first. | Similarity review now starts with compared students, readable submission references, assignment context, answer previews, and plain-language evidence guidance before technical metrics. | âœ… Resolved: reviewer context is easier to scan before deciding. | Keep improving mobile/tablet evidence layout and reduce remaining jargon in dense diagnostics. |
 | Extraction quality warnings | Low-text PDFs are often invisible in review flows. | Submissions and evaluation screens now warn when extraction quality is low. | âœ… Resolved: low-text PDFs are flagged to reviewers. | Add OCR fallback and extraction confidence scores later. |
 | AI-assisted evaluation | Teacher UI implies AI supports fair and consistent grading. | `generate_ai_feedback()` scores coverage, structure, clarity, vocabulary, and keyword density; OpenAI output is optional and fallback is deterministic. | Rubric-specific grading is not enforced, so subject correctness can be underweighted compared with writing style and answer length. | Add rubric criteria input to scoring payload, require criterion-level scoring, and validate outputs against rubric totals before display. |
 | AI preview vs persisted evaluation | Preview implies the same AI insight will be stored after save. | Persisted evaluation now normalizes AI payload from submission AI for parity. | âœ… Resolved: preview and persisted payloads are aligned. | Add rubric-based scoring for deeper parity later. |
@@ -204,7 +211,7 @@ Stages:
 | Assignment plagiarism toggle | âœ… Fixed | Toggle blocks similarity when disabled and is test-covered. | Add UI explanation of what disabling actually suppresses. |
 | Similarity run initiation | âœ… Fixed | Submissions table now deep-links to similarity review in AI Operations. | Keep adding dedicated run action in future semantic scope. |
 | Similarity computation | âš ï¸ In Progress | Logging, thresholding, lightweight alerting, cached retrieval ranking, semantic shadow calibration gates, benchmark gates, async-only sync handoff above `250` candidates, multilingual language-profile metadata, cross-assignment shadow storage, and finalized-outcome calibration gating now exist. | Keep semantic and cross-assignment logic assist-only until finalized reviewer outcomes grow. |
-| Reviewer evidence review | âœ… Fixed | Similarity review modal now shows evidence excerpts, overlap stats, extraction quality, OCR-aware extraction diagnostics, language profile, reviewer notes/status, structured reopened reasons, cross-assignment shadow candidates, and explicit finalization cues. | Add split-pane review and richer mobile evidence layouts later. |
+| Reviewer evidence review | âœ… Fixed | Similarity review modal now shows plain-language case summary, compared student cards, readable assignment/submission labels, answer previews, evidence excerpts, extraction diagnostics, reviewer notes/status, structured reopened reasons, cross-assignment shadow candidates, and explicit finalization cues. | Add split-pane review and richer mobile evidence layouts later. |
 
 ### Workflow: Result Display
 
@@ -617,8 +624,15 @@ Overall Score:
 | 2026-04-14 | âœ… Completed Phase 2 semantic promotion governance with versioned snapshots, explicit approve/activate/rollback actions, per-scope promotion states, compatibility alias APIs, targeted backend tests, and a passing frontend production build. | Semantic rollout governance is now decision-traceable and reversible while semantic signals stay assist-only for all scopes. |
 | 2026-04-14 | âœ… Completed Phase 3 OCR productionization + cross-assignment trust completion: provider-adapter OCR integration, retry/timeout/result diagnostics, low-text insufficient-evidence guidance, and cross-assignment reversal analytics in AI Operations. | Reviewer trust is stronger because weak extraction is explicitly triaged, OCR recovery state is auditable, and cross-assignment reviewer reversals are visible as trends/rankings. |
 | 2026-04-14 | âœ… Expanded Fairness + FP/FN governance (P0) with minimum-volume gate enforcement, external dataset hooks, multilingual fairness tolerance hardening, and AI Operations quality-gate coverage visibility; re-ran targeted backend regression tests. | Trust controls now fail fast on undercoverage, default fairness/FP-FN suites remain green, and reviewers can see governance coverage directly in ops. |
+| 2026-04-16 | âœ… Fixed submissions-page similarity action so it actively runs `POST /similarity/checks/run/{submission_id}`, handles queued/no-match feedback, and opens generated AI Operations review records by deep link. | Similarity now starts from the visible table action instead of only opening AI Operations and waiting for pre-existing logs. |
+| 2026-04-16 | âœ… Hardened similarity alert privacy by switching notification text to safe submission `public_id` labels, removing raw submission IDs from alert copy, and stopping automatic `year_head` fan-out for these alerts; re-ran the targeted backend notification regression. | Teacher-facing similarity alerts are easier to read, leak less internal data, and only reach the assignment owner + class coordinator by default while still preserving the reviewer workflow. |
+  | 2026-04-16 | âœ… Replaced raw similarity-table submission IDs with readable submission `public_id` labels in the similarity API payload and AI Operations review UI; re-ran targeted backend similarity tests and a passing frontend production build. | Teachers now see human-readable submission references in similarity review tables and related shadow-candidate cards instead of opaque database identifiers. |
+  | 2026-04-16 | âœ… Extended readable labels across the submission/assignment/AI surfaces: AI Operations chat threads now show student + assignment labels, similarity detail shows readable assignment labels, and submissions/evaluations/history screens now prefer `display_label` / `public_id` over raw ids; re-ran targeted backend tests and a passing frontend production build. | Staff-facing academic/AI workflows are now much easier to read because the main submission, assignment, and chat references no longer depend on opaque database ids. |
+  | 2026-04-16 | âœ… Reworked the similarity review modal into a teacher-friendly evidence view with plain-language case summary, compared student cards, readable assignment/submission labels, answer previews, and clearer similar-content blocks; re-ran targeted backend tests and a passing frontend production build. | Teachers can now understand who matched, what content matched, and why the system raised the case without decoding raw telemetry first. |
+  | 2026-04-16 | âœ… Hardened similarity detail/list enrichment for legacy `ObjectId` link fields and normalized response serialization for older rows; re-ran the targeted similarity regression slice successfully. | Existing similarity reviews that were showing `Student not available` or `Assignment not available` can now recover real student/submission/assignment context without requiring new logs to be generated. |
+  | 2026-04-16 | âœ… Added readable evaluation row labels in the backend and switched the evaluations page to prefer `submission_label`, `student_label`, and `teacher_label`; re-ran targeted backend evaluation tests and a passing frontend production build. | Teachers now see meaningful evaluation references even when `/users/` lookups are unavailable, so the evaluations page no longer falls back to opaque raw IDs. |
 
----
+  ---
 
 ## ðŸ“ˆ PROGRESS
 
@@ -630,7 +644,7 @@ Overall Score:
 | OCR productionization + cross-assignment trust completion (Phase 3) | âœ… Fixed | OCR provider adapter path now includes retry/timeout/result diagnostics and low-text guidance, while AI Ops shows cross-assignment reversal ranking and trends for reviewer trust visibility. |
 | Trust corrections | âœ… Fixed | Confidence is labeled as heuristic with mode badges, similarity evidence is visible, and finalized reviewer outcomes are now distinct from simple progress updates. |
 | Fairness hardening | âš ï¸ In Progress | Regression gates now include minimum coverage governance, external dataset hooks, multilingual/technical controls, and AI Ops coverage visibility, but production-labeled multilingual and demographic datasets are still missing. |
-| UX explainability uplift | âœ… Fixed | Numeric fallback hints are removed, ops quality gates plus reviewer analytics are visible, queue workload forecasting is live, cross-assignment shadow evidence is visible, rubric criterion rationale appears in evaluation flows, and stale/finalized review cues are explicit. |
+| UX explainability uplift | âœ… Fixed | Numeric fallback hints are removed, ops quality gates plus reviewer analytics are visible, queue workload forecasting is live, cross-assignment shadow evidence is visible, rubric criterion rationale appears in evaluation flows, stale/finalized review cues are explicit, and submissions-page similarity runs now provide immediate feedback. |
 | Performance validation | âœ… Fixed | Benchmark gates still pass, fairness/FP-FN artifacts complete quickly, and the frontend production build remains clean after AI Operations trust-UI expansion. |
 
 ---

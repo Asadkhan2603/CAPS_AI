@@ -31,6 +31,20 @@ describe('canAccessFeature', () => {
     expect(blocked).toBe(false);
   });
 
+  it('requires matching student extension roles when configured', () => {
+    const allowed = canAccessFeature(
+      { role: 'student', extended_roles: ['class_representative'] },
+      { allowedRoles: ['student'], requiredStudentExtensions: ['class_representative'] }
+    );
+    const blocked = canAccessFeature(
+      { role: 'student', extended_roles: [] },
+      { allowedRoles: ['student'], requiredStudentExtensions: ['class_representative'] }
+    );
+
+    expect(allowed).toBe(true);
+    expect(blocked).toBe(false);
+  });
+
   it('matches backend admin policy for central academic setup modules', () => {
     const superAdmin = { role: 'admin', admin_type: 'super_admin' };
     const academicAdmin = { role: 'admin', admin_type: 'academic_admin' };

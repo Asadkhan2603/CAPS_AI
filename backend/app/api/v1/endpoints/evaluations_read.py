@@ -11,7 +11,7 @@ from app.schemas.evaluation import EvaluationOut, OfficialMarksheetItemOut, Offi
 from app.services.evaluation_access_policy import ensure_can_view_evaluation, ensure_teacher_owns_evaluation
 from app.services.academic_students import resolve_student_profile_for_user
 
-from .evaluations_common import get_evaluations_db
+from .evaluations_common import attach_evaluation_labels, get_evaluations_db
 
 router = APIRouter()
 
@@ -44,6 +44,7 @@ async def list_evaluations(
 
     cursor = database.evaluations.find(query).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
+    items = await attach_evaluation_labels(items, database=database)
     return [EvaluationOut(**evaluation_public(item)) for item in items]
 
 
@@ -138,6 +139,7 @@ async def get_evaluation(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation not found")
     ensure_can_view_evaluation(current_user, item)
+    item = (await attach_evaluation_labels([item], database=database))[0]
     return EvaluationOut(**evaluation_public(item))
 
 

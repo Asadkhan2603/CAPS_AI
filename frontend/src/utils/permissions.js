@@ -16,9 +16,20 @@ export function hasAnyTeacherExtension(user, requiredExtensions = []) {
   return requiredExtensions.some((ext) => userExtensions.includes(ext));
 }
 
+export function hasAnyStudentExtension(user, requiredExtensions = []) {
+  if (!user || requiredExtensions.length === 0) {
+    return true;
+  }
+  if (user.role !== 'student') {
+    return true;
+  }
+  const userExtensions = user.extended_roles || [];
+  return requiredExtensions.some((ext) => userExtensions.includes(ext));
+}
+
 export function canAccessFeature(user, options = {}) {
-  const { allowedRoles = [], requiredTeacherExtensions = [], requiredAdminTypes = [] } = options;
-  if (!(hasRole(user, allowedRoles) && hasAnyTeacherExtension(user, requiredTeacherExtensions))) {
+  const { allowedRoles = [], requiredTeacherExtensions = [], requiredStudentExtensions = [], requiredAdminTypes = [] } = options;
+  if (!(hasRole(user, allowedRoles) && hasAnyTeacherExtension(user, requiredTeacherExtensions) && hasAnyStudentExtension(user, requiredStudentExtensions))) {
     return false;
   }
   if (requiredAdminTypes.length > 0 && user?.role === 'admin') {

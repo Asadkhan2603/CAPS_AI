@@ -786,7 +786,7 @@ export default function Header({
                 className="h-10 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white"
                 placeholder="Search pages like notifications, sections, or onboarding"
               />
-              <button type="button" className="btn-secondary !gap-1 !px-2 !py-1 text-xs" onClick={() => closeSearch()}>
+              <button type="button" className="btn-sm" onClick={() => closeSearch()}>
                 <X size={12} /> Close
               </button>
             </div>

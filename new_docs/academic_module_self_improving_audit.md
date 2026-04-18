@@ -1,8 +1,8 @@
 ﻿# SELF-IMPROVING ACADEMIC MODULE AUDIT
 
 ## 🗓 Date & Time:
-2026-04-13  
-16:49:12 +05:30
+2026-04-16  
+12:58:29 +05:30
 
 ## 📦 Project:
 CAPS AI  
@@ -19,13 +19,13 @@ Path: `d:\VS CODE\CAPS_AI`
 | Classes & Sections | 88/100 | 82/100 | ↑ | Section dashboards, hierarchy validation, coordinator mapping, and mobile-friendly section health views are now in place. |
 | Timetable & Scheduling | 90/100 | 86/100 | ↑ | Publish, sync, drift visibility, student schedule trust, and adaptive small-screen editing are now in place; only deeper drift drill-down remains. |
 | Attendance System | 91/100 | 88/100 | ↑ | Roster-first attendance, section summaries, weekly trends, subject breakdowns, shortage-risk visibility, roster search, quick filters, and sticky large-roster actions are now available. |
-| Exams & Evaluation | 86/100 | 65/100 | ↑ | Evaluation lifecycle is stable and the exam-core module now supports exam definition, schedule visibility, and section-scoped student access. |
-| Grading & Results | 94/100 | 91/100 | ↑ | Release state, marksheet, semester aggregation, transcript output, governed correction signals, and configurable GPA/transcript policy are implemented and auditable. |
+| Exams & Evaluation | 87/100 | 86/100 | ↑ | Evaluation lifecycle is stable, exam-core visibility is live, and teachers now see saved marks directly from the submissions workflow after evaluation. |
+| Grading & Results | 95/100 | 94/100 | ↑ | Release state, marksheet, semester aggregation, transcript output, governed correction signals, configurable GPA/transcript policy, and teacher-visible saved marks are implemented and auditable. |
 | Data Integrity | 95/100 | 90/100 | ↑ | Enrollment-backed placement, `user_id` linkage, duplicate-case clustering, and repo-wide student-reference merge rewrites now close the biggest stale academic-output risk; only legacy backfill tails remain. |
-| UX & Usability | 87/100 | 84/100 | ↑ | Sections, enrollments, course delivery, attendance, and student onboarding now have guidance, summary cards, priority views, and faster cleanup actions instead of raw CRUD alone. |
+| UX & Usability | 88/100 | 87/100 | ↑ | Sections, enrollments, course delivery, attendance, student onboarding, and submissions now have clearer review-state visibility instead of hiding teacher-saved marks. |
 | Responsiveness | 84/100 | 78/100 | ↑ | Targeted weak pages now have mobile-safe summaries, tablet-safe guidance, and adaptive timetable editing; only a few dense shared grids still lag. |
 | Integration | 95/100 | 93/100 | ↑ | FE ↔ BE contracts now cover section dashboards, attendance analytics, timetable sync, semester results, transcript retrieval, grading-policy controls, duplicate-audit reads, duplicate-case preview/execute flows, and exam-core student/staff visibility. |
-| Trust | 96/100 | 94/100 | ↑ | Student-facing official outputs now include marksheet, semester records, transcript, exam schedule visibility, configurable GPA precision, and much stronger operator-facing identity cleanup with audited merge execution. |
+| Trust | 97/100 | 96/100 | ↑ | Student-facing official outputs remain separated from drafts, while teacher-facing submissions now show saved evaluation marks instead of only AI suggestion scores. |
 
 ---
 
@@ -513,6 +513,7 @@ Overall Score:
 | 2026-04-12 | Added post-bulk-create enrollment cleanup routing | Reduced onboarding drop-off between student creation and placement |
 | 2026-04-12 | Added teacher-load and section-capacity summaries, high-volume attendance helpers, duplicate-audit tooling, and configurable grading-policy controls | Completed the current post-roadmap hardening batch |
 | 2026-04-13 | Added duplicate-case preview, admin merge execution, repo-wide student-id rewrites, and audited hard delete cleanup | Closed the largest remaining identity and data-integrity gap in the academic module |
+| 2026-04-16 | ✅ Made saved evaluation marks visible to teachers on the submissions table | Removed confusion where AI score updated but teacher marks appeared missing after evaluation |
 
 ---
 
@@ -531,7 +532,7 @@ Overall Score:
 ## 🔁 NEXT ACTIONS
 
 - Immediate fix:
-  Add quick enrollment cleanup filters, predictive oversight, and targeted regression coverage for the newest admin controls.
+  Add a focused regression test around teacher-visible saved marks on the submissions page, then continue quick enrollment cleanup filters and predictive oversight.
 - Next review:
   2026-04-19
 - Responsible:

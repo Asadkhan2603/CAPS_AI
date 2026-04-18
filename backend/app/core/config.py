@@ -266,6 +266,75 @@ class Settings:
         default_factory=lambda: _as_float(os.getenv("OCR_RETRY_BACKOFF_SECONDS", "0.5"), 0.5)
     )
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
+    users_capability_workspace_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_WORKSPACE_ENABLED"), True)
+    )
+    users_capability_activity_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_ACTIVITY_ENABLED"), True)
+    )
+    users_capability_bulk_operations_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_BULK_OPERATIONS_ENABLED"), True)
+    )
+    users_capability_permission_templates_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_PERMISSION_TEMPLATES_ENABLED"), True)
+    )
+    users_capability_invitations_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_INVITATIONS_ENABLED"), True)
+    )
+    users_capability_import_export_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_IMPORT_EXPORT_ENABLED"), True)
+    )
+    users_capability_inline_editing_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_INLINE_EDITING_ENABLED"), True)
+    )
+    users_capability_compact_density_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_COMPACT_DENSITY_ENABLED"), True)
+    )
+    users_capability_responsive_workflows_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_RESPONSIVE_WORKFLOWS_ENABLED"), True)
+    )
+    users_capability_table_virtualization_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_TABLE_VIRTUALIZATION_ENABLED"), False)
+    )
+    users_capability_http_cache_validation_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_CAPABILITY_HTTP_CACHE_VALIDATION_ENABLED"), False)
+    )
+    users_admin_telemetry_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("USERS_ADMIN_TELEMETRY_ENABLED"), True)
+    )
+    users_admin_alert_error_rate_warning_pct: float = field(
+        default_factory=lambda: _as_float(os.getenv("USERS_ADMIN_ALERT_ERROR_RATE_WARNING_PCT", "2"), 2.0)
+    )
+    users_admin_alert_error_rate_critical_pct: float = field(
+        default_factory=lambda: _as_float(os.getenv("USERS_ADMIN_ALERT_ERROR_RATE_CRITICAL_PCT", "5"), 5.0)
+    )
+    users_admin_alert_p95_latency_warning_ms: int = field(
+        default_factory=lambda: _as_int(os.getenv("USERS_ADMIN_ALERT_P95_LATENCY_WARNING_MS", "1200"), 1200)
+    )
+    users_admin_alert_p95_latency_critical_ms: int = field(
+        default_factory=lambda: _as_int(os.getenv("USERS_ADMIN_ALERT_P95_LATENCY_CRITICAL_MS", "2500"), 2500)
+    )
+    users_admin_alert_empty_page_warning_pct: float = field(
+        default_factory=lambda: _as_float(os.getenv("USERS_ADMIN_ALERT_EMPTY_PAGE_WARNING_PCT", "30"), 30.0)
+    )
+    users_admin_alert_deep_page_warning_pct: float = field(
+        default_factory=lambda: _as_float(os.getenv("USERS_ADMIN_ALERT_DEEP_PAGE_WARNING_PCT", "40"), 40.0)
+    )
+    users_rollout_stage: str = field(
+        default_factory=lambda: os.getenv("USERS_ROLLOUT_STAGE", "all_admins").strip().lower()
+    )
+    users_rollout_internal_user_ids: List[str] = field(
+        default_factory=lambda: _as_csv_list(os.getenv("USERS_ROLLOUT_INTERNAL_USER_IDS", ""))
+    )
+    users_rollout_internal_emails: List[str] = field(
+        default_factory=lambda: _as_csv_list(os.getenv("USERS_ROLLOUT_INTERNAL_EMAILS", ""))
+    )
+    users_rollout_internal_email_domains: List[str] = field(
+        default_factory=lambda: _as_csv_list(os.getenv("USERS_ROLLOUT_INTERNAL_EMAIL_DOMAINS", ""))
+    )
+    users_rollout_internal_admin_types: List[str] = field(
+        default_factory=lambda: _as_csv_list(os.getenv("USERS_ROLLOUT_INTERNAL_ADMIN_TYPES", "super_admin"))
+    )
     observability_slow_request_ms: int = field(
         default_factory=lambda: _as_int(os.getenv("OBSERVABILITY_SLOW_REQUEST_MS", "1500"), 1500)
     )
@@ -374,6 +443,41 @@ class Settings:
     outbound_email_from: str = field(default_factory=lambda: os.getenv("OUTBOUND_EMAIL_FROM", "").strip())
     outbound_email_from_name: str = field(default_factory=lambda: os.getenv("OUTBOUND_EMAIL_FROM_NAME", "").strip())
     outbound_email_reply_to: str = field(default_factory=lambda: os.getenv("OUTBOUND_EMAIL_REPLY_TO", "").strip())
+    sms_mfa_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SMS_MFA_ENABLED"), True)
+    )
+    mfa_pending_token_expire_minutes: int = field(
+        default_factory=lambda: _as_int(os.getenv("MFA_PENDING_TOKEN_EXPIRE_MINUTES", "10"), 10)
+    )
+    mfa_sms_otp_ttl_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("MFA_SMS_OTP_TTL_SECONDS", "300"), 300)
+    )
+    mfa_sms_send_min_interval_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("MFA_SMS_SEND_MIN_INTERVAL_SECONDS", "30"), 30)
+    )
+    mfa_sms_send_window_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("MFA_SMS_SEND_WINDOW_SECONDS", "3600"), 3600)
+    )
+    mfa_sms_send_max_per_window: int = field(
+        default_factory=lambda: _as_int(os.getenv("MFA_SMS_SEND_MAX_PER_WINDOW", "6"), 6)
+    )
+    mfa_sms_verify_max_attempts: int = field(
+        default_factory=lambda: _as_int(os.getenv("MFA_SMS_VERIFY_MAX_ATTEMPTS", "5"), 5)
+    )
+    twilio_account_sid: str = field(default_factory=lambda: os.getenv("TWILIO_ACCOUNT_SID", "").strip())
+    twilio_auth_token: str = field(default_factory=lambda: os.getenv("TWILIO_AUTH_TOKEN", "").strip())
+    twilio_from_number: str = field(default_factory=lambda: os.getenv("TWILIO_FROM_NUMBER", "").strip())
+    twilio_messaging_service_sid: str = field(
+        default_factory=lambda: os.getenv("TWILIO_MESSAGING_SERVICE_SID", "").strip()
+    )
+    webauthn_rp_id: str = field(default_factory=lambda: os.getenv("WEBAUTHN_RP_ID", "localhost").strip())
+    webauthn_rp_origins: List[str] = field(
+        default_factory=lambda: _as_csv_list(os.getenv("WEBAUTHN_RP_ORIGINS", "http://localhost:5173"))
+    )
+    webauthn_rp_name: str = field(default_factory=lambda: os.getenv("WEBAUTHN_RP_NAME", "").strip())
+    webauthn_challenge_ttl_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("WEBAUTHN_CHALLENGE_TTL_SECONDS", "300"), 300)
+    )
     cors_origins: List[str] = field(
         default_factory=lambda: _merge_cors_origins(
             os.getenv("CORS_ORIGINS", "http://localhost:5173")
@@ -385,6 +489,30 @@ class Settings:
             raise ValueError("JWT_SECRET must be set for non-development environments")
         if self.auth_registration_policy not in {"single_admin_open", "bootstrap_strict", "open"}:
             self.auth_registration_policy = "single_admin_open"
+        if self.users_rollout_stage not in {"internal_admins", "super_admins", "all_admins"}:
+            self.users_rollout_stage = "all_admins"
+        self.users_admin_alert_error_rate_warning_pct = max(0.0, float(self.users_admin_alert_error_rate_warning_pct))
+        self.users_admin_alert_error_rate_critical_pct = max(
+            self.users_admin_alert_error_rate_warning_pct,
+            float(self.users_admin_alert_error_rate_critical_pct),
+        )
+        self.users_admin_alert_p95_latency_warning_ms = max(1, int(self.users_admin_alert_p95_latency_warning_ms))
+        self.users_admin_alert_p95_latency_critical_ms = max(
+            self.users_admin_alert_p95_latency_warning_ms,
+            int(self.users_admin_alert_p95_latency_critical_ms),
+        )
+        self.users_admin_alert_empty_page_warning_pct = max(0.0, float(self.users_admin_alert_empty_page_warning_pct))
+        self.users_admin_alert_deep_page_warning_pct = max(0.0, float(self.users_admin_alert_deep_page_warning_pct))
+        self.mfa_pending_token_expire_minutes = max(2, int(self.mfa_pending_token_expire_minutes))
+        self.mfa_sms_otp_ttl_seconds = max(60, int(self.mfa_sms_otp_ttl_seconds))
+        self.mfa_sms_send_min_interval_seconds = max(5, int(self.mfa_sms_send_min_interval_seconds))
+        self.mfa_sms_send_window_seconds = max(60, int(self.mfa_sms_send_window_seconds))
+        self.mfa_sms_send_max_per_window = max(1, int(self.mfa_sms_send_max_per_window))
+        self.mfa_sms_verify_max_attempts = max(1, int(self.mfa_sms_verify_max_attempts))
+        self.webauthn_challenge_ttl_seconds = max(60, int(self.webauthn_challenge_ttl_seconds))
+        self.webauthn_rp_origins = [origin.rstrip("/") for origin in self.webauthn_rp_origins if origin.strip()]
+        if not self.webauthn_rp_name:
+            self.webauthn_rp_name = self.app_name
         if not self.outbound_email_from_name:
             self.outbound_email_from_name = self.app_name
 

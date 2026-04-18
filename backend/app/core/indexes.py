@@ -42,6 +42,13 @@ async def ensure_indexes() -> None:
         return
 
     await _safe_create_index(db.users, [('email', ASCENDING)], unique=True)
+    await _safe_create_index(db.users, [('role', ASCENDING), ('is_active', ASCENDING), ('updated_at', ASCENDING)])
+    await _safe_create_index(db.users, [('admin_type', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.users, [('extended_roles', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.users, [('last_active_at', ASCENDING)])
+    await _safe_create_index(db.users, [('created_at', ASCENDING)])
+    await _safe_create_index(db.users, [('last_permission_change_at', ASCENDING)])
+    await _safe_create_index(db.users, [('last_status_change_at', ASCENDING)])
     await _safe_create_index(db.notices, [('is_active', ASCENDING), ('created_at', ASCENDING)])
     await _safe_create_index(db.notices, [('scope', ASCENDING), ('scope_ref_id', ASCENDING)])
     await _safe_create_index(
@@ -79,6 +86,20 @@ async def ensure_indexes() -> None:
     )
     await _safe_create_index(db.audit_logs, [('created_at', ASCENDING)])
     await _safe_create_index(db.audit_logs, [('resource_type', ASCENDING), ('severity', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.audit_logs, [('entity_type', ASCENDING), ('entity_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.audit_logs, [('actor_user_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.user_invitations, [('email', ASCENDING), ('status', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.user_invitations, [('token', ASCENDING)], unique=True)
+    await _safe_create_index(db.user_permission_templates, [('role', ASCENDING), ('name', ASCENDING)])
+    await _safe_create_index(db.user_filter_presets, [('created_by_user_id', ASCENDING), ('updated_at', ASCENDING)])
+    await _safe_create_index(db.users_admin_telemetry, [('created_at', ASCENDING)])
+    await _safe_create_index(db.users_admin_telemetry, [('event', ASCENDING), ('outcome', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(db.users_admin_telemetry, [('actor_user_id', ASCENDING), ('created_at', ASCENDING)])
+    await _safe_create_index(
+        db.user_filter_presets,
+        [('created_by_user_id', ASCENDING), ('name_normalized', ASCENDING)],
+        unique=True,
+    )
     await _safe_create_index(db.clubs, [('slug', ASCENDING), ('academic_year', ASCENDING)], unique=True)
     await _safe_create_index(db.clubs, [('status', ASCENDING), ('updated_at', ASCENDING)])
     await _safe_create_index(db.clubs, [('academic_year', ASCENDING), ('updated_at', ASCENDING)])
@@ -211,9 +232,13 @@ async def ensure_indexes() -> None:
         partialFilterExpression={'is_active': True},
     )
     await _safe_create_index(db.classes, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
+    await _safe_create_index(db.classes, [('class_representatives.cr_1.user_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.classes, [('class_representatives.cr_2.user_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.section_read_models, [('is_active', ASCENDING), ('deleted_at', ASCENDING)])
     await _safe_create_index(db.section_read_models, [('department_id', ASCENDING), ('batch_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.section_read_models, [('semester_id', ASCENDING), ('class_coordinator_user_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.section_read_models, [('class_representatives.cr_1.user_id', ASCENDING), ('is_active', ASCENDING)])
+    await _safe_create_index(db.section_read_models, [('class_representatives.cr_2.user_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.course_offering_read_models, [('is_active', ASCENDING), ('section_id', ASCENDING), ('group_id', ASCENDING)])
     await _safe_create_index(db.course_offering_read_models, [('teacher_user_id', ASCENDING), ('subject_id', ASCENDING), ('is_active', ASCENDING)])
     await _safe_create_index(db.class_slot_read_models, [('is_active', ASCENDING), ('section_id', ASCENDING), ('group_id', ASCENDING), ('day', ASCENDING)])

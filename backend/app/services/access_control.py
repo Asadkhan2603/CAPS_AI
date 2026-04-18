@@ -10,7 +10,7 @@ async def teacher_can_access_assignment(
     *,
     database: Any | None = None,
 ) -> bool:
-    active_db = database or core_db
+    active_db = database if database is not None else core_db
     assignment = await active_db.assignments.find_one({"_id": parse_object_id(assignment_id)})
     if not assignment:
         return False

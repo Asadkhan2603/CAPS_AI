@@ -19,7 +19,7 @@ from app.services.evaluation_workflow import (
     persist_ai_trace,
 )
 
-from .evaluations_common import get_evaluations_db
+from .evaluations_common import attach_evaluation_labels, get_evaluations_db
 
 router = APIRouter()
 
@@ -157,6 +157,7 @@ async def create_evaluation(
         detail=f"Created evaluation for submission {payload.submission_id}",
     )
 
+    created = (await attach_evaluation_labels([created], database=database))[0]
     return EvaluationOut(**evaluation_public(created))
 
 
@@ -216,4 +217,5 @@ async def refresh_evaluation_ai(
         detail="Refreshed AI insight for evaluation",
     )
 
+    updated = (await attach_evaluation_labels([updated], database=database))[0]
     return EvaluationOut(**evaluation_public(updated))

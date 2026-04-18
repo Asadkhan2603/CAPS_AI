@@ -106,4 +106,19 @@ describe('ProtectedRoute', () => {
     expect(html).toContain('Compliance Admin');
     expect(html).toContain('Super Admin');
   });
+
+  it('renders children for a student with the required extension', () => {
+    useAuthMock.mockReturnValue({
+      isAuthenticated: true,
+      checking: false,
+      user: { role: 'student', extended_roles: ['class_representative'] }
+    });
+
+    const html = renderProtectedRoute(
+      { allowedRoles: ['student'], requiredStudentExtensions: ['class_representative'] },
+      '/section-representative'
+    );
+
+    expect(html).toContain('Secret page');
+  });
 });

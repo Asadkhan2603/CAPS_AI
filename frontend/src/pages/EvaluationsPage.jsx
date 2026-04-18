@@ -113,7 +113,7 @@ export default function EvaluationsPage() {
       try {
         const [submissionsRes, usersRes, gradingPolicyRes] = await Promise.all([
           apiClient.get('/submissions/', { params: { skip: 0, limit: 100 } }),
-          apiClient.get('/users/'),
+          user?.role === 'admin' ? apiClient.get('/users/') : Promise.resolve({ data: [] }),
           user?.role === 'admin' ? apiClient.get('/evaluations/results/grading-policy') : Promise.resolve({ data: null })
         ]);
         setSubmissions(submissionsRes.data || []);
@@ -168,7 +168,7 @@ export default function EvaluationsPage() {
     () =>
       submissions.map((item) => ({
         value: item.id,
-        label: `${item.original_filename || 'Submission'} (${item.id})`
+        label: item.display_label || `${item.original_filename || 'Submission'} (${item.public_id || item.id})`
       })),
     [submissions]
   );
@@ -236,9 +236,21 @@ export default function EvaluationsPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'submission_id', label: 'Submission', render: (row) => submissionLabelById[row.submission_id] || row.submission_id },
-      { key: 'student_user_id', label: 'Student', render: (row) => studentLabelById[row.student_user_id] || row.student_user_id },
-      { key: 'teacher_user_id', label: 'Teacher', render: (row) => teacherLabelById[row.teacher_user_id] || row.teacher_user_id },
+      {
+        key: 'submission_id',
+        label: 'Submission',
+        render: (row) => row.submission_label || submissionLabelById[row.submission_id] || row.submission_id
+      },
+      {
+        key: 'student_user_id',
+        label: 'Student',
+        render: (row) => row.student_label || studentLabelById[row.student_user_id] || row.student_user_id
+      },
+      {
+        key: 'teacher_user_id',
+        label: 'Teacher',
+        render: (row) => row.teacher_label || teacherLabelById[row.teacher_user_id] || row.teacher_user_id
+      },
       {
         key: 'ai_status',
         label: 'AI Status',
@@ -302,7 +314,7 @@ export default function EvaluationsPage() {
   async function openTraceViewer(row) {
     setTraceMeta({
       evaluationId: row.id,
-      submissionLabel: submissionLabelById[row.submission_id] || row.submission_id
+      submissionLabel: row.submission_label || submissionLabelById[row.submission_id] || row.submission_id
     });
     setTraceItems([]);
     setTraceModalOpen(true);

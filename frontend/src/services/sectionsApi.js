@@ -35,3 +35,23 @@ export async function lockSectionMapping(sectionId, reason = '') {
 export async function unlockSectionMapping(sectionId, reason = '') {
   return await apiClient.post(`/sections/${sectionId}/unlock`, { reason });
 }
+
+export async function getSectionRepresentatives(sectionId) {
+  const response = await apiClient.get(`/sections/${sectionId}/representatives`);
+  return response.data;
+}
+
+export async function assignSectionRepresentative(sectionId, seat, payload) {
+  const response = await apiClient.put(`/sections/${sectionId}/representatives/${seat}`, payload);
+  return response.data;
+}
+
+export async function removeSectionRepresentative(sectionId, seat, payload) {
+  const response = await apiClient.delete(`/sections/${sectionId}/representatives/${seat}`, { data: payload });
+  return response.data;
+}
+
+export async function getSectionRepresentativeDashboard(sectionId) {
+  const response = await apiClient.get(`/sections/${sectionId}/representative-dashboard`);
+  return response.data;
+}

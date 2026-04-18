@@ -11,6 +11,7 @@ from app.core.database import db
 from app.core.mongo import parse_object_id
 from app.core.observability import observability_state
 from app.core.schema_versions import SIMILARITY_LOG_SCHEMA_VERSION, SUBMISSION_SCHEMA_VERSION
+from app.services.public_ids import build_public_id
 from app.services.ai_runtime import AI_SIMILARITY_ENGINE_VERSION
 from app.services.notifications import create_notifications_bulk
 from app.services.similarity_engine import (
@@ -37,7 +38,7 @@ async def _notify_similarity_alert(
     *,
     recipient_user_ids: list[str],
     source_submission: dict[str, Any],
-    matched_submission_id: str,
+    matched_submission: dict[str, Any] | None,
     score: float,
     threshold: float,
     created_by: str,
@@ -45,9 +46,11 @@ async def _notify_similarity_alert(
     if not recipient_user_ids:
         return
 
+    source_submission_label = _submission_alert_label(source_submission)
+    matched_submission_label = _submission_alert_label(matched_submission)
     title = "Similarity Alert"
     message = (
-        f"Submission {str(source_submission.get('_id'))} matched {matched_submission_id} "
+        f"Submission {source_submission_label} matched {matched_submission_label} "
         f"with lexical similarity {round(score, 3)} (threshold {round(threshold, 3)})."
     )
     await create_notifications_bulk(
@@ -60,6 +63,15 @@ async def _notify_similarity_alert(
         track_delivery=False,
         send_email=False,
     )
+
+
+def _submission_alert_label(submission: dict[str, Any] | None) -> str:
+    if not isinstance(submission, dict):
+        return "submission record"
+    public_id = submission.get("public_id") or build_public_id("submission", submission)
+    if public_id:
+        return str(public_id)
+    return "submission record"
 
 
 async def _resolve_similarity_alert_recipients(
@@ -75,13 +87,6 @@ async def _resolve_similarity_alert_recipients(
         class_doc = await db.classes.find_one({"_id": parse_object_id(source_class_id)})
         if class_doc and class_doc.get("class_coordinator_user_id"):
             recipients.add(str(class_doc.get("class_coordinator_user_id")))
-
-    year_heads = await db.users.find(
-        {"role": "teacher", "extended_roles": {"$in": ["year_head"]}}
-    ).to_list(length=1000)
-    for user in year_heads:
-        if user.get("_id"):
-            recipients.add(str(user.get("_id")))
 
     return sorted(recipients)
 
@@ -492,7 +497,7 @@ async def run_similarity_pipeline(
             await _notify_similarity_alert(
                 recipient_user_ids=similarity_alert_recipient_user_ids,
                 source_submission=source,
-                matched_submission_id=matched_submission_id,
+                matched_submission=matched_submission,
                 score=numeric_score,
                 threshold=threshold_value,
                 created_by=actor_user_id,

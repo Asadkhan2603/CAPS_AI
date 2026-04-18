@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.core.config import settings
@@ -12,6 +13,7 @@ from app.schemas.similarity_log import SimilarityLogOut, SimilarityRunQueuedResp
 from app.services.ai_jobs import AI_JOB_TYPE_SIMILARITY, queue_ai_job, schedule_ai_job_processing, serialize_ai_job
 from app.services.ai_runtime import get_ai_runtime_settings
 from app.services.audit import log_audit_event
+from app.services.public_ids import build_display_label, build_public_id, build_user_label
 from app.services.semantic_rollout_readiness import calibration_eligible as is_calibration_eligible
 from app.services.semantic_rollout_readiness import language_bucket_for_row, normalize_match_scope
 from app.services.similarity_access_policy import (
@@ -37,6 +39,14 @@ _MATCH_SCOPES = {"same_assignment_lexical", "same_assignment_shadow", "cross_ass
 _LANGUAGE_BUCKETS = {"latin_only", "mixed_transliterated", "non_latin"}
 _STALE_OPEN_HOURS = 48
 _STALE_IN_PROGRESS_HOURS = 72
+
+
+def _normalize_object_id_value(value: Any) -> str | None:
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, str) and ObjectId.is_valid(value):
+        return value
+    return None
 
 
 def _has_low_extraction_quality(item: dict) -> bool:
@@ -90,12 +100,329 @@ def _matches_similarity_search(item: dict, search: str) -> bool:
         for value in (
             item.get("source_submission_id"),
             item.get("matched_submission_id"),
+            item.get("source_submission_public_id"),
+            item.get("matched_submission_public_id"),
             item.get("source_assignment_id"),
             item.get("matched_assignment_id"),
+            item.get("source_assignment_label"),
+            item.get("matched_assignment_label"),
+            ((item.get("source_submission_summary") or {}).get("student_label") if isinstance(item.get("source_submission_summary"), dict) else None),
+            ((item.get("matched_submission_summary") or {}).get("student_label") if isinstance(item.get("matched_submission_summary"), dict) else None),
+            ((item.get("source_submission_summary") or {}).get("file_name") if isinstance(item.get("source_submission_summary"), dict) else None),
+            ((item.get("matched_submission_summary") or {}).get("file_name") if isinstance(item.get("matched_submission_summary"), dict) else None),
             item.get("review_notes"),
         )
     ).lower()
     return normalized in haystack
+
+
+def _derive_submission_public_id(
+    submission_doc: dict | None,
+    fallback_submission_id: str | None,
+) -> str | None:
+    if isinstance(submission_doc, dict):
+        public_id = submission_doc.get("public_id") or build_public_id("submission", submission_doc)
+        if public_id:
+            return str(public_id)
+    if isinstance(fallback_submission_id, str) and fallback_submission_id.strip():
+        if ObjectId.is_valid(fallback_submission_id):
+            derived = build_public_id("submission", {"_id": fallback_submission_id})
+            if derived:
+                return str(derived)
+        return fallback_submission_id
+    return None
+
+
+def _derive_assignment_label(
+    assignment_doc: dict | None,
+    fallback_assignment_id: str | None,
+) -> str | None:
+    if isinstance(assignment_doc, dict):
+        public_id = assignment_doc.get("public_id") or build_public_id("assignment", assignment_doc)
+        label = build_display_label(
+            "assignment",
+            assignment_doc,
+            public_id=public_id,
+            display_name=assignment_doc.get("title"),
+        )
+        if label:
+            return str(label)
+    if isinstance(fallback_assignment_id, str) and fallback_assignment_id.strip():
+        if ObjectId.is_valid(fallback_assignment_id):
+            derived_public_id = build_public_id("assignment", {"_id": fallback_assignment_id})
+            if derived_public_id:
+                return str(derived_public_id)
+        return fallback_assignment_id
+    return None
+
+
+def _build_similarity_text_preview(text: str | None, *, max_length: int = 240) -> str | None:
+    value = " ".join(str(text or "").split())
+    if not value:
+        return None
+    if len(value) <= max_length:
+        return value
+    return f"{value[: max_length - 3].rstrip()}..."
+
+
+def _build_submission_summary(
+    submission_doc: dict | None,
+    *,
+    submission_public_id: str | None,
+    assignment_label: str | None,
+    student_doc: dict | None,
+) -> dict[str, Any] | None:
+    if not isinstance(submission_doc, dict) and not submission_public_id:
+        return None
+    original_filename = submission_doc.get("original_filename") if isinstance(submission_doc, dict) else None
+    submission_label = None
+    if isinstance(submission_doc, dict):
+        submission_label = build_display_label(
+            "submission",
+            submission_doc,
+            public_id=submission_public_id,
+            display_name=original_filename,
+        )
+    if not submission_label:
+        submission_label = submission_public_id
+    return {
+        "submission_public_id": submission_public_id,
+        "submission_label": submission_label,
+        "student_label": build_user_label(
+            submission_doc.get("student_user_id") if isinstance(submission_doc, dict) else None,
+            full_name=(student_doc or {}).get("full_name"),
+            email=(student_doc or {}).get("email"),
+        ) if isinstance(submission_doc, dict) or student_doc else None,
+        "assignment_label": assignment_label,
+        "file_name": original_filename or "-",
+        "uploaded_at": submission_doc.get("created_at") if isinstance(submission_doc, dict) else None,
+        "text_preview": _build_similarity_text_preview(
+            submission_doc.get("extracted_text") if isinstance(submission_doc, dict) else None
+        ),
+        "text_length": len(str(submission_doc.get("extracted_text") or "")) if isinstance(submission_doc, dict) else None,
+    }
+
+
+async def _attach_submission_public_ids(items: list[dict]) -> list[dict]:
+    if not items:
+        return items
+
+    submission_ids = {
+        value
+        for item in items
+        for value in (
+            _normalize_object_id_value(item.get("source_submission_id")),
+            _normalize_object_id_value(item.get("matched_submission_id")),
+        )
+        if value
+    }
+    submission_docs_by_id: dict[str, dict] = {}
+    if submission_ids:
+        submission_docs = await db.submissions.find(
+            {"_id": {"$in": [ObjectId(value) for value in submission_ids]}},
+            {
+                "_id": 1,
+                "public_id": 1,
+                "student_user_id": 1,
+            },
+        ).to_list(length=len(submission_ids))
+        submission_docs_by_id = {
+            str(item.get("_id")): item
+            for item in submission_docs
+            if item.get("_id")
+        }
+
+    enriched: list[dict] = []
+    for item in items:
+        source_submission_id = item.get("source_submission_id")
+        matched_submission_id = item.get("matched_submission_id")
+        source_submission_id_key = _normalize_object_id_value(source_submission_id)
+        matched_submission_id_key = _normalize_object_id_value(matched_submission_id)
+        enriched.append(
+            {
+                **item,
+                "source_submission_public_id": _derive_submission_public_id(
+                    submission_docs_by_id.get(source_submission_id_key),
+                    str(source_submission_id) if source_submission_id is not None else None,
+                ),
+                "matched_submission_public_id": _derive_submission_public_id(
+                    submission_docs_by_id.get(matched_submission_id_key),
+                    str(matched_submission_id) if matched_submission_id is not None else None,
+                ),
+            }
+        )
+    return enriched
+
+
+async def _attach_assignment_labels(items: list[dict]) -> list[dict]:
+    if not items:
+        return items
+
+    assignment_ids = {
+        value
+        for item in items
+        for value in (
+            _normalize_object_id_value(item.get("source_assignment_id")),
+            _normalize_object_id_value(item.get("matched_assignment_id")),
+        )
+        if value
+    }
+    assignment_docs_by_id: dict[str, dict] = {}
+    if assignment_ids:
+        assignment_docs = await db.assignments.find(
+            {"_id": {"$in": [ObjectId(value) for value in assignment_ids]}},
+            {
+                "_id": 1,
+                "title": 1,
+                "public_id": 1,
+            },
+        ).to_list(length=len(assignment_ids))
+        assignment_docs_by_id = {
+            str(item.get("_id")): item
+            for item in assignment_docs
+            if item.get("_id")
+        }
+
+    enriched: list[dict] = []
+    for item in items:
+        source_assignment_id = item.get("source_assignment_id")
+        matched_assignment_id = item.get("matched_assignment_id")
+        source_assignment_id_key = _normalize_object_id_value(source_assignment_id)
+        matched_assignment_id_key = _normalize_object_id_value(matched_assignment_id)
+        enriched.append(
+            {
+                **item,
+                "source_assignment_label": _derive_assignment_label(
+                    assignment_docs_by_id.get(source_assignment_id_key),
+                    str(source_assignment_id) if source_assignment_id is not None else None,
+                ),
+                "matched_assignment_label": _derive_assignment_label(
+                    assignment_docs_by_id.get(matched_assignment_id_key),
+                    str(matched_assignment_id) if matched_assignment_id is not None else None,
+                ),
+            }
+        )
+    return enriched
+
+
+async def _attach_submission_summaries(items: list[dict]) -> list[dict]:
+    if not items:
+        return items
+
+    submission_ids = {
+        value
+        for item in items
+        for value in (
+            _normalize_object_id_value(item.get("source_submission_id")),
+            _normalize_object_id_value(item.get("matched_submission_id")),
+        )
+        if value
+    }
+    if not submission_ids:
+        return items
+
+    submission_docs = await db.submissions.find(
+        {"_id": {"$in": [ObjectId(value) for value in submission_ids]}},
+        {
+            "_id": 1,
+            "public_id": 1,
+            "original_filename": 1,
+            "student_user_id": 1,
+            "assignment_id": 1,
+            "created_at": 1,
+            "extracted_text": 1,
+        },
+    ).to_list(length=len(submission_ids))
+    submission_docs_by_id = {
+        str(item.get("_id")): item
+        for item in submission_docs
+        if item.get("_id")
+    }
+
+    assignment_ids = {
+        value
+        for item in submission_docs
+        for value in (_normalize_object_id_value(item.get("assignment_id")),)
+        if value
+    }
+    assignment_docs_by_id: dict[str, dict] = {}
+    if assignment_ids:
+        assignment_docs = await db.assignments.find(
+            {"_id": {"$in": [ObjectId(value) for value in assignment_ids]}},
+            {
+                "_id": 1,
+                "title": 1,
+                "public_id": 1,
+            },
+        ).to_list(length=len(assignment_ids))
+        assignment_docs_by_id = {
+            str(item.get("_id")): item
+            for item in assignment_docs
+            if item.get("_id")
+        }
+
+    student_user_ids = {
+        value
+        for item in submission_docs
+        for value in (_normalize_object_id_value(item.get("student_user_id")),)
+        if value
+    }
+    student_docs_by_id: dict[str, dict] = {}
+    if student_user_ids:
+        student_docs = await db.users.find(
+            {"_id": {"$in": [ObjectId(value) for value in student_user_ids]}},
+            {
+                "_id": 1,
+                "full_name": 1,
+                "email": 1,
+            },
+        ).to_list(length=len(student_user_ids))
+        student_docs_by_id = {
+            str(item.get("_id")): item
+            for item in student_docs
+            if item.get("_id")
+        }
+
+    enriched: list[dict] = []
+    for item in items:
+        source_submission_id = item.get("source_submission_id")
+        matched_submission_id = item.get("matched_submission_id")
+        source_submission_doc = submission_docs_by_id.get(_normalize_object_id_value(source_submission_id))
+        matched_submission_doc = submission_docs_by_id.get(_normalize_object_id_value(matched_submission_id))
+        source_assignment_label = item.get("source_assignment_label") or _derive_assignment_label(
+            assignment_docs_by_id.get(_normalize_object_id_value(source_submission_doc.get("assignment_id"))) if isinstance(source_submission_doc, dict) else None,
+            str(source_submission_doc.get("assignment_id")) if isinstance(source_submission_doc, dict) and source_submission_doc.get("assignment_id") is not None else None,
+        )
+        matched_assignment_label = item.get("matched_assignment_label") or _derive_assignment_label(
+            assignment_docs_by_id.get(_normalize_object_id_value(matched_submission_doc.get("assignment_id"))) if isinstance(matched_submission_doc, dict) else None,
+            str(matched_submission_doc.get("assignment_id")) if isinstance(matched_submission_doc, dict) and matched_submission_doc.get("assignment_id") is not None else None,
+        )
+        source_submission_public_id = item.get("source_submission_public_id") or _derive_submission_public_id(
+            source_submission_doc,
+            str(source_submission_id) if source_submission_id is not None else None,
+        )
+        matched_submission_public_id = item.get("matched_submission_public_id") or _derive_submission_public_id(
+            matched_submission_doc,
+            str(matched_submission_id) if matched_submission_id is not None else None,
+        )
+        enriched.append(
+            {
+                **item,
+                "source_submission_summary": _build_submission_summary(
+                    source_submission_doc,
+                    submission_public_id=source_submission_public_id,
+                    assignment_label=source_assignment_label,
+                    student_doc=student_docs_by_id.get(_normalize_object_id_value(source_submission_doc.get("student_user_id"))) if isinstance(source_submission_doc, dict) else None,
+                ),
+                "matched_submission_summary": _build_submission_summary(
+                    matched_submission_doc,
+                    submission_public_id=matched_submission_public_id,
+                    assignment_label=matched_assignment_label,
+                    student_doc=student_docs_by_id.get(_normalize_object_id_value(matched_submission_doc.get("student_user_id"))) if isinstance(matched_submission_doc, dict) else None,
+                ),
+            }
+        )
+    return enriched
 
 
 async def _load_similarity_run_context(
@@ -226,6 +553,9 @@ async def similarity_checks(
     items = await db.similarity_logs.find(query).sort("created_at", -1).limit(candidate_limit).to_list(length=candidate_limit)
 
     items = await filter_similarity_logs_for_user(current_user, items, database=db)
+    items = await _attach_submission_public_ids(items)
+    items = await _attach_assignment_labels(items)
+    items = await _attach_submission_summaries(items)
     filtered_items = []
     for item in items:
         numeric_score = item.get("score")
@@ -272,6 +602,9 @@ async def get_similarity_check(
     allowed = await can_view_similarity_log(current_user, item, database=db)
     if not allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed to view this similarity log')
+    item = (await _attach_submission_public_ids([item]))[0]
+    item = (await _attach_assignment_labels([item]))[0]
+    item = (await _attach_submission_summaries([item]))[0]
     payload = similarity_log_public(item, include_evidence=True)
     related_shadow_rows = await db.similarity_logs.find(
         {
@@ -280,6 +613,9 @@ async def get_similarity_check(
         }
     ).sort("semantic_shadow_score", -1).limit(5).to_list(length=5)
     related_shadow_rows = await filter_similarity_logs_for_user(current_user, related_shadow_rows, database=db)
+    related_shadow_rows = await _attach_submission_public_ids(related_shadow_rows)
+    related_shadow_rows = await _attach_assignment_labels(related_shadow_rows)
+    related_shadow_rows = await _attach_submission_summaries(related_shadow_rows)
     payload["related_shadow_candidates"] = [
         similarity_log_public(row, include_evidence=True)
         for row in related_shadow_rows
@@ -346,6 +682,9 @@ async def update_similarity_check(
 
     await db.similarity_logs.update_one({"_id": parse_object_id(log_id)}, {"$set": update_data})
     updated = await db.similarity_logs.find_one({"_id": parse_object_id(log_id)})
+    updated = (await _attach_submission_public_ids([updated]))[0]
+    updated = (await _attach_assignment_labels([updated]))[0]
+    updated = (await _attach_submission_summaries([updated]))[0]
     payload = similarity_log_public(updated, include_evidence=True)
     payload["related_shadow_candidates"] = []
     return SimilarityLogOut(**payload)
@@ -395,6 +734,9 @@ async def run_similarity_check(
 
     created_items = list(result.get('items') or [])
     created_items = await filter_similarity_logs_for_user(current_user, created_items, database=db)
+    created_items = await _attach_submission_public_ids(created_items)
+    created_items = await _attach_assignment_labels(created_items)
+    created_items = await _attach_submission_summaries(created_items)
 
     return [SimilarityLogOut(**similarity_log_public(item)) for item in created_items]
 

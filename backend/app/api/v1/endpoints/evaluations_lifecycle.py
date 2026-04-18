@@ -19,7 +19,7 @@ from app.services.evaluation_workflow import (
 )
 from app.services.official_results import request_semester_result_correction
 
-from .evaluations_common import get_evaluations_db
+from .evaluations_common import attach_evaluation_labels, get_evaluations_db
 
 router = APIRouter()
 
@@ -110,6 +110,7 @@ async def update_evaluation(
             database=database,
         )
 
+    updated = (await attach_evaluation_labels([updated], database=database))[0]
     return EvaluationOut(**evaluation_public(updated))
 
 
@@ -146,6 +147,7 @@ async def finalize_evaluation(
         entity_id=evaluation_id,
         detail="Finalized evaluation",
     )
+    updated = (await attach_evaluation_labels([updated], database=database))[0]
     return EvaluationOut(**evaluation_public(updated))
 
 
@@ -191,6 +193,7 @@ async def override_unfinalize_evaluation(
             reason=f"Released evaluation was unfinalized by admin override. Reason: {payload.reason.strip()}",
             database=database,
         )
+    updated = (await attach_evaluation_labels([updated], database=database))[0]
     return EvaluationOut(**evaluation_public(updated))
 
 
@@ -233,4 +236,5 @@ async def release_evaluation_result(
         entity_id=evaluation_id,
         detail=f"Released official result version {next_version}",
     )
+    updated = (await attach_evaluation_labels([updated], database=database))[0]
     return EvaluationOut(**evaluation_public(updated))

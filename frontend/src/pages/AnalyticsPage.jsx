@@ -1,15 +1,36 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import PredictiveOversightPanel from '../components/analytics/PredictiveOversightPanel';
 import Card from '../components/ui/Card';
 import StatCard from '../components/ui/StatCard';
 import SafeResponsiveContainer from '../components/charts/SafeResponsiveContainer';
+import { useAuth } from '../hooks/useAuth';
 import { apiClient } from '../services/apiClient';
 
 export default function AnalyticsPage() {
+  const { user } = useAuth();
+  const predictiveRequestStartedRef = useRef(false);
   const [role, setRole] = useState('');
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [predictiveOverview, setPredictiveOverview] = useState(null);
+  const [predictiveLoading, setPredictiveLoading] = useState(false);
+  const [predictiveError, setPredictiveError] = useState('');
+  const [predictiveUnavailable, setPredictiveUnavailable] = useState(() => {
+    try {
+      return window.sessionStorage.getItem('caps_ai_predictive_overview_unavailable') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const canViewPredictiveOversight = useMemo(() => {
+    if (user?.role === 'admin') return true;
+    if (user?.role !== 'teacher') return false;
+    const extensions = user?.extended_roles || [];
+    return extensions.includes('year_head') || extensions.includes('class_coordinator');
+  }, [user]);
 
   useEffect(() => {
     async function loadSummary() {
@@ -29,6 +50,54 @@ export default function AnalyticsPage() {
 
     loadSummary();
   }, []);
+
+  useEffect(() => {
+    if (!canViewPredictiveOversight || predictiveUnavailable) {
+      setPredictiveOverview(null);
+      setPredictiveError('');
+      setPredictiveLoading(false);
+      predictiveRequestStartedRef.current = false;
+      return;
+    }
+    if (predictiveRequestStartedRef.current) {
+      return;
+    }
+
+    async function loadPredictiveOverview() {
+      predictiveRequestStartedRef.current = true;
+      setPredictiveLoading(true);
+      setPredictiveError('');
+      try {
+        const response = await apiClient.get('/analytics/academic/predictive-overview');
+        try {
+          window.sessionStorage.removeItem('caps_ai_predictive_overview_unavailable');
+        } catch {
+          // Ignore session storage failures for non-critical analytics hints.
+        }
+        setPredictiveOverview(response.data || null);
+      } catch (err) {
+        const status = err?.response?.status;
+        if (status === 404) {
+          try {
+            window.sessionStorage.setItem('caps_ai_predictive_overview_unavailable', '1');
+          } catch {
+            // Ignore session storage failures for non-critical analytics hints.
+          }
+          setPredictiveUnavailable(true);
+          setPredictiveOverview(null);
+          setPredictiveError('');
+          return;
+        }
+        const detail = err?.response?.data?.detail || 'Failed to load predictive oversight';
+        setPredictiveError(String(detail));
+      } finally {
+        setPredictiveLoading(false);
+        predictiveRequestStartedRef.current = false;
+      }
+    }
+
+    loadPredictiveOverview();
+  }, [canViewPredictiveOversight, predictiveUnavailable]);
 
   const entries = useMemo(
     () =>
@@ -71,6 +140,14 @@ export default function AnalyticsPage() {
               </SafeResponsiveContainer>
             </div>
           </Card>
+
+          {canViewPredictiveOversight ? (
+            <PredictiveOversightPanel
+              overview={predictiveOverview}
+              loading={predictiveLoading}
+              error={predictiveError}
+            />
+          ) : null}
         </>
       ) : null}
     </div>

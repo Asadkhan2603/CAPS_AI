@@ -207,6 +207,7 @@ const studentNavigationGroups = [
     label: 'Academics',
     items: [
       { to: '/class-slots', label: 'My Classes', featureKey: 'classSlots', icon: CalendarRange },
+      { to: '/section-representative', label: 'CR Workspace', featureKey: 'sectionRepresentative', icon: Users },
       { to: '/exams', label: 'My Exams', featureKey: 'exams', icon: CalendarDays },
       { to: '/submissions', label: 'My Submissions', featureKey: 'submissions', icon: FileText },
       { to: '/evaluations', label: 'My Evaluations', featureKey: 'evaluations', icon: CheckSquare },

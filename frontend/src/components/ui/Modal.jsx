@@ -28,7 +28,7 @@ export default function Modal({ open, title, onClose, children, size = 'default'
           >
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold">{title}</h3>
-              <button className="btn-secondary !p-2" onClick={onClose}>
+              <button className="btn-secondary !p-2" onClick={onClose} aria-label="Close modal">
                 <X size={16} />
               </button>
             </div>

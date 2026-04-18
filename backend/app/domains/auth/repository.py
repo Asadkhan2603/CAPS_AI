@@ -4,6 +4,7 @@ from datetime import datetime
 import re
 from typing import Any, Callable
 
+from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
 from app.core.database import db as core_db
@@ -134,6 +135,16 @@ class AuthRepository:
             return None
         return await sessions.find_one({"refresh_jti": refresh_jti, "revoked_at": None})
 
+    async def find_active_session_by_id(self, session_id: str) -> dict[str, Any] | None:
+        sessions = getattr(self._db, "user_sessions", None)
+        if sessions is None:
+            return None
+        try:
+            session_obj_id = ObjectId(session_id)
+        except Exception:
+            return None
+        return await sessions.find_one({"_id": session_obj_id, "revoked_at": None})
+
     async def revoke_session_by_refresh_jti(self, refresh_jti: str, *, revoked_at: datetime) -> None:
         sessions = getattr(self._db, "user_sessions", None)
         if sessions is None:
@@ -142,6 +153,20 @@ class AuthRepository:
             {"refresh_jti": refresh_jti, "revoked_at": None},
             {"$set": {"revoked_at": revoked_at, "schema_version": USER_SESSION_SCHEMA_VERSION}},
         )
+
+    async def revoke_session_by_id(self, session_id: str, *, revoked_at: datetime) -> bool:
+        sessions = getattr(self._db, "user_sessions", None)
+        if sessions is None:
+            return False
+        try:
+            session_obj_id = ObjectId(session_id)
+        except Exception:
+            return False
+        result = await sessions.update_one(
+            {"_id": session_obj_id, "revoked_at": None},
+            {"$set": {"revoked_at": revoked_at, "schema_version": USER_SESSION_SCHEMA_VERSION}},
+        )
+        return bool(getattr(result, "matched_count", 0))
 
     async def rotate_session_refresh_jti(
         self,
@@ -182,3 +207,139 @@ class AuthRepository:
         rows = await cursor.limit(limit).to_list(length=limit)
         rows.sort(key=lambda row: row.get("created_at"), reverse=True)
         return rows[:limit]
+
+    # =====================
+    # MFA Methods
+    # =====================
+
+    async def save_totp_secret(self, user_obj_id, secret: str, backup_codes: list[dict]) -> None:
+        """Save TOTP secret and backup codes for a user."""
+        now = datetime.now(datetime.now().astimezone().tzinfo)
+        await self.update_user(
+            user_obj_id,
+            {
+                "mfa_totp_secret": secret,
+                "mfa_totp_enabled": False,  # Not confirmed yet
+                "mfa_backup_codes": backup_codes,
+                "mfa_backup_codes_generated_at": now,
+                "updated_at": now,
+            },
+        )
+
+    async def confirm_totp(self, user_obj_id) -> None:
+        """Mark TOTP as confirmed/enabled."""
+        now = datetime.now(datetime.now().astimezone().tzinfo)
+        await self.update_user(
+            user_obj_id,
+            {
+                "mfa_totp_enabled": True,
+                "mfa_totp_confirmed_at": now,
+                "updated_at": now,
+            },
+        )
+
+    async def disable_totp(self, user_obj_id) -> None:
+        """Disable TOTP for a user."""
+        now = datetime.now(datetime.now().astimezone().tzinfo)
+        await self.update_user(
+            user_obj_id,
+            {
+                "mfa_totp_enabled": False,
+                "mfa_totp_secret": None,
+                "mfa_backup_codes": [],
+                "updated_at": now,
+            },
+        )
+
+    async def save_email_otp(self, user_obj_id, otp_hash: str, expires_at: datetime) -> None:
+        """Save email OTP temporarily."""
+        await self.update_user(
+            user_obj_id,
+            {
+                "mfa_email_otp_hash": otp_hash,
+                "mfa_email_otp_expires_at": expires_at,
+                "mfa_email_attempts": 0,
+                "updated_at": datetime.now(datetime.now().astimezone().tzinfo),
+            },
+        )
+
+    async def save_sms_otp(self, user_obj_id, otp_hash: str, expires_at: datetime) -> None:
+        """Save SMS OTP temporarily."""
+        await self.update_user(
+            user_obj_id,
+            {
+                "mfa_sms_otp_hash": otp_hash,
+                "mfa_sms_otp_expires_at": expires_at,
+                "mfa_sms_attempts": 0,
+                "updated_at": datetime.now(datetime.now().astimezone().tzinfo),
+            },
+        )
+
+    async def verify_mfa_status(self, user_id: str) -> dict[str, Any]:
+        """Get MFA status for a user."""
+        user = await self.find_user_by_id(user_id)
+        if not user:
+            return {}
+        return {
+            "totp_enabled": user.get("mfa_totp_enabled", False),
+            "email_enabled": user.get("mfa_email_enabled", False),
+            "sms_enabled": user.get("mfa_sms_enabled", False),
+            "backup_codes_count": len(user.get("mfa_backup_codes", [])),
+        }
+
+    async def consume_backup_code(self, user_obj_id, code_hash: str) -> bool:
+        """Consume a backup code and mark it as used."""
+        user = await self.find_user_by_id(user_obj_id)
+        if not user:
+            return False
+
+        backup_codes = user.get("mfa_backup_codes", [])
+        for i, code in enumerate(backup_codes):
+            if code.get("code_hash") == code_hash and not code.get("used"):
+                backup_codes[i]["used"] = True
+                backup_codes[i]["used_at"] = datetime.now(datetime.now().astimezone().tzinfo)
+                await self.update_user(
+                    user_obj_id,
+                    {
+                        "mfa_backup_codes": backup_codes,
+                        "updated_at": datetime.now(datetime.now().astimezone().tzinfo),
+                    },
+                )
+                return True
+        return False
+
+    async def increment_mfa_attempts(self, user_obj_id, mfa_type: str) -> int:
+        """Increment MFA verification attempts."""
+        user = await self.find_user_by_id(user_obj_id)
+        if not user:
+            return 0
+
+        if mfa_type == "email":
+            attempts = user.get("mfa_email_attempts", 0) + 1
+            await self.update_user(
+                user_obj_id,
+                {"mfa_email_attempts": attempts, "updated_at": datetime.now(datetime.now().astimezone().tzinfo)},
+            )
+            return attempts
+        elif mfa_type == "sms":
+            attempts = user.get("mfa_sms_attempts", 0) + 1
+            await self.update_user(
+                user_obj_id,
+                {"mfa_sms_attempts": attempts, "updated_at": datetime.now(datetime.now().astimezone().tzinfo)},
+            )
+            return attempts
+        return 0
+
+    async def clear_mfa_attempts(self, user_obj_id) -> None:
+        """Clear MFA verification attempts."""
+        now = datetime.now(datetime.now().astimezone().tzinfo)
+        await self.update_user(
+            user_obj_id,
+            {
+                "mfa_email_attempts": 0,
+                "mfa_sms_attempts": 0,
+                "mfa_email_otp_hash": None,
+                "mfa_sms_otp_hash": None,
+                "updated_at": now,
+            },
+        )

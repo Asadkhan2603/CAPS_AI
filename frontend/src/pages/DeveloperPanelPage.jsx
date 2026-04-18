@@ -39,7 +39,7 @@ export default function DeveloperPanelPage() {
         key: 'requestId',
         label: 'Request ID',
         render: (row) => (
-          <button className="btn-secondary !px-2 !py-1 text-xs" onClick={() => copy(row.requestId)} title={row.requestId}>
+          <button className="btn-sm" onClick={() => copy(row.requestId)} title={row.requestId}>
             {row.requestId ? row.requestId.slice(0, 10) : '-'}
           </button>
         )
@@ -48,7 +48,7 @@ export default function DeveloperPanelPage() {
         key: 'traceId',
         label: 'Trace ID',
         render: (row) => (
-          <button className="btn-secondary !px-2 !py-1 text-xs" onClick={() => copy(row.traceId)} title={row.traceId}>
+          <button className="btn-sm" onClick={() => copy(row.traceId)} title={row.traceId}>
             {row.traceId ? row.traceId.slice(0, 10) : '-'}
           </button>
         )
@@ -58,7 +58,7 @@ export default function DeveloperPanelPage() {
         label: 'Error ID',
         render: (row) =>
           row.errorId ? (
-            <button className="btn-secondary !px-2 !py-1 text-xs" onClick={() => copy(row.errorId)} title={row.errorId}>
+            <button className="btn-sm" onClick={() => copy(row.errorId)} title={row.errorId}>
               {row.errorId.slice(0, 10)}
             </button>
           ) : (

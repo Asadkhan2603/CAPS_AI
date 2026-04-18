@@ -50,12 +50,12 @@ export default function Toast({ toasts, onDismiss }) {
                   <p className="text-sm font-semibold">{toast.title}</p>
                   {toast.description ? <p className="mt-1 text-xs opacity-90">{toast.description}</p> : null}
                   {errorId ? (
-                    <button className="btn-secondary mt-2 !px-2 !py-1 text-xs" onClick={() => copyErrorId(errorId)}>
+                    <button className="btn-sm mt-2" onClick={() => copyErrorId(errorId)}>
                       Copy Error ID
                     </button>
                   ) : null}
                 </div>
-                <button className="btn-secondary !p-1.5" onClick={() => onDismiss(toast.id)}>
+                <button className="btn-compact" onClick={() => onDismiss(toast.id)} aria-label="Close notification">
                   <X size={14} />
                 </button>
               </div>

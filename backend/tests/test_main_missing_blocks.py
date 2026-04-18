@@ -127,6 +127,47 @@ def test_evaluation_create_computes_totals_and_grade() -> None:
     assert len(fake_db.audit_logs.items) == 1
 
 
+def test_evaluation_list_returns_readable_submission_student_teacher_labels() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_eval_labels@example.com")
+
+    _assignment, submission, _student_headers_unused = _create_submission(
+        client,
+        admin_headers,
+        "student_eval_labels@example.com",
+        title="Readable Evaluation Assignment",
+    )
+
+    created = client.post(
+        "/api/v1/evaluations/",
+        json={
+            "submission_id": submission["id"],
+            "attendance_percent": 90,
+            "skill": 2.0,
+            "behavior": 2.0,
+            "report": 8,
+            "viva": 16,
+            "final_exam": 48,
+            "remarks": "Readable labels",
+            "is_finalized": False,
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 201, created.text
+    created_body = created.json()
+    assert created_body["submission_label"]
+    assert created_body["student_label"]
+    assert created_body["teacher_label"].startswith("Admin User")
+
+    listed = client.get("/api/v1/evaluations/", headers=admin_headers)
+    assert listed.status_code == 200, listed.text
+    row = next(item for item in listed.json() if item["id"] == created_body["id"])
+    assert row["submission_label"] == created_body["submission_label"]
+    assert row["student_label"] == created_body["student_label"]
+    assert row["teacher_label"] == created_body["teacher_label"]
+
+
 def test_evaluation_grade_boundaries() -> None:
     _setup_fake_db()
     client = TestClient(app)
@@ -1941,12 +1982,26 @@ def test_similarity_detail_and_review_update() -> None:
     assert run.status_code == 200
     run_rows = run.json()
     target_row = next((item for item in run_rows if item.get("is_flagged")), run_rows[0])
+    assert target_row["source_submission_public_id"] == first.json()["public_id"]
+    assert target_row["matched_submission_public_id"] == second.json()["public_id"]
     log_id = target_row["id"]
 
     detail = client.get(f"/api/v1/similarity/checks/{log_id}", headers=headers)
     assert detail.status_code == 200
     body = detail.json()
     assert body["id"] == log_id
+    assert body["source_submission_public_id"] == first.json()["public_id"]
+    assert body["matched_submission_public_id"] == second.json()["public_id"]
+    assert body["source_assignment_label"] == assignment.json()["display_label"]
+    assert body["matched_assignment_label"] == assignment.json()["display_label"]
+    assert body["source_submission_summary"]["submission_public_id"] == first.json()["public_id"]
+    assert body["matched_submission_summary"]["submission_public_id"] == second.json()["public_id"]
+    assert body["source_submission_summary"]["student_label"]
+    assert body["matched_submission_summary"]["student_label"]
+    assert body["source_submission_summary"]["file_name"] == "one.txt"
+    assert body["matched_submission_summary"]["file_name"] == "two.txt"
+    assert body["source_submission_summary"]["text_preview"]
+    assert body["matched_submission_summary"]["text_preview"]
     assert body["decision_mode"] in {"flagged", "assist_only", "suppressed"}
     assert body["candidate_count"] is not None
     assert body["cap_reached"] in [True, False]
@@ -2466,6 +2521,56 @@ def test_ai_operations_overview_includes_quality_gate_snapshot() -> None:
     assert body["quality_gates"]["reviewer_outcome_calibration"]["analytics"]["review_status_counts"]["fixed"] == 1
     assert "reopened_reason_trends" in body["quality_gates"]["reviewer_outcome_calibration"]["analytics"]
     assert "reviewer_outcome_pipeline" in body
+
+
+def test_ai_operations_overview_returns_readable_chat_labels() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_ai_ops_chat_labels@example.com")
+    now = datetime.now(timezone.utc)
+
+    student_id = ObjectId()
+    assignment_id = ObjectId()
+    fake_db.users.items.append(
+        {
+            "_id": student_id,
+            "full_name": "Readable Student",
+            "email": "readable_student@example.com",
+            "role": "student",
+            "is_active": True,
+        }
+    )
+    fake_db.assignments.items.append(
+        {
+            "_id": assignment_id,
+            "title": "Readable Assignment",
+            "description": "AI ops label coverage",
+            "public_id": "ASG-READ-123",
+            "created_at": now,
+        }
+    )
+    fake_db.ai_evaluation_chats.items.append(
+        {
+            "_id": ObjectId(),
+            "teacher_id": "teacher-1",
+            "student_id": str(student_id),
+            "exam_id": str(assignment_id),
+            "question_id": "q1",
+            "messages": [
+                {"role": "teacher", "content": "Review this answer."},
+                {"role": "ai", "content": "Fallback review hint."},
+            ],
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    response = client.get("/api/v1/ai/ops/overview", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["recent_chat_threads"]) >= 1
+    assert body["recent_chat_threads"][0]["student_label"] == "Readable Student (readable_student@example.com)"
+    assert body["recent_chat_threads"][0]["assignment_label"] == "Readable Assignment (ASG-READ-123)"
 
 
 def test_ai_admin_semantic_rollout_config_supports_update_and_history() -> None:
@@ -3247,6 +3352,72 @@ def test_ai_operations_overview_includes_reviewer_outcome_pipeline() -> None:
     assert pipeline["minimum_sample_gap"] == 4
 
 
+def test_similarity_detail_resolves_legacy_objectid_link_fields() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    headers = _admin_headers(client, "admin_similarity_legacy_objectid@example.com")
+
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={"title": "Legacy Similarity Detail Assignment", "description": "detail"},
+        headers=headers,
+    )
+    assert assignment.status_code == 201
+    assignment_id = assignment.json()["id"]
+
+    student_one_headers = _student_headers(client, "student_similarity_legacy_one@example.com")
+    student_two_headers = _student_headers(client, "student_similarity_legacy_two@example.com")
+
+    first = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment_id},
+        files={"file": ("legacy-one.txt", b"legacy identical similarity text", "text/plain")},
+        headers=student_one_headers,
+    )
+    second = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment_id},
+        files={"file": ("legacy-two.txt", b"legacy identical similarity text", "text/plain")},
+        headers=student_two_headers,
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    run = client.post(
+        f"/api/v1/similarity/checks/run/{first.json()['id']}?threshold=0.1",
+        headers=headers,
+    )
+    assert run.status_code == 200
+    target_row = next((item for item in run.json() if item.get("is_flagged")), run.json()[0])
+    log_id = target_row["id"]
+
+    asyncio.run(
+        fake_db.similarity_logs.update_one(
+            {"_id": ObjectId(log_id)},
+            {
+                "$set": {
+                    "source_submission_id": ObjectId(first.json()["id"]),
+                    "matched_submission_id": ObjectId(second.json()["id"]),
+                    "source_assignment_id": ObjectId(assignment_id),
+                    "matched_assignment_id": ObjectId(assignment_id),
+                }
+            },
+        )
+    )
+
+    detail = client.get(f"/api/v1/similarity/checks/{log_id}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["source_assignment_label"] == assignment.json()["display_label"]
+    assert body["matched_assignment_label"] == assignment.json()["display_label"]
+    assert body["source_submission_summary"]["submission_public_id"] == first.json()["public_id"]
+    assert body["matched_submission_summary"]["submission_public_id"] == second.json()["public_id"]
+    assert body["source_submission_summary"]["student_label"]
+    assert body["matched_submission_summary"]["student_label"]
+    assert body["source_submission_summary"]["file_name"] == "legacy-one.txt"
+    assert body["matched_submission_summary"]["file_name"] == "legacy-two.txt"
+
+
 def test_submission_upload_persists_extraction_diagnostics() -> None:
     _setup_fake_db()
     client = TestClient(app)
@@ -3367,7 +3538,9 @@ def test_similarity_run_stores_cross_assignment_shadow_candidates_without_flaggi
     detail = client.get(f"/api/v1/similarity/checks/{flagged['id']}", headers=admin_headers)
     assert detail.status_code == 200, detail.text
     detail_body = detail.json()
-    assert any(item["match_scope"] == "cross_assignment_shadow" for item in detail_body["related_shadow_candidates"])
+    cross_candidate = next(item for item in detail_body["related_shadow_candidates"] if item["match_scope"] == "cross_assignment_shadow")
+    assert cross_candidate["matched_assignment_label"] == assignment_other.json()["display_label"]
+    assert cross_candidate["matched_submission_summary"]["student_label"]
 
 
 def test_evaluation_preview_and_persisted_payloads_share_rubric_criteria_outputs() -> None:
@@ -5598,9 +5771,20 @@ def test_similarity_threshold_alerts_generate_logs_notifications_and_scope_views
             "role": "teacher",
         },
     )
+    year_head_teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Year Head Teacher",
+            "email": "yearhead_similarity_alerts@example.com",
+            "password": "password123",
+            "role": "teacher",
+            "extended_roles": ["year_head"],
+        },
+    )
     assert owner_teacher.status_code == 201
     assert coordinator_teacher.status_code == 201
     assert plain_teacher.status_code == 201
+    assert year_head_teacher.status_code == 201
 
     structure = _seed_canonical_structure(fake_db, suffix="SIMA")
     class_item = client.post(
@@ -5659,8 +5843,21 @@ def test_similarity_threshold_alerts_generate_logs_notifications_and_scope_views
     assert checks[0]["score"] >= 0.1
     assert checks[0]["source_assignment_id"] == assignment.json()["id"]
 
-    assert len(fake_db.notifications.items) >= 1
-    assert any(item.get("priority") == "urgent" for item in fake_db.notifications.items)
+    similarity_notifications = [item for item in fake_db.notifications.items if item.get("scope") == "similarity"]
+    assert len(similarity_notifications) == 2
+    assert all(item.get("priority") == "urgent" for item in similarity_notifications)
+    target_user_ids = {item.get("target_user_id") for item in similarity_notifications}
+    assert target_user_ids == {
+        owner_teacher.json()["id"],
+        coordinator_teacher.json()["id"],
+    }
+    assert year_head_teacher.json()["id"] not in target_user_ids
+    for item in similarity_notifications:
+        message = str(item.get("message") or "")
+        assert first.json()["public_id"] in message
+        assert second.json()["public_id"] in message
+        assert first.json()["id"] not in message
+        assert second.json()["id"] not in message
 
     coord_login = client.post(
         "/api/v1/auth/login",
@@ -7361,14 +7558,253 @@ def test_grading_policy_updates_transcript_gpa_precision() -> None:
     assert policy_update.json()["transcript_precision"] == 3
     assert policy_update.json()["grade_points"]["A"] == 3.6
 
-    published = client.post(
+
+def test_academic_predictive_overview_surfaces_staffing_student_risk_and_interventions() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    admin_headers = _admin_headers(client, "admin_predictive_overview@example.com")
+
+    teacher = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Predictive Coordinator",
+            "email": "predictive_coordinator@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert teacher.status_code == 201, teacher.text
+    teacher_doc = next(item for item in fake_db.users.items if item.get("email") == "predictive_coordinator@example.com")
+    teacher_doc["extended_roles"] = ["class_coordinator"]
+
+    student = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Predictive Student",
+            "email": "predictive_student@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert student.status_code == 201, student.text
+
+    structure = _seed_canonical_structure(fake_db, suffix="PRD1", semester_number=5)
+    section = client.post(
+        "/api/v1/sections/",
+        json=_create_section_payload(
+            structure,
+            name="Predictive Section",
+            class_coordinator_user_id=teacher.json()["id"],
+        ),
+        headers=admin_headers,
+    )
+    assert section.status_code == 201, section.text
+
+    subject = client.post(
+        "/api/v1/subjects/",
+        json={"name": "Predictive Subject", "code": "PRD1-SUB", "description": "Forecast"},
+        headers=admin_headers,
+    )
+    assert subject.status_code == 201, subject.text
+
+    offering = client.post(
+        "/api/v1/course-offerings/",
+        json={
+            "subject_id": subject.json()["id"],
+            "teacher_user_id": teacher.json()["id"],
+            "batch_id": structure["batch_id"],
+            "semester_id": structure["semester_id"],
+            "section_id": section.json()["id"],
+            "group_id": None,
+            "academic_year": "2026-27",
+            "offering_type": "theory",
+        },
+        headers=admin_headers,
+    )
+    assert offering.status_code == 201, offering.text
+
+    slot = client.post(
+        "/api/v1/class-slots/",
+        json={
+            "course_offering_id": offering.json()["id"],
+            "day": "Monday",
+            "start_time": "08:30",
+            "end_time": "09:20",
+            "room_code": "P-201",
+        },
+        headers=admin_headers,
+    )
+    assert slot.status_code == 201, slot.text
+
+    existing_student = next(
+        (item for item in fake_db.students.items if item.get("email") == "predictive_student@example.com"),
+        None,
+    )
+    if existing_student is not None:
+        existing_student.update(
+            {
+                "full_name": "Predictive Student",
+                "roll_number": "PRD1-001",
+                "email": "predictive_student@example.com",
+                "user_id": student.json()["id"],
+                "class_id": section.json()["id"],
+                "is_active": True,
+            }
+        )
+        student_doc_id = str(existing_student["_id"])
+    else:
+        created_student = client.post(
+            "/api/v1/students/",
+            json={
+                "full_name": "Predictive Student",
+                "roll_number": "PRD1-001",
+                "email": "predictive_student@example.com",
+                "user_id": student.json()["id"],
+                "class_id": section.json()["id"],
+            },
+            headers=admin_headers,
+        )
+        assert created_student.status_code == 201, created_student.text
+        student_doc_id = created_student.json()["id"]
+
+    enrolled = client.post(
+        "/api/v1/enrollments/",
+        json={"class_id": section.json()["id"], "student_id": student_doc_id},
+        headers=admin_headers,
+    )
+    assert enrolled.status_code == 201, enrolled.text
+
+    fake_db.attendance_records.items.append(
+        {
+            "_id": ObjectId(),
+            "class_slot_id": slot.json()["id"],
+            "student_id": student_doc_id,
+            "status": "absent",
+            "marked_by_user_id": teacher.json()["id"],
+            "marked_at": datetime.now(timezone.utc) - timedelta(days=5),
+        }
+    )
+
+    assignment = client.post(
+        "/api/v1/assignments/",
+        json={
+            "title": "Predictive Assignment",
+            "description": "Forecast me",
+            "subject_id": subject.json()["id"],
+            "class_id": section.json()["id"],
+            "total_marks": 100,
+        },
+        headers=admin_headers,
+    )
+    assert assignment.status_code == 201, assignment.text
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "predictive_student@example.com", "password": "password123"},
+    )
+    assert student_login.status_code == 200, student_login.text
+    student_headers = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+
+    submission = client.post(
+        "/api/v1/submissions/upload",
+        data={"assignment_id": assignment.json()["id"]},
+        files={"file": ("predictive.txt", b"predictive submission", "text/plain")},
+        headers=student_headers,
+    )
+    assert submission.status_code == 201, submission.text
+
+    evaluation = client.post(
+        "/api/v1/evaluations/",
+        json={
+            "submission_id": submission.json()["id"],
+            "attendance_percent": 62,
+            "skill": 1.0,
+            "behavior": 1.0,
+            "report": 4,
+            "viva": 10,
+            "final_exam": 18,
+            "is_finalized": True,
+        },
+        headers=admin_headers,
+    )
+    assert evaluation.status_code == 201, evaluation.text
+    released = client.patch(f"/api/v1/evaluations/{evaluation.json()['id']}/release", headers=admin_headers)
+    assert released.status_code == 200, released.text
+    published_result = client.post(
         f"/api/v1/evaluations/results/publish-from-evaluation/{evaluation.json()['id']}",
         headers=admin_headers,
     )
-    assert published.status_code == 200, published.text
-    assert published.json()["gpa"] == 3.6
+    assert published_result.status_code == 200, published_result.text
 
-    transcript = client.get("/api/v1/evaluations/results/transcript", headers=student_headers)
-    assert transcript.status_code == 200, transcript.text
-    assert transcript.json()["cgpa"] == 3.6
+    fake_db.student_interventions.items.append(
+        {
+            "_id": ObjectId(),
+            "student_id": student_doc_id,
+            "student_name": "Predictive Student",
+            "section_id": section.json()["id"],
+            "section_name": "Predictive Section",
+            "risk_level": "critical",
+            "status": "open",
+            "note": "Attendance and released-score follow-up required.",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "reason_summary": ["attendance_shortage", "weak_released_result"],
+        }
+    )
+
+    draft = client.post(
+        "/api/v1/timetables/",
+        json={
+            "class_id": section.json()["id"],
+            "semester": "SEM-5",
+            "shift_id": "shift_1",
+            "days": ["Monday"],
+            "entries": [
+                {
+                    "day": "Monday",
+                    "slot_key": "p1",
+                    "subject_id": subject.json()["id"],
+                    "teacher_user_id": teacher.json()["id"],
+                    "room_code": "P-201",
+                    "session_type": "theory",
+                }
+            ],
+        },
+        headers=admin_headers,
+    )
+    assert draft.status_code == 201, draft.text
+    publish = client.post(f"/api/v1/timetables/{draft.json()['id']}/publish", headers=admin_headers)
+    assert publish.status_code == 200, publish.text
+
+    slot_update = client.put(
+        f"/api/v1/class-slots/{slot.json()['id']}",
+        json={"room_code": "P-999"},
+        headers=admin_headers,
+    )
+    assert slot_update.status_code == 200, slot_update.text
+
+    response = client.get("/api/v1/analytics/academic/predictive-overview", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["summary"]["critical_students"] >= 1
+    assert body["summary"]["sections_requiring_attention"] >= 1
+    assert len(body["staffing_forecast"]) >= 1
+    assert len(body["student_risk"]) >= 1
+    assert len(body["intervention_queue"]) >= 1
+    staffing_item = body["staffing_forecast"][0]
+    assert staffing_item["reason_codes"]
+    assert staffing_item["suggested_action"]
+    assert any(entry["label"] == "Timetable drift" for entry in staffing_item["evidence"])
+    student_item = body["student_risk"][0]
+    assert student_item["reason_codes"]
+    assert student_item["latest_intervention"]["status"] == "open"
+
+
+def test_student_cannot_access_academic_predictive_overview() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    student_headers = _student_headers(client, "student_predictive_forbidden@example.com")
+
+    response = client.get("/api/v1/analytics/academic/predictive-overview", headers=student_headers)
+    assert response.status_code == 403
 

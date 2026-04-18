@@ -66,6 +66,14 @@ def _rounded(value: float | None, digits: int = 4) -> float | None:
     return round(float(value), digits)
 
 
+def _aware_utc(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _semantic_config_float(config: dict[str, Any], key: str, fallback: float) -> float:
     value = config.get(key)
     if isinstance(value, (int, float)):
@@ -100,7 +108,7 @@ def _semantic_drift(row: dict[str, Any]) -> float | None:
 
 def _review_timestamp(row: dict[str, Any]) -> datetime | None:
     value = row.get("review_finalized_at") or row.get("reviewed_at") or row.get("created_at")
-    return value if isinstance(value, datetime) else None
+    return _aware_utc(value)
 
 
 def _build_threshold_snapshot(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -515,16 +523,16 @@ def _build_reviewer_outcome_pipeline(
     finalized_last_7d = 0
     for row in rows:
         status = _normalize_status(row.get("review_status"))
-        updated_at = row.get("review_updated_at") or row.get("reviewed_at") or row.get("created_at")
-        if isinstance(updated_at, datetime):
+        updated_at = _aware_utc(row.get("review_updated_at") or row.get("reviewed_at") or row.get("created_at"))
+        if updated_at:
             age_hours = max(0.0, (now - updated_at).total_seconds() / 3600.0)
             if status == "open" and age_hours >= 48:
                 stale_open_count += 1
             if status == "in_progress" and age_hours >= 72:
                 stale_in_progress_count += 1
-        finalized_at = row.get("review_finalized_at")
-        created_at = row.get("created_at")
-        if isinstance(finalized_at, datetime) and isinstance(created_at, datetime):
+        finalized_at = _aware_utc(row.get("review_finalized_at"))
+        created_at = _aware_utc(row.get("created_at"))
+        if finalized_at and created_at:
             finalize_durations_hours.append(max(0.0, (finalized_at - created_at).total_seconds() / 3600.0))
             if now - finalized_at <= timedelta(days=7):
                 finalized_last_7d += 1

@@ -10,6 +10,12 @@ from app.core.security import require_permission, require_roles
 from app.core.soft_delete import apply_is_active_filter, build_soft_delete_update, build_state_update
 from app.models.sections import section_public
 from app.schemas.section import (
+    SectionRepresentativeAssignmentIn,
+    SectionRepresentativeAssignmentOut,
+    SectionRepresentativeAuthorityContactOut,
+    SectionRepresentativeDashboardResponse,
+    SectionRepresentativeRemoveIn,
+    SectionRepresentativesResponse,
     SectionCreate,
     SectionDashboardResponse,
     SectionLockRequest,
@@ -18,7 +24,13 @@ from app.schemas.section import (
     SectionUpdate,
 )
 from app.services.academic_hierarchy import validate_batch_specialization_scope
+from app.services.academic_students import list_students_for_section, resolve_student_academic_context_for_user
 from app.services.audit import log_audit_event, log_destructive_action_event
+from app.services.class_representative_governance import (
+    assign_section_class_representative,
+    clear_section_class_representative,
+    normalize_class_representatives,
+)
 from app.services.governance import enforce_review_approval
 from app.services.section_read_models import (
     get_section_read_model,
@@ -74,6 +86,201 @@ async def _ensure_admin_can_access_section(current_user: dict[str, Any], section
     ):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Section is outside your assigned scope")
+
+
+def _teacher_is_year_head(current_user: dict[str, Any] | None) -> bool:
+    if not current_user or current_user.get("role") != "teacher":
+        return False
+    return "year_head" in set(current_user.get("extended_roles") or [])
+
+
+async def _admin_users_for_role(
+    role_code: str,
+    *,
+    department_id: str | None = None,
+) -> list[dict[str, Any]]:
+    normalized_role_code = role_code.strip().upper()
+    query = {
+        "role": "admin",
+        "is_active": True,
+        "$or": [{"admin_type": normalized_role_code.lower()}, {"rbac_role_code": normalized_role_code}],
+    }
+    rows = await db.users.find(query).to_list(length=200)
+    if normalized_role_code not in {"HOD", "DEAN"} or not department_id:
+        return rows
+    user_ids = [str(item.get("_id")) for item in rows if item.get("_id")]
+    if not user_ids:
+        return []
+    scopes = await db.scopes.find({"user_id": {"$in": user_ids}, "department_id": department_id}).to_list(length=200)
+    scoped_user_ids = {str(scope.get("user_id")) for scope in scopes if scope.get("user_id")}
+    return [row for row in rows if str(row.get("_id")) in scoped_user_ids]
+
+
+async def _fallback_authorities() -> list[dict[str, Any]]:
+    return await db.users.find(
+        {
+            "role": "admin",
+            "is_active": True,
+            "$or": [
+                {"admin_type": {"$in": ["academic_admin", "super_admin"]}},
+                {"rbac_role_code": {"$in": ["ACADEMIC_ADMIN", "SUPER_ADMIN"]}},
+            ],
+        }
+    ).to_list(length=50)
+
+
+def _authority_contact(label: str, user: dict[str, Any] | None) -> SectionRepresentativeAuthorityContactOut | None:
+    if not user:
+        return None
+    profile = user.get("profile", {}) or {}
+    return SectionRepresentativeAuthorityContactOut(
+        label=label,
+        user_id=str(user.get("_id")) if user.get("_id") else None,
+        full_name=user.get("full_name"),
+        email=user.get("email"),
+        phone=profile.get("phone"),
+        role=user.get("admin_type") or user.get("role"),
+    )
+
+
+async def _ensure_representative_manage_access(current_user: dict[str, Any], section: dict[str, Any]) -> None:
+    if current_user.get("role") == "admin":
+        await _ensure_admin_can_access_section(current_user, section)
+        return
+    if current_user.get("role") == "teacher" and _teacher_is_year_head(current_user):
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin, HOD, or Year Head can manage class representatives")
+
+
+async def _ensure_representative_dashboard_access(current_user: dict[str, Any], section: dict[str, Any]) -> None:
+    if current_user.get("role") == "admin":
+        await _ensure_admin_can_access_section(current_user, section)
+        return
+    if current_user.get("role") == "teacher":
+        if _teacher_is_year_head(current_user) or is_section_coordinator(current_user, section):
+            return
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this representative dashboard")
+    if current_user.get("role") == "student":
+        extensions = set(current_user.get("extended_roles") or [])
+        scope = (current_user.get("role_scope") or {}).get("class_representative", {}) if isinstance(current_user.get("role_scope"), dict) else {}
+        if "class_representative" not in extensions or str(scope.get("class_id") or "") != str(section.get("_id") or ""):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this representative dashboard")
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this representative dashboard")
+
+
+async def _representative_candidates(section_id: str) -> list[SectionRepresentativeAssignmentOut]:
+    students = await list_students_for_section(section_id, database=db)
+    items: list[SectionRepresentativeAssignmentOut] = []
+    for student in students:
+        user_id = str(student.get("user_id") or "").strip()
+        if not user_id:
+            continue
+        user = await db.users.find_one({"_id": parse_object_id(user_id), "is_active": True}, {"_id": 1, "full_name": 1})
+        if not user:
+            continue
+        items.append(
+            SectionRepresentativeAssignmentOut(
+                section_id=section_id,
+                seat="",
+                student_user_id=user_id,
+                full_name=user.get("full_name") or student.get("full_name"),
+                section_name=None,
+            )
+        )
+    return items
+
+
+async def _build_representative_dashboard_payload(section: dict[str, Any], current_user: dict[str, Any]) -> SectionRepresentativeDashboardResponse:
+    section_id = str(section.get("_id") or "")
+    seat = "cr_1"
+    if current_user.get("role") == "student":
+        seat = str(((current_user.get("role_scope") or {}).get("class_representative", {}) or {}).get("seat") or "cr_1")
+
+    attendance_summary = await build_attendance_section_summary(section_id=section_id, database=db)
+    attendance_risk_students = [
+        item.model_dump() if hasattr(item, "model_dump") else item
+        for item in (attendance_summary.students or [])
+        if bool(getattr(item, "shortage_risk", False) if hasattr(item, "shortage_risk") else item.get("shortage_risk"))
+    ]
+
+    students = await list_students_for_section(section_id, database=db)
+    student_rows = [
+        {
+            "student_id": str(item.get("_id") or ""),
+            "student_user_id": str(item.get("user_id") or ""),
+            "student_name": item.get("full_name"),
+            "roll_number": item.get("roll_number"),
+        }
+        for item in students
+    ]
+    student_user_ids = [item["student_user_id"] for item in student_rows if item["student_user_id"]]
+
+    assignment_rows = await db.assignments.find(
+        {"class_id": section_id, "status": "open"},
+        {"_id": 1, "title": 1, "due_date": 1, "status": 1},
+    ).sort([("due_date", 1), ("created_at", -1)]).to_list(length=100)
+    assignment_summaries: list[dict[str, Any]] = []
+    for assignment in assignment_rows:
+        assignment_id = str(assignment.get("_id") or "")
+        submission_user_ids = set(
+            str(value)
+            for value in await db.submissions.distinct("student_user_id", {"assignment_id": assignment_id})
+            if value
+        )
+        missing_students = [
+            {
+                "student_id": item["student_id"],
+                "student_user_id": item["student_user_id"] or None,
+                "student_name": item["student_name"],
+                "roll_number": item["roll_number"],
+            }
+            for item in student_rows
+            if item["student_user_id"] and item["student_user_id"] not in submission_user_ids
+        ]
+        assignment_summaries.append(
+            {
+                "assignment_id": assignment_id,
+                "title": assignment.get("title") or "Assignment",
+                "due_date": assignment.get("due_date"),
+                "status": assignment.get("status"),
+                "total_students": len(student_user_ids),
+                "missing_submission_count": len(missing_students),
+                "missing_students": missing_students,
+            }
+        )
+
+    authority_contacts: list[SectionRepresentativeAuthorityContactOut] = []
+    coordinator = None
+    if section.get("class_coordinator_user_id"):
+        coordinator = await db.users.find_one({"_id": parse_object_id(str(section.get("class_coordinator_user_id"))), "is_active": True})
+    year_heads = await db.users.find({"role": "teacher", "extended_roles": {"$in": ["year_head"]}, "is_active": True}).to_list(length=10)
+    hods = await _admin_users_for_role("HOD", department_id=section.get("department_id"))
+    deans = await _admin_users_for_role("DEAN", department_id=section.get("department_id"))
+    fallbacks = await _fallback_authorities()
+
+    for label, users in (
+        ("Class Coordinator", [coordinator] if coordinator else []),
+        ("Year Head", year_heads[:1]),
+        ("HOD", hods[:1]),
+        ("Dean", deans[:1]),
+        ("Higher Authority", fallbacks[:1]),
+    ):
+        for user in users:
+            contact = _authority_contact(label, user)
+            if contact:
+                authority_contacts.append(contact)
+
+    return SectionRepresentativeDashboardResponse(
+        section_id=section_id,
+        section_name=str(section.get("name") or ""),
+        seat=seat,
+        assigned_user_id=str(current_user.get("_id") or ""),
+        attendance_summary=attendance_summary.model_dump() if hasattr(attendance_summary, "model_dump") else {},
+        attendance_risk_students=attendance_risk_students,
+        assignments=assignment_summaries,
+        authority_contacts=authority_contacts,
+    )
 
 
 async def _sync_section_groups_for_document(section: dict) -> dict[str, int]:
@@ -410,13 +617,17 @@ async def list_sections(
         query['name'] = {'$regex': q, '$options': 'i'}
     apply_is_active_filter(query, is_active)
     if current_user.get('role') == 'teacher':
-        if "class_coordinator" not in set(current_user.get("extended_roles") or []):
+        extensions = set(current_user.get("extended_roles") or [])
+        if "year_head" in extensions:
+            query.setdefault('is_active', True)
+        elif "class_coordinator" in extensions:
+            query['class_coordinator_user_id'] = str(current_user.get('_id'))
+            scoped_class_id = coordinator_scope_class_id(current_user)
+            if scoped_class_id:
+                query['_id'] = parse_object_id(scoped_class_id)
+            query.setdefault('is_active', True)
+        else:
             return []
-        query['class_coordinator_user_id'] = str(current_user.get('_id'))
-        scoped_class_id = coordinator_scope_class_id(current_user)
-        if scoped_class_id:
-            query['_id'] = parse_object_id(scoped_class_id)
-        query.setdefault('is_active', True)
     else:
         query = await _apply_admin_scope_to_query(current_user, query)
 
@@ -487,6 +698,105 @@ async def section_dashboard(
         global_unmapped_students=global_unmapped_students,
         sections=items,
     )
+
+
+@router.get('/{section_id}/representatives', response_model=SectionRepresentativesResponse)
+async def get_section_representatives(
+    section_id: str,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> SectionRepresentativesResponse:
+    section = await get_section_or_404(section_id)
+    await _ensure_representative_manage_access(current_user, section)
+    representatives = normalize_class_representatives(section)
+    candidates = await _representative_candidates(section_id)
+    return SectionRepresentativesResponse(
+        section_id=section_id,
+        section_name=str(section.get("name") or ""),
+        representatives=representatives,
+        candidate_students=candidates,
+    )
+
+
+@router.put('/{section_id}/representatives/{seat}', response_model=SectionRepresentativesResponse)
+async def assign_section_representative(
+    section_id: str,
+    seat: str,
+    payload: SectionRepresentativeAssignmentIn,
+    request: Request,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> SectionRepresentativesResponse:
+    section = await get_section_or_404(section_id)
+    await _ensure_representative_manage_access(current_user, section)
+    updated_section, updated_user, previous_user_id = await assign_section_class_representative(
+        section_id=section_id,
+        seat=seat,
+        student_user_id=payload.student_user_id,
+        database=db,
+    )
+    await log_audit_event(
+        actor_user_id=str(current_user.get("_id") or ""),
+        action="sections.assign_class_representative",
+        entity_type="section",
+        entity_id=section_id,
+        detail=f"Assigned {seat.upper()} for {updated_section.get('name')}. Reason: {payload.reason}",
+        new_value={
+            "seat": seat,
+            "student_user_id": payload.student_user_id,
+            "student_name": (updated_user or {}).get("full_name"),
+            "previous_user_id": previous_user_id,
+            "reason": payload.reason,
+        },
+        ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+        user_agent=request.headers.get("user-agent"),
+        severity="medium",
+    )
+    return SectionRepresentativesResponse(
+        section_id=section_id,
+        section_name=str(updated_section.get("name") or ""),
+        representatives=normalize_class_representatives(updated_section),
+        candidate_students=await _representative_candidates(section_id),
+    )
+
+
+@router.delete('/{section_id}/representatives/{seat}', response_model=SectionRepresentativesResponse)
+async def remove_section_representative(
+    section_id: str,
+    seat: str,
+    payload: SectionRepresentativeRemoveIn,
+    request: Request,
+    current_user=Depends(require_roles(['admin', 'teacher'])),
+) -> SectionRepresentativesResponse:
+    section = await get_section_or_404(section_id)
+    await _ensure_representative_manage_access(current_user, section)
+    updated_section, previous_user_id = await clear_section_class_representative(section_id=section_id, seat=seat, database=db)
+    await log_audit_event(
+        actor_user_id=str(current_user.get("_id") or ""),
+        action="sections.remove_class_representative",
+        entity_type="section",
+        entity_id=section_id,
+        detail=f"Removed {seat.upper()} for {updated_section.get('name')}. Reason: {payload.reason}",
+        old_value={"seat": seat, "previous_user_id": previous_user_id},
+        new_value={"seat": seat, "reason": payload.reason},
+        ip_address=request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+        user_agent=request.headers.get("user-agent"),
+        severity="medium",
+    )
+    return SectionRepresentativesResponse(
+        section_id=section_id,
+        section_name=str(updated_section.get("name") or ""),
+        representatives=normalize_class_representatives(updated_section),
+        candidate_students=await _representative_candidates(section_id),
+    )
+
+
+@router.get('/{section_id}/representative-dashboard', response_model=SectionRepresentativeDashboardResponse)
+async def get_section_representative_dashboard(
+    section_id: str,
+    current_user=Depends(require_roles(['admin', 'teacher', 'student'])),
+) -> SectionRepresentativeDashboardResponse:
+    section = await get_section_or_404(section_id)
+    await _ensure_representative_dashboard_access(current_user, section)
+    return await _build_representative_dashboard_payload(section, current_user)
 
 
 @router.post('/sync-groups')

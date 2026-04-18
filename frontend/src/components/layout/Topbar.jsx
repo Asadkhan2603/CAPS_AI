@@ -113,10 +113,10 @@ export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/88 px-3 py-2.5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/88 sm:px-4 lg:px-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5 lg:gap-3">
-          <button className="btn-secondary !p-2 lg:hidden" onClick={onOpenMobile}>
+          <button className="btn-secondary !p-2 lg:hidden" onClick={onOpenMobile} aria-label="Toggle mobile navigation">
             <Menu size={16} />
           </button>
-          <button className="btn-secondary !p-2 hidden lg:inline-flex" onClick={onToggleCollapse} title="Toggle Control Center">
+          <button className="btn-secondary !p-2 hidden lg:inline-flex" onClick={onToggleCollapse} aria-label="Toggle sidebar" title="Toggle Control Center">
             {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
 
@@ -147,6 +147,7 @@ export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse
                     logoInputRef.current?.click();
                   }}
                   title={uploadingLogo ? 'Uploading logo...' : 'Update header logo'}
+                  aria-label="Edit branding logo"
                   disabled={uploadingLogo}
                 >
                   <Pencil size={13} />
@@ -180,21 +181,21 @@ export default function Topbar({ user, onOpenMobile, collapsed, onToggleCollapse
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className="input !h-9 !w-48 !rounded-2xl !border-slate-200 !bg-slate-50 !pl-8 !pr-3 !py-0 text-xs dark:!border-slate-700 dark:!bg-slate-900 lg:!w-56" placeholder="Quick search..." />
           </label>
-          <Link to="/profile" className="btn-secondary !p-2 sm:hidden" title="Manage Profile">
+          <Link to="/profile" className="btn-secondary !p-2 sm:hidden" title="Manage Profile" aria-label="Manage Profile">
             <UserRoundCog size={16} />
           </Link>
-          <Link to="/history" className="btn-secondary !p-2" title="History">
+          <Link to="/history" className="btn-secondary !p-2" title="History" aria-label="View history">
             <History size={16} />
           </Link>
-          <Link to="/communication/announcements" className="btn-secondary relative !p-2" title="Notices">
+          <Link to="/communication/announcements" className="btn-secondary relative !p-2" title="Notices" aria-label="View notices and announcements">
             <Bell size={16} />
             {noticeCount > 0 ? (
-              <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold text-white">
+              <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold text-white" aria-label={`${noticeCount} unread notices`}>
                 {noticeCount > 9 ? '9+' : noticeCount}
               </span>
             ) : null}
           </Link>
-          <button className="btn-secondary !p-2" onClick={onToggleTheme}>
+          <button className="btn-secondary !p-2" onClick={onToggleTheme} aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
             {isDark ? <Sun size={16} /> : <Moon size={16} />}
           </button>
 

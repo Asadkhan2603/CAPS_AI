@@ -5,6 +5,7 @@ import StatCard from '../components/ui/StatCard';
 import Card from '../components/ui/Card';
 import Alert from '../components/ui/Alert';
 import Badge from '../components/ui/Badge';
+import Spinner from '../components/ui/Spinner';
 import TeacherClassTiles from '../components/ui/TeacherClassTiles';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -456,14 +457,28 @@ export default function DashboardPage() {
                 onClick={() => handleInternshipAction('clock_in')}
                 disabled={internshipBusy || internshipStatus?.status === 'active'}
               >
-                {internshipBusy ? 'Working...' : 'Clock In'}
+                {internshipBusy ? (
+                  <>
+                    <Spinner size="sm" />
+                    <span>Working...</span>
+                  </>
+                ) : (
+                  'Clock In'
+                )}
               </button>
               <button
                 className="btn-secondary"
                 onClick={() => handleInternshipAction('clock_out')}
                 disabled={internshipBusy || internshipStatus?.status !== 'active'}
               >
-                {internshipBusy ? 'Working...' : 'Clock Out'}
+                {internshipBusy ? (
+                  <>
+                    <Spinner size="sm" />
+                    <span>Working...</span>
+                  </>
+                ) : (
+                  'Clock Out'
+                )}
               </button>
             </div>
             <p className="mt-2 text-xs text-slate-500">Active sessions auto-close after 9 hours.</p>
@@ -552,8 +567,16 @@ export default function DashboardPage() {
               await loadDashboardData();
               pushToast({ title: 'Synced', description: 'Dashboard data refreshed successfully.', variant: 'success' });
             }}
+            disabled={loading}
           >
-            {loading ? 'Refreshing...' : 'Refresh Insights'}
+            {loading ? (
+              <>
+                <Spinner size="sm" />
+                <span>Refreshing...</span>
+              </>
+            ) : (
+              'Refresh Insights'
+            )}
           </button>
         </Card>
       </div>

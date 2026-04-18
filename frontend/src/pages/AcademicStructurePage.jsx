@@ -287,6 +287,7 @@ export default function AcademicStructurePage() {
                   openEdit(node);
                 }}
                 title={`Edit ${singularizeLabel(levelMeta.label)}`}
+                aria-label={`Edit ${singularizeLabel(levelMeta.label)}`}
               >
                 <Pencil size={15} />
               </button>

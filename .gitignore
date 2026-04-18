@@ -32,6 +32,7 @@ coverage/
 # Local runtime data
 uploads/
 backend/uploads/
+.runlogs/
 
 # OS/IDE
 .DS_Store
@@ -52,6 +53,7 @@ frontend/.env.local
 frontend/.env.development.local
 frontend/.env.test.local
 frontend/.env.production.local
+backend/.venv311/
 
 # Historical scratch copies
 frontend_backup_*/

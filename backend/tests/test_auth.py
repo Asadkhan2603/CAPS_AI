@@ -1,13 +1,16 @@
 import asyncio
 import csv
+import json
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from io import StringIO
+from types import SimpleNamespace
 from typing import Any, Dict, List
 
 from bson import ObjectId
 from fastapi.testclient import TestClient
 from pymongo.errors import DuplicateKeyError
+import pyotp
 
 from app.main import app
 from app.api.v1.endpoints import ai as ai_endpoint
@@ -47,6 +50,7 @@ from app.api.v1.endpoints import users as users_endpoint
 from app.core.config import settings
 from app.core import security as security_core
 from app.domains.auth.repository import AuthRepository
+from app.domains.auth import service as auth_service_module
 from app.services import ai_runtime as ai_runtime_service
 from app.services import analytics_snapshot as analytics_snapshot_service
 from app.services import audit as audit_service
@@ -300,6 +304,8 @@ def _matches_query(item: Dict[str, Any], query: Dict[str, Any]) -> bool:
 class FakeDB:
     def __init__(self) -> None:
         self.users = FakeUsersCollection(enforce_email_unique=True)
+        self.user_sessions = FakeUsersCollection()
+        self.token_blacklist = FakeUsersCollection()
         self.faculties = FakeUsersCollection()
         self.departments = FakeUsersCollection()
         self.programs = FakeUsersCollection()
@@ -444,6 +450,117 @@ def _register_and_login(
     return register.json(), {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
+def _login_with_headers(
+    client: TestClient,
+    *,
+    email: str,
+    password: str = "password123",
+    fingerprint: str,
+    user_agent: str = "pytest-browser",
+    forwarded_for: str = "127.0.0.1",
+) -> tuple[dict[str, Any], dict[str, str]]:
+    headers = {
+        "X-Device-Fingerprint": fingerprint,
+        "User-Agent": user_agent,
+        "X-Forwarded-For": forwarded_for,
+    }
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    headers["Authorization"] = f"Bearer {payload['access_token']}"
+    return payload, headers
+
+
+def _build_webauthn_client_data(origin: str) -> str:
+    return auth_service_module.AuthService._b64url_encode(
+        json.dumps({"type": "webauthn.get", "challenge": "test-challenge", "origin": origin}).encode("utf-8")
+    )
+
+
+def _install_webauthn_test_mocks(
+    monkeypatch,
+    *,
+    registration_challenge: str = "registration-challenge",
+    authentication_challenge: str = "authentication-challenge",
+    authentication_sign_count: int = 1,
+) -> None:
+    monkeypatch.setattr(auth_service_module, "WEBAUTHN_AVAILABLE", True)
+    monkeypatch.setattr(
+        auth_service_module,
+        "generate_registration_options",
+        lambda **kwargs: SimpleNamespace(challenge=registration_challenge),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "generate_authentication_options",
+        lambda **kwargs: SimpleNamespace(challenge=authentication_challenge),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "options_to_json",
+        lambda options: json.dumps({"challenge": options.challenge}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "verify_registration_response",
+        lambda **kwargs: SimpleNamespace(
+            credential_id=b"credential-1",
+            credential_public_key=b"public-key-1",
+            sign_count=0,
+            credential_device_type="single_device",
+            credential_backed_up=False,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "verify_authentication_response",
+        lambda **kwargs: SimpleNamespace(
+            new_sign_count=authentication_sign_count,
+            credential_device_type="single_device",
+            credential_backed_up=False,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "base64url_to_bytes",
+        lambda value: value.encode("utf-8") if isinstance(value, str) else value,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "PublicKeyCredentialDescriptor",
+        lambda **kwargs: kwargs,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "AuthenticatorSelectionCriteria",
+        lambda **kwargs: kwargs,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "AuthenticatorAttachment",
+        SimpleNamespace(PLATFORM="platform", CROSS_PLATFORM="cross-platform"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_service_module,
+        "UserVerificationRequirement",
+        SimpleNamespace(PREFERRED="preferred"),
+        raising=False,
+    )
+
+
 def _seed_canonical_structure(
     fake_db: FakeDB,
     *,
@@ -579,6 +696,996 @@ def test_register_login_me_and_admin_users_flow() -> None:
     users = client.get("/api/v1/users/", headers={"Authorization": f"Bearer {token}"})
     assert users.status_code == 200
     assert len(users.json()) == 1
+
+
+def test_login_without_mfa_returns_full_tokens() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "No MFA User",
+            "email": "nomfa@example.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "nomfa@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    body = login.json()
+    assert body["access_token"]
+    assert body["mfa_required"] is False
+    assert body["pending_mfa_token"] is None
+    assert body["mfa_methods"] == []
+
+
+def test_totp_mfa_login_requires_pending_token_and_verifies() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "TOTP MFA User",
+            "email": "totp_mfa@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "totp_mfa@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    auth_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    enable_totp = client.post("/api/v1/auth/mfa/totp/enable", headers=auth_headers)
+    assert enable_totp.status_code == 200
+    secret = enable_totp.json()["secret"]
+    confirm_code = pyotp.TOTP(secret).now()
+
+    confirm_totp = client.post(
+        "/api/v1/auth/mfa/totp/confirm",
+        json={"otp_code": confirm_code},
+        headers=auth_headers,
+    )
+    assert confirm_totp.status_code == 200
+
+    mfa_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "totp_mfa@example.com", "password": "password123"},
+    )
+    assert mfa_login.status_code == 200
+    mfa_login_body = mfa_login.json()
+    assert mfa_login_body["mfa_required"] is True
+    assert mfa_login_body["pending_mfa_token"]
+    assert "totp" in mfa_login_body["mfa_methods"]
+
+    verify = client.post(
+        "/api/v1/auth/mfa/verify",
+        json={
+            "pending_mfa_token": mfa_login_body["pending_mfa_token"],
+            "mfa_method": "totp",
+            "mfa_code": pyotp.TOTP(secret).now(),
+        },
+    )
+    assert verify.status_code == 200
+    verify_body = verify.json()
+    assert verify_body["access_token"]
+    assert verify_body["mfa_required"] is False
+
+
+def test_backup_code_can_complete_mfa_only_once() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Backup MFA User",
+            "email": "backup_mfa@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "backup_mfa@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    auth_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    enable_totp = client.post("/api/v1/auth/mfa/totp/enable", headers=auth_headers)
+    assert enable_totp.status_code == 200
+    enable_payload = enable_totp.json()
+    backup_code = enable_payload["backup_codes"][0]
+    secret = enable_payload["secret"]
+
+    confirm_totp = client.post(
+        "/api/v1/auth/mfa/totp/confirm",
+        json={"otp_code": pyotp.TOTP(secret).now()},
+        headers=auth_headers,
+    )
+    assert confirm_totp.status_code == 200
+
+    first_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "backup_mfa@example.com", "password": "password123"},
+    )
+    assert first_login.status_code == 200
+    first_pending = first_login.json()["pending_mfa_token"]
+    assert first_pending
+
+    first_verify = client.post(
+        "/api/v1/auth/mfa/verify",
+        json={
+            "pending_mfa_token": first_pending,
+            "mfa_method": "backup",
+            "mfa_code": backup_code,
+        },
+    )
+    assert first_verify.status_code == 200
+
+    second_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "backup_mfa@example.com", "password": "password123"},
+    )
+    assert second_login.status_code == 200
+    second_pending = second_login.json()["pending_mfa_token"]
+    assert second_pending
+
+    second_verify = client.post(
+        "/api/v1/auth/mfa/verify",
+        json={
+            "pending_mfa_token": second_pending,
+            "mfa_method": "backup",
+            "mfa_code": backup_code,
+        },
+    )
+    assert second_verify.status_code == 401
+
+
+def test_sms_mfa_enrollment_and_pending_login_verification() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "SMS MFA User",
+            "email": "sms_mfa@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "sms_mfa@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    auth_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    send_enroll = client.post(
+        "/api/v1/auth/mfa/sms/enroll/send",
+        json={"phone_number": "+15551234567"},
+        headers=auth_headers,
+    )
+    assert send_enroll.status_code == 200
+    send_enroll_payload = send_enroll.json()
+    assert send_enroll_payload.get("otp_dev")
+
+    verify_enroll = client.post(
+        "/api/v1/auth/mfa/sms/enroll/verify",
+        json={"otp_code": send_enroll_payload["otp_dev"]},
+        headers=auth_headers,
+    )
+    assert verify_enroll.status_code == 200
+
+    mfa_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "sms_mfa@example.com", "password": "password123"},
+    )
+    assert mfa_login.status_code == 200
+    mfa_login_payload = mfa_login.json()
+    assert mfa_login_payload["mfa_required"] is True
+    assert mfa_login_payload["mfa_primary_method"] == "sms"
+    assert "sms" in mfa_login_payload["mfa_methods"]
+
+    challenge = mfa_login_payload.get("mfa_challenge") or {}
+    assert challenge.get("challenge_sent") is True
+    assert challenge.get("otp_dev")
+
+    verify_login = client.post(
+        "/api/v1/auth/mfa/verify",
+        json={
+            "pending_mfa_token": mfa_login_payload["pending_mfa_token"],
+            "mfa_method": "sms",
+            "mfa_code": challenge["otp_dev"],
+        },
+    )
+    assert verify_login.status_code == 200
+    assert verify_login.json()["access_token"]
+
+
+def test_login_includes_webauthn_method_when_enabled() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "WebAuthn MFA User",
+            "email": "webauthn_mfa@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert register.status_code == 201
+
+    created_user = fake_db.users.items[0]
+    created_user["mfa_webauthn_enabled"] = True
+    created_user["mfa_webauthn_credentials"] = [
+        {
+            "credential_id": "credential-1",
+            "public_key": "public-key-1",
+            "sign_count": 0,
+            "label": "Security Key",
+            "transports": ["usb"],
+        }
+    ]
+    created_user["mfa_primary_method"] = "webauthn"
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "webauthn_mfa@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    payload = login.json()
+    assert payload["mfa_required"] is True
+    assert payload["mfa_primary_method"] == "webauthn"
+    assert "webauthn" in payload["mfa_methods"]
+
+
+def test_security_settings_me_returns_expected_mfa_contract() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Security Settings User",
+            "email": "security_settings@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "security_settings@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+
+    security_settings = client.get(
+        "/api/v1/auth/security-settings/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert security_settings.status_code == 200
+    payload = security_settings.json()
+    assert "mfa_enabled" in payload
+    assert "mfa_methods" in payload
+    assert "primary_method" in payload
+    assert "method_status" in payload
+    assert "webauthn_credentials" in payload
+    assert "recovery_codes_remaining" in payload
+
+
+def test_security_settings_me_uses_unknown_password_strength_without_metadata() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    _register_and_login(
+        client,
+        full_name="Security Strength User",
+        email="security_strength@example.com",
+        role="teacher",
+    )
+    _, auth_headers = _login_with_headers(
+        client,
+        email="security_strength@example.com",
+        fingerprint="security-strength-device",
+    )
+
+    security_settings = client.get(
+        "/api/v1/auth/security-settings/me",
+        headers=auth_headers,
+    )
+    assert security_settings.status_code == 200
+    assert security_settings.json()["password_strength"] == "unknown"
+
+
+def test_account_activity_marks_current_session_from_request_fingerprint() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Activity User",
+            "email": "activity_user@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+
+    _login_with_headers(
+        client,
+        email="activity_user@example.com",
+        fingerprint="activity-other-device",
+        user_agent="pytest-browser-other",
+        forwarded_for="10.0.0.7",
+    )
+    _, current_headers = _login_with_headers(
+        client,
+        email="activity_user@example.com",
+        fingerprint="activity-current-device",
+        user_agent="pytest-browser-current",
+        forwarded_for="10.0.0.8",
+    )
+
+    assert len(fake_db.user_sessions.items) == 2
+
+    activity = client.get("/api/v1/auth/account-activity/me", headers=current_headers)
+    assert activity.status_code == 200
+    payload = activity.json()
+    assert payload["total_sessions"] == 2
+    assert any(session["is_current"] is True for session in payload["active_sessions"])
+    assert all(session["session_id"] for session in payload["active_sessions"])
+
+
+def test_canonical_session_termination_revokes_target_session_and_blacklists_refresh_jti() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Session Owner",
+            "email": "session_owner@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+
+    _login_with_headers(
+        client,
+        email="session_owner@example.com",
+        fingerprint="owner-other-device",
+        user_agent="pytest-browser-other",
+        forwarded_for="10.0.0.7",
+    )
+    _, current_headers = _login_with_headers(
+        client,
+        email="session_owner@example.com",
+        fingerprint="owner-current-device",
+        user_agent="pytest-browser-current",
+        forwarded_for="10.0.0.8",
+    )
+
+    target_session = next(
+        session
+        for session in fake_db.user_sessions.items
+        if session.get("fingerprint") != fake_db.user_sessions.items[-1].get("fingerprint")
+    )
+    response = client.post(
+        f"/api/v1/auth/sessions/{target_session['_id']}/terminate",
+        headers=current_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["session_id"] == str(target_session["_id"])
+    assert target_session["revoked_at"] is not None
+    assert any(item["jti"] == target_session["refresh_jti"] for item in fake_db.token_blacklist.items)
+
+
+def test_logout_session_compatibility_route_uses_same_termination_logic() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Compatibility User",
+            "email": "compatibility_user@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+
+    _login_with_headers(
+        client,
+        email="compatibility_user@example.com",
+        fingerprint="compat-other-device",
+        user_agent="pytest-browser-other",
+        forwarded_for="10.0.1.7",
+    )
+    _, current_headers = _login_with_headers(
+        client,
+        email="compatibility_user@example.com",
+        fingerprint="compat-current-device",
+        user_agent="pytest-browser-current",
+        forwarded_for="10.0.1.8",
+    )
+
+    target_session = next(
+        session
+        for session in fake_db.user_sessions.items
+        if session.get("fingerprint") != fake_db.user_sessions.items[-1].get("fingerprint")
+    )
+    response = client.post(
+        "/api/v1/auth/account/logout-session",
+        json={"session_id": str(target_session["_id"])},
+        headers=current_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert target_session["revoked_at"] is not None
+
+
+def test_session_termination_rejects_invalid_foreign_and_current_sessions() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Primary User",
+            "email": "primary_session_user@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Other User",
+            "email": "other_session_user@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+
+    _, current_headers = _login_with_headers(
+        client,
+        email="primary_session_user@example.com",
+        fingerprint="primary-current-device",
+        user_agent="pytest-primary-current",
+        forwarded_for="10.0.2.8",
+    )
+    _login_with_headers(
+        client,
+        email="other_session_user@example.com",
+        fingerprint="other-user-device",
+        user_agent="pytest-other-user",
+        forwarded_for="10.0.2.9",
+    )
+
+    invalid = client.post("/api/v1/auth/sessions/not-a-real-id/terminate", headers=current_headers)
+    assert invalid.status_code == 404
+
+    own_current_session = next(
+        session
+        for session in fake_db.user_sessions.items
+        if session.get("user_id") == str(fake_db.users.items[0]["_id"])
+    )
+    current = client.post(
+        f"/api/v1/auth/sessions/{own_current_session['_id']}/terminate",
+        headers=current_headers,
+    )
+    assert current.status_code == 400
+    assert "logout" in current.json()["detail"].lower()
+
+    foreign_session = next(
+        session
+        for session in fake_db.user_sessions.items
+        if session.get("user_id") == str(fake_db.users.items[1]["_id"])
+    )
+    foreign = client.post(
+        f"/api/v1/auth/sessions/{foreign_session['_id']}/terminate",
+        headers=current_headers,
+    )
+    assert foreign.status_code == 403
+
+
+def test_security_toggle_sms_not_enrolled_returns_400() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "SMS Toggle User",
+            "email": "sms_toggle@example.com",
+            "password": "password123",
+            "role": "teacher",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "sms_toggle@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+
+    toggle_sms = client.post(
+        "/api/v1/auth/security-settings/me/mfa/toggle",
+        json={"method": "sms"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert toggle_sms.status_code == 400
+    assert "not enabled" in str(toggle_sms.json().get("detail", "")).lower()
+
+
+def test_sms_enrollment_wrong_code_and_expiry_fail_cleanly() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="SMS Expiry User",
+        email="sms_expiry@example.com",
+        role="teacher",
+    )
+
+    send_enroll = client.post(
+        "/api/v1/auth/mfa/sms/enroll/send",
+        json={"phone_number": "+15551234567"},
+        headers=auth_headers,
+    )
+    assert send_enroll.status_code == 200
+
+    wrong_code = client.post(
+        "/api/v1/auth/mfa/sms/enroll/verify",
+        json={"otp_code": "000000"},
+        headers=auth_headers,
+    )
+    assert wrong_code.status_code == 401
+    assert "invalid sms verification code" in wrong_code.json()["detail"].lower()
+
+    fake_db.users.items[0]["mfa_sms_enroll_otp_expires_at"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    expired = client.post(
+        "/api/v1/auth/mfa/sms/enroll/verify",
+        json={"otp_code": send_enroll.json()["otp_dev"]},
+        headers=auth_headers,
+    )
+    assert expired.status_code == 401
+    assert "expired" in expired.json()["detail"].lower()
+
+
+def test_sms_enrollment_enforces_attempt_cap() -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="SMS Attempts User",
+        email="sms_attempts@example.com",
+        role="teacher",
+    )
+
+    send_enroll = client.post(
+        "/api/v1/auth/mfa/sms/enroll/send",
+        json={"phone_number": "+15551234567"},
+        headers=auth_headers,
+    )
+    assert send_enroll.status_code == 200
+
+    for _ in range(settings.mfa_sms_verify_max_attempts):
+        attempt = client.post(
+            "/api/v1/auth/mfa/sms/enroll/verify",
+            json={"otp_code": "111111"},
+            headers=auth_headers,
+        )
+        assert attempt.status_code == 401
+
+    capped = client.post(
+        "/api/v1/auth/mfa/sms/enroll/verify",
+        json={"otp_code": send_enroll.json()["otp_dev"]},
+        headers=auth_headers,
+    )
+    assert capped.status_code == 429
+    assert "maximum sms verification attempts" in capped.json()["detail"].lower()
+
+
+def test_sms_login_challenge_resend_and_verify() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="SMS Resend User",
+        email="sms_resend@example.com",
+        role="teacher",
+    )
+
+    send_enroll = client.post(
+        "/api/v1/auth/mfa/sms/enroll/send",
+        json={"phone_number": "+15551234567"},
+        headers=auth_headers,
+    )
+    verify_enroll = client.post(
+        "/api/v1/auth/mfa/sms/enroll/verify",
+        json={"otp_code": send_enroll.json()["otp_dev"]},
+        headers=auth_headers,
+    )
+    assert verify_enroll.status_code == 200
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "sms_resend@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    pending_payload = login.json()
+    user = fake_db.users.items[0]
+    user["mfa_sms_login_last_sent_at"] = datetime.now(timezone.utc) - timedelta(
+        seconds=settings.mfa_sms_send_min_interval_seconds + 1
+    )
+
+    resend = client.post(
+        "/api/v1/auth/mfa/sms/challenge/resend",
+        json={"pending_mfa_token": pending_payload["pending_mfa_token"]},
+    )
+    assert resend.status_code == 200
+    resend_payload = resend.json()
+    assert resend_payload["resend"] is True
+    assert resend_payload["otp_dev"]
+
+    verify_login = client.post(
+        "/api/v1/auth/mfa/verify",
+        json={
+            "pending_mfa_token": pending_payload["pending_mfa_token"],
+            "mfa_method": "sms",
+            "mfa_code": resend_payload["otp_dev"],
+        },
+    )
+    assert verify_login.status_code == 200
+    assert verify_login.json()["access_token"]
+
+
+def test_invalid_and_expired_pending_mfa_tokens_are_rejected() -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="Pending MFA User",
+        email="pending_mfa@example.com",
+        role="teacher",
+    )
+
+    enable_totp = client.post("/api/v1/auth/mfa/totp/enable", headers=auth_headers)
+    secret = enable_totp.json()["secret"]
+    confirm_totp = client.post(
+        "/api/v1/auth/mfa/totp/confirm",
+        json={"otp_code": pyotp.TOTP(secret).now()},
+        headers=auth_headers,
+    )
+    assert confirm_totp.status_code == 200
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "pending_mfa@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    pending_payload = login.json()
+
+    invalid = client.post(
+        "/api/v1/auth/mfa/verify",
+        json={
+            "pending_mfa_token": "not-a-valid-token",
+            "mfa_method": "totp",
+            "mfa_code": "123456",
+        },
+    )
+    assert invalid.status_code == 401
+
+    fake_db.users.items[0]["mfa_pending_login"]["expires_at"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    expired = client.post(
+        "/api/v1/auth/mfa/verify",
+        json={
+            "pending_mfa_token": pending_payload["pending_mfa_token"],
+            "mfa_method": "totp",
+            "mfa_code": pyotp.TOTP(secret).now(),
+        },
+    )
+    assert expired.status_code == 401
+    assert "expired" in expired.json()["detail"].lower()
+
+
+def test_sms_enrollment_returns_controlled_error_when_twilio_is_not_configured(monkeypatch) -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="SMS Production User",
+        email="sms_production@example.com",
+        role="teacher",
+    )
+
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "sms_mfa_enabled", True)
+    monkeypatch.setattr(settings, "twilio_account_sid", "")
+    monkeypatch.setattr(settings, "twilio_auth_token", "")
+    monkeypatch.setattr(settings, "twilio_from_number", "")
+    monkeypatch.setattr(settings, "twilio_messaging_service_sid", "")
+    monkeypatch.setattr(auth_service_module, "TwilioClient", None)
+
+    response = client.post(
+        "/api/v1/auth/mfa/sms/enroll/send",
+        json={"phone_number": "+15551234567"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"].lower()
+
+
+def test_webauthn_registration_begin_and_finish(monkeypatch) -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    _install_webauthn_test_mocks(monkeypatch)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="WebAuthn Register User",
+        email="webauthn_register@example.com",
+        role="teacher",
+    )
+
+    begin = client.post(
+        "/api/v1/auth/mfa/webauthn/register/begin",
+        json={"label": "Work laptop"},
+        headers=auth_headers,
+    )
+    assert begin.status_code == 200
+    assert begin.json()["options"]["challenge"] == "registration-challenge"
+
+    finish = client.post(
+        "/api/v1/auth/mfa/webauthn/register/finish",
+        json={
+          "label": "Work laptop",
+          "credential": {
+              "id": "credential-1",
+              "response": {
+                  "clientDataJSON": _build_webauthn_client_data("http://localhost:5173"),
+                  "transports": ["usb"],
+              },
+          },
+        },
+        headers=auth_headers,
+    )
+    assert finish.status_code == 200
+    payload = finish.json()
+    assert payload["success"] is True
+    assert payload["credential_id"] == auth_service_module.AuthService._b64url_encode(b"credential-1")
+
+
+def test_webauthn_registration_rejects_invalid_origin(monkeypatch) -> None:
+    _setup_fake_db()
+    client = TestClient(app)
+    _install_webauthn_test_mocks(monkeypatch)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="WebAuthn Origin User",
+        email="webauthn_origin@example.com",
+        role="teacher",
+    )
+
+    begin = client.post(
+        "/api/v1/auth/mfa/webauthn/register/begin",
+        json={"label": "Security key"},
+        headers=auth_headers,
+    )
+    assert begin.status_code == 200
+
+    finish = client.post(
+        "/api/v1/auth/mfa/webauthn/register/finish",
+        json={
+            "credential": {
+                "id": "credential-1",
+                "response": {
+                    "clientDataJSON": _build_webauthn_client_data("https://evil.example"),
+                },
+            }
+        },
+        headers=auth_headers,
+    )
+    assert finish.status_code == 400
+    assert "origin is not allowed" in finish.json()["detail"].lower()
+
+
+def test_webauthn_authentication_begin_and_finish(monkeypatch) -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    _install_webauthn_test_mocks(monkeypatch, authentication_sign_count=4)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="WebAuthn Login User",
+        email="webauthn_login@example.com",
+        role="teacher",
+    )
+
+    user = fake_db.users.items[0]
+    user["mfa_webauthn_enabled"] = True
+    user["mfa_webauthn_credentials"] = [
+        {
+            "credential_id": "credential-1",
+            "public_key": "public-key-1",
+            "sign_count": 1,
+            "label": "Security Key",
+            "transports": ["usb"],
+        }
+    ]
+    user["mfa_primary_method"] = "webauthn"
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "webauthn_login@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
+    pending_payload = login.json()
+
+    begin = client.post(
+        "/api/v1/auth/mfa/webauthn/authenticate/begin",
+        json={"pending_mfa_token": pending_payload["pending_mfa_token"]},
+    )
+    assert begin.status_code == 200
+    assert begin.json()["options"]["challenge"] == "authentication-challenge"
+
+    finish = client.post(
+        "/api/v1/auth/mfa/webauthn/authenticate/finish",
+        json={
+            "pending_mfa_token": pending_payload["pending_mfa_token"],
+            "credential": {
+                "id": "credential-1",
+                "response": {
+                    "clientDataJSON": _build_webauthn_client_data("http://localhost:5173"),
+                },
+            },
+        },
+    )
+    assert finish.status_code == 200
+    assert finish.json()["access_token"]
+    assert user["mfa_webauthn_credentials"][0]["sign_count"] == 4
+
+
+def test_webauthn_authentication_rejects_unknown_credential(monkeypatch) -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    _install_webauthn_test_mocks(monkeypatch)
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="WebAuthn Unknown Credential User",
+        email="webauthn_unknown@example.com",
+        role="teacher",
+    )
+
+    user = fake_db.users.items[0]
+    user["mfa_webauthn_enabled"] = True
+    user["mfa_webauthn_credentials"] = [
+        {
+            "credential_id": "credential-1",
+            "public_key": "public-key-1",
+            "sign_count": 0,
+            "label": "Security Key",
+        }
+    ]
+    user["mfa_primary_method"] = "webauthn"
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "webauthn_unknown@example.com", "password": "password123"},
+    )
+    pending_payload = login.json()
+    begin = client.post(
+        "/api/v1/auth/mfa/webauthn/authenticate/begin",
+        json={"pending_mfa_token": pending_payload["pending_mfa_token"]},
+    )
+    assert begin.status_code == 200
+
+    finish = client.post(
+        "/api/v1/auth/mfa/webauthn/authenticate/finish",
+        json={
+            "pending_mfa_token": pending_payload["pending_mfa_token"],
+            "credential": {
+                "id": "credential-unknown",
+                "response": {
+                    "clientDataJSON": _build_webauthn_client_data("http://localhost:5173"),
+                },
+            },
+        },
+    )
+    assert finish.status_code == 401
+    assert "unknown webauthn credential" in finish.json()["detail"].lower()
+
+
+def test_webauthn_authentication_rejects_invalid_challenge(monkeypatch) -> None:
+    fake_db = _setup_fake_db()
+    client = TestClient(app)
+    _install_webauthn_test_mocks(monkeypatch)
+    monkeypatch.setattr(
+        auth_service_module,
+        "verify_authentication_response",
+        lambda **kwargs: (_ for _ in ()).throw(Exception("bad challenge")),
+        raising=False,
+    )
+
+    _, auth_headers = _register_and_login(
+        client,
+        full_name="WebAuthn Challenge User",
+        email="webauthn_challenge@example.com",
+        role="teacher",
+    )
+
+    user = fake_db.users.items[0]
+    user["mfa_webauthn_enabled"] = True
+    user["mfa_webauthn_credentials"] = [
+        {
+            "credential_id": "credential-1",
+            "public_key": "public-key-1",
+            "sign_count": 0,
+            "label": "Security Key",
+        }
+    ]
+    user["mfa_primary_method"] = "webauthn"
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "webauthn_challenge@example.com", "password": "password123"},
+    )
+    pending_payload = login.json()
+    begin = client.post(
+        "/api/v1/auth/mfa/webauthn/authenticate/begin",
+        json={"pending_mfa_token": pending_payload["pending_mfa_token"]},
+    )
+    assert begin.status_code == 200
+
+    finish = client.post(
+        "/api/v1/auth/mfa/webauthn/authenticate/finish",
+        json={
+            "pending_mfa_token": pending_payload["pending_mfa_token"],
+            "credential": {
+                "id": "credential-1",
+                "response": {
+                    "clientDataJSON": _build_webauthn_client_data("http://localhost:5173"),
+                },
+            },
+        },
+    )
+    assert finish.status_code == 401
+    assert "verification failed" in finish.json()["detail"].lower()
 
 
 def test_users_endpoint_allows_custom_rbac_admin_types_in_response() -> None:

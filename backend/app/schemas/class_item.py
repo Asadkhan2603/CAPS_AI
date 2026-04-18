@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.schemas.section import SectionRepresentativesOut
+
 
 class ClassCreate(BaseModel):
     faculty_id: str | None = None
@@ -51,6 +53,7 @@ class ClassOut(BaseModel):
     )
     class_coordinator_user_id: str | None = None
     class_coordinator_name: str | None = None
+    class_representatives: SectionRepresentativesOut = Field(default_factory=SectionRepresentativesOut)
     is_active: bool = True
     deleted_at: datetime | None = None
     deleted_by: str | None = None

@@ -9,6 +9,7 @@ export default function ProtectedRoute({
   children,
   allowedRoles = null,
   requiredTeacherExtensions = null,
+  requiredStudentExtensions = null,
   requiredAdminTypes = null
 }) {
   const { isAuthenticated, checking, user } = useAuth();
@@ -25,6 +26,7 @@ export default function ProtectedRoute({
   const hasAccess = canAccessFeature(user, {
     allowedRoles: allowedRoles || [],
     requiredTeacherExtensions: requiredTeacherExtensions || [],
+    requiredStudentExtensions: requiredStudentExtensions || [],
     requiredAdminTypes: requiredAdminTypes || []
   });
 
@@ -35,6 +37,7 @@ export default function ProtectedRoute({
         pathname={location.pathname}
         allowedRoles={allowedRoles || []}
         requiredTeacherExtensions={requiredTeacherExtensions || []}
+        requiredStudentExtensions={requiredStudentExtensions || []}
         requiredAdminTypes={requiredAdminTypes || []}
       />
     );

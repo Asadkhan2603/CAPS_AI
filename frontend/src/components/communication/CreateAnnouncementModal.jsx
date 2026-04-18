@@ -283,7 +283,7 @@ export default function CreateAnnouncementModal({
                           <p className="truncate text-sm text-slate-700 dark:text-slate-200">{file.name}</p>
                           <p className="text-xs text-slate-500">{formatFileSize(file.size)}</p>
                         </div>
-                        <button type="button" className="btn-secondary !p-1.5" onClick={() => removeAttachment(index)}>
+                        <button type="button" className="btn-compact" onClick={() => removeAttachment(index)}>
                           <X size={14} />
                         </button>
                       </div>

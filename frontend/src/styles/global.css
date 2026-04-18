@@ -59,7 +59,7 @@
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 sm:py-2;
   }
 
   .btn-primary {
@@ -67,15 +67,35 @@
   }
 
   .btn-secondary {
-    @apply btn border border-slate-200 bg-slate-100/90 text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-800;
+    @apply btn border border-slate-200 bg-slate-100/90 text-slate-700 hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-900/80 dark:text-slate-100 dark:hover:bg-slate-800;
+  }
+
+  .btn-compact {
+    @apply inline-flex items-center justify-center rounded-lg p-1.5 text-slate-700 transition-colors hover:bg-slate-200 dark:text-slate-100 dark:hover:bg-slate-800;
+  }
+
+  .btn-sm {
+    @apply inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors hover:bg-slate-200 dark:hover:bg-slate-800;
+  }
+
+  .btn-md {
+    @apply btn;
+  }
+
+  .btn-lg {
+    @apply btn px-6 py-3 text-base;
   }
 
   .input {
     @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:focus:border-brand-400 dark:focus:ring-brand-900/60;
   }
 
+  .input-auth {
+    @apply w-full rounded-2xl border border-white/10 bg-white/5 py-4 px-4 text-sm text-white outline-none transition-all placeholder:text-slate-600 focus:border-sky-500/50 focus:bg-white/10 focus:ring-4 focus:ring-sky-500/10;
+  }
+
   .auth-shell {
-    @apply relative min-h-screen overflow-hidden bg-slate-950 text-slate-100;
+    @apply relative min-h-[100dvh] overflow-x-hidden bg-slate-950 text-slate-100;
     background: radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 100%);
   }
 
@@ -136,9 +156,12 @@
     @apply motion-safe:animate-[fadeIn_420ms_ease-out];
   }
 
-  .glass-card {
-    @apply border border-white/10 bg-white/5 shadow-2xl backdrop-blur-2xl;
-  }
+  /* Card Variants Documentation:
+     - .panel: Default card container with rounded corners, shadow, and panel styling (used by Card component)
+     - .page-surface: Large-scale surface for page content with increased contrast for prominence
+     - .auth-card: Authentication-specific card with glassmorphism effects for modal forms
+     All variants support responsive adjustments via Tailwind overrides (e.g., className="panel !p-6")
+  */
 }
 
 @keyframes fadeIn {

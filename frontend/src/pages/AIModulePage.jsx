@@ -237,6 +237,64 @@ function formatScopeLabel(value) {
   return value || '-';
 }
 
+function formatReviewReasonLabel(reason) {
+  if (!reason) return 'Auto-flag evidence passed';
+  return reason
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatDecisionModeLabel(mode, isFlagged) {
+  if (mode === 'flagged') return 'Auto-flagged';
+  if (mode === 'assist_only') return 'Review only';
+  if (mode === 'suppressed') return 'Suppressed';
+  if (isFlagged) return 'Flagged';
+  return 'Unflagged';
+}
+
+function formatReviewStatusLabel(status) {
+  if (!status) return 'Open';
+  return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildSimilarityDecisionSummary(detail) {
+  if (!detail) return 'Review the matched excerpts before deciding whether this is true copying, prompt overlap, or weak evidence.';
+  const score = Number(detail.score || 0);
+  const threshold = Number(detail.threshold || 0);
+  const excerptCount = detail.risk_signals?.effective_excerpt_count ?? 0;
+  const effectiveOverlap = detail.overlap_stats?.effective_overlap_ratio;
+  if (detail.decision_mode === 'flagged') {
+    return `This case was auto-flagged because wording overlap is ${score.toFixed(2)} against a threshold of ${threshold.toFixed(2)}, with ${excerptCount || 'multiple'} strong matching excerpt${excerptCount === 1 ? '' : 's'} and effective overlap ${formatNumeric(effectiveOverlap, 2)} after prompt discount.`;
+  }
+  if (detail.decision_mode === 'assist_only') {
+    return `This case was kept review-only because the system saw similarity worth checking, but not enough safe evidence to auto-flag. Compare the highlighted excerpts before deciding.`;
+  }
+  return `This case was suppressed from auto-flagging because evidence was weak, risky, or incomplete. Use the excerpts and file-quality notes before taking action.`;
+}
+
+function buildSimilarityReviewerChecklist(detail) {
+  if (!detail) return [];
+  const items = [];
+  items.push('Confirm whether the shared text is actual student content or just common assignment wording.');
+  if ((detail.risk_signals?.effective_excerpt_count ?? 0) > 0) {
+    items.push(`Check the ${detail.risk_signals?.effective_excerpt_count} highlighted excerpt${detail.risk_signals?.effective_excerpt_count === 1 ? '' : 's'} for copied phrasing, order, and examples.`);
+  }
+  if (detail.risk_signals?.low_extraction_block || detail.extraction_diagnostics?.source?.low_text_reason || detail.extraction_diagnostics?.matched?.low_text_reason) {
+    items.push('Treat this as weak evidence until extraction quality improves or OCR recovery succeeds.');
+  }
+  if (detail.semantic_review_candidate) {
+    items.push('Semantic drift is high enough to suggest paraphrase risk, so compare meaning as well as exact wording.');
+  }
+  if (detail.risk_signals?.prompt_overlap_ratio >= 0.2) {
+    items.push('A meaningful part of the overlap comes from prompt/common wording, so avoid accusing based on score alone.');
+  }
+  return items.slice(0, 4);
+}
+
 export default function AIModulePage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -451,6 +509,11 @@ export default function AIModulePage() {
 
   async function loadSimilarityFromQuery() {
     const params = new URLSearchParams(location.search);
+    const similarityLogId = params.get('similarity_log_id');
+    if (similarityLogId) {
+      await openSimilarityDetail(similarityLogId);
+      return;
+    }
     const sourceSubmissionId = params.get('source_submission_id');
     if (!sourceSubmissionId) return;
     try {
@@ -779,8 +842,16 @@ export default function AIModulePage() {
 
   const similarityColumns = useMemo(
     () => [
-      { key: 'source_submission_id', label: 'Source Submission' },
-      { key: 'matched_submission_id', label: 'Matched Submission' },
+      {
+        key: 'source_submission_public_id',
+        label: 'Source Submission',
+        render: (row) => row.source_submission_public_id || row.source_submission_id || '-'
+      },
+      {
+        key: 'matched_submission_public_id',
+        label: 'Matched Submission',
+        render: (row) => row.matched_submission_public_id || row.matched_submission_id || '-'
+      },
       { key: 'score', label: 'Lexical Similarity', render: (row) => (row.score != null ? Number(row.score).toFixed(2) : '-') },
       { key: 'decision_mode', label: 'Decision', render: (row) => <Badge variant={decisionModeVariant(row.decision_mode)}>{row.decision_mode || 'unknown'}</Badge> },
       { key: 'match_scope', label: 'Scope', render: (row) => formatMatchScope(row.match_scope) },
@@ -820,8 +891,8 @@ export default function AIModulePage() {
 
   const chatColumns = useMemo(
     () => [
-      { key: 'student_id', label: 'Student' },
-      { key: 'exam_id', label: 'Assignment' },
+      { key: 'student_label', label: 'Student', render: (row) => row.student_label || row.student_id || '-' },
+      { key: 'assignment_label', label: 'Assignment', render: (row) => row.assignment_label || row.exam_id || '-' },
       { key: 'question_id', label: 'Question', render: (row) => row.question_id || '-' },
       { key: 'message_count', label: 'Messages', render: (row) => row.message_count ?? 0 },
       {
@@ -2129,20 +2200,106 @@ export default function AIModulePage() {
         {similarityDetailLoading ? (
           <p className="text-sm text-slate-500">Loading similarity detail...</p>
         ) : similarityDetail ? (
-          <div className="space-y-4">
-            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300">
-              Lexical similarity measures shared wording, while semantic signals (if present) suggest paraphrase risk. Review excerpts before deciding.
-            </p>
+          <div className="space-y-5">
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">At a glance</p>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      {similarityDetail.source_submission_summary?.student_label || 'Student A'} vs{' '}
+                      {similarityDetail.matched_submission_summary?.student_label || 'Student B'}
+                    </h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      {similarityDetail.source_submission_summary?.assignment_label ||
+                        similarityDetail.source_assignment_label ||
+                        'Assignment not available'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 px-3 py-2 text-right dark:bg-slate-800/50">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current review</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {formatReviewStatusLabel(similarityDetail.review_status)}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Last updated {formatTimestamp(similarityDetail.review_updated_at || similarityDetail.reviewed_at)}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-200">
+                  {buildSimilarityDecisionSummary(similarityDetail)}
+                </p>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Case summary</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Decision</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {formatDecisionModeLabel(similarityDetail.decision_mode, similarityDetail.is_flagged)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {formatReviewReasonLabel(similarityDetail.suppression_reason)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Match strength</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        Lexical similarity {formatNumeric(similarityDetail.score, 2)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Threshold {formatNumeric(similarityDetail.threshold, 2)} | Effective overlap{' '}
+                        {formatNumeric(similarityDetail.overlap_stats?.effective_overlap_ratio, 2)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Students compared</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {similarityDetail.source_submission_summary?.submission_public_id || similarityDetail.source_submission_public_id || '-'}
+                        {' '}and{' '}
+                        {similarityDetail.matched_submission_summary?.submission_public_id || similarityDetail.matched_submission_public_id || '-'}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {similarityDetail.source_submission_summary?.student_label || '-'} |{' '}
+                        {similarityDetail.matched_submission_summary?.student_label || '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Evidence quality</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {similarityDetail.risk_signals?.effective_excerpt_count ?? 0} strong excerpt
+                        {(similarityDetail.risk_signals?.effective_excerpt_count ?? 0) === 1 ? '' : 's'}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Source quality {formatNumeric(similarityDetail.extraction_quality?.source, 3)} | Matched quality{' '}
+                        {formatNumeric(similarityDetail.extraction_quality?.matched, 3)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">What to review first</p>
+                  <div className="mt-3 space-y-2">
+                    {buildSimilarityReviewerChecklist(similarityDetail).map((item) => (
+                      <p key={item} className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:bg-slate-800/50 dark:text-slate-200">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2 text-xs text-slate-500">
               <Badge variant={decisionModeVariant(similarityDetail.decision_mode)}>
-                {similarityDetail.decision_mode || (similarityDetail.is_flagged ? 'flagged' : 'unflagged')}
+                {formatDecisionModeLabel(similarityDetail.decision_mode, similarityDetail.is_flagged)}
               </Badge>
               <Badge variant="default">{formatMatchScope(similarityDetail.match_scope)}</Badge>
               <Badge variant="default">{formatLanguageBucket(similarityDetail.language_bucket)}</Badge>
               <Badge variant="default">Lexical similarity {Number(similarityDetail.score || 0).toFixed(2)}</Badge>
               <Badge variant="default">Threshold {Number(similarityDetail.threshold || 0).toFixed(2)}</Badge>
               <Badge variant="default">Engine {similarityDetail.engine_version || '-'}</Badge>
-              <Badge variant="info">Review {similarityDetail.review_status || 'open'}</Badge>
+              <Badge variant="info">Review {formatReviewStatusLabel(similarityDetail.review_status)}</Badge>
               {similarityDetail.semantic_review_candidate ? (
                 <Badge variant="warning">Semantic review candidate</Badge>
               ) : null}
@@ -2187,93 +2344,122 @@ export default function AIModulePage() {
             ) : null}
 
             <div className="grid gap-3 lg:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Overlap Stats</p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">
-                  Lexical overlap: {similarityDetail.overlap_stats?.overlap_ratio ?? '-'} |
-                  Effective overlap: {similarityDetail.overlap_stats?.effective_overlap_ratio ?? '-'}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Prompt discount: {similarityDetail.overlap_stats?.prompt_term_discount ?? '-'} |
-                  Tokens: {similarityDetail.overlap_stats?.source_token_count ?? '-'} â†’ {similarityDetail.overlap_stats?.matched_token_count ?? '-'}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Extraction Quality</p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">
-                  Source: {similarityDetail.extraction_quality?.source ?? '-'} | Matched: {similarityDetail.extraction_quality?.matched ?? '-'}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Candidates evaluated: {similarityDetail.candidate_count ?? '-'}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Source OCR {similarityDetail.extraction_diagnostics?.source?.ocr_attempted ? 'yes' : 'no'} ({similarityDetail.extraction_diagnostics?.source?.ocr_provider || '-'}) |
-                  Matched OCR {similarityDetail.extraction_diagnostics?.matched?.ocr_attempted ? 'yes' : 'no'} ({similarityDetail.extraction_diagnostics?.matched?.ocr_provider || '-'})
-                </p>
-                <p className="text-xs text-slate-500">
-                  Extraction confidence {formatNumeric(similarityDetail.extraction_diagnostics?.source?.extraction_confidence, 2)}{' -> '}{formatNumeric(similarityDetail.extraction_diagnostics?.matched?.extraction_confidence, 2)} |
-                  Low-text reason {similarityDetail.extraction_diagnostics?.source?.low_text_reason || similarityDetail.extraction_diagnostics?.matched?.low_text_reason || '-'}
-                </p>
-                <p className="text-xs text-slate-500">
-                  OCR state {formatOcrResultState(similarityDetail.extraction_diagnostics?.source?.ocr_result_state)}{' -> '}{formatOcrResultState(similarityDetail.extraction_diagnostics?.matched?.ocr_result_state)} |
-                  Retries {(similarityDetail.extraction_diagnostics?.source?.ocr_retry_count ?? 0)}{' -> '}{(similarityDetail.extraction_diagnostics?.matched?.ocr_retry_count ?? 0)}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Guidance {similarityDetail.extraction_diagnostics?.source?.ocr_retry_guidance || similarityDetail.extraction_diagnostics?.matched?.ocr_retry_guidance || 'No OCR retry guidance needed.'}
-                </p>
-              </div>
+              {[
+                {
+                  title: 'Source submission',
+                  summary: similarityDetail.source_submission_summary,
+                },
+                {
+                  title: 'Matched submission',
+                  summary: similarityDetail.matched_submission_summary,
+                },
+              ].map((item) => (
+                <div key={item.title} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.title}</p>
+                      <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
+                        {item.summary?.student_label || 'Student not available'}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {item.summary?.submission_public_id || item.summary?.submission_label || '-'} |{' '}
+                        {item.summary?.assignment_label || '-'}
+                      </p>
+                    </div>
+                    <Badge variant="default">{item.summary?.file_name || 'No file name'}</Badge>
+                  </div>
+                  <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                    <p><span className="font-medium">Uploaded:</span> {formatTimestamp(item.summary?.uploaded_at)}</p>
+                    <p><span className="font-medium">Extracted text length:</span> {item.summary?.text_length ?? '-'}</p>
+                  </div>
+                  <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700 dark:bg-slate-800/50 dark:text-slate-200">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Answer preview</p>
+                    <p className="mt-2 whitespace-pre-wrap">{item.summary?.text_preview || 'No extracted preview available.'}</p>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="grid gap-3 lg:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Decision Signals</p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">
-                  Decision {similarityDetail.decision_mode || '-'} | Reason {similarityDetail.suppression_reason || 'auto-flag evidence passed'}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Tokenization {similarityDetail.tokenization_mode_applied || '-'} | Semantic candidate {similarityDetail.semantic_review_candidate ? 'yes' : 'no'}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Non-prompt shared {similarityDetail.risk_signals?.non_prompt_shared_tokens ?? '-'} | Effective excerpts {similarityDetail.risk_signals?.effective_excerpt_count ?? '-'} | Min excerpt overlap {formatNumeric(similarityDetail.risk_signals?.min_effective_excerpt_overlap, 2)}
-                </p>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Why this case needs review</p>
+                  <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                    <p><span className="font-medium">Decision:</span> {formatDecisionModeLabel(similarityDetail.decision_mode, similarityDetail.is_flagged)}</p>
+                    <p><span className="font-medium">System reason:</span> {formatReviewReasonLabel(similarityDetail.suppression_reason)}</p>
+                    <p><span className="font-medium">Effective overlap:</span> {formatNumeric(similarityDetail.overlap_stats?.effective_overlap_ratio, 2)}</p>
+                    <p><span className="font-medium">Matching excerpts:</span> {similarityDetail.risk_signals?.effective_excerpt_count ?? '-'}</p>
+                    <p><span className="font-medium">Non-prompt shared tokens:</span> {similarityDetail.risk_signals?.non_prompt_shared_tokens ?? '-'}</p>
+                  </div>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Bias / Error Risk</p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">
-                  Prompt overlap {formatNumeric(similarityDetail.risk_signals?.prompt_overlap_ratio, 2)} | Generic overlap {formatNumeric(similarityDetail.risk_signals?.generic_overlap_ratio, 2)}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Low extraction block {similarityDetail.risk_signals?.low_extraction_block ? 'yes' : 'no'} | Language mismatch {similarityDetail.risk_signals?.language_mismatch ? 'yes' : 'no'} | Boilerplate risk {similarityDetail.risk_signals?.boilerplate_risk ? 'yes' : 'no'}
-                </p>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Evidence quality</p>
+                  <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                    <p><span className="font-medium">Lexical score:</span> {formatNumeric(similarityDetail.score, 2)} against threshold {formatNumeric(similarityDetail.threshold, 2)}</p>
+                    <p><span className="font-medium">Prompt discount:</span> {formatNumeric(similarityDetail.overlap_stats?.prompt_term_discount, 2)}</p>
+                    <p><span className="font-medium">Extraction quality:</span> Source {formatNumeric(similarityDetail.extraction_quality?.source, 3)} | Matched {formatNumeric(similarityDetail.extraction_quality?.matched, 3)}</p>
+                    <p><span className="font-medium">Candidate count:</span> {similarityDetail.candidate_count ?? '-'}</p>
+                  <p><span className="font-medium">Cap status:</span> {similarityDetail.cap_reached ? 'Reached' : 'OK'}</p>
+                </div>
               </div>
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Language Profile</p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">
-                  Source {similarityDetail.language_profile?.source?.primary_script || '-'} | Matched {similarityDetail.language_profile?.matched?.primary_script || '-'}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Mixed/non-Latin: {similarityDetail.language_profile?.mixed_or_non_latin ? 'yes' : 'no'}
-                </p>
+            <div className="grid gap-3 lg:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Risk checks</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                  <p><span className="font-medium">Prompt overlap:</span> {formatNumeric(similarityDetail.risk_signals?.prompt_overlap_ratio, 2)}</p>
+                  <p><span className="font-medium">Generic overlap:</span> {formatNumeric(similarityDetail.risk_signals?.generic_overlap_ratio, 2)}</p>
+                  <p><span className="font-medium">Boilerplate risk:</span> {similarityDetail.risk_signals?.boilerplate_risk ? 'Yes' : 'No'}</p>
+                  <p><span className="font-medium">Language mismatch:</span> {similarityDetail.risk_signals?.language_mismatch ? 'Yes' : 'No'}</p>
+                  <p><span className="font-medium">Tokenization:</span> {similarityDetail.tokenization_mode_applied || '-'}</p>
+                </div>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Shadow Scope</p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">
-                  {formatMatchScope(similarityDetail.match_scope)}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Cross-assignment shadow evidence is reviewer-only and never changes automatic flagging.
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Last review update {formatTimestamp(similarityDetail.review_updated_at || similarityDetail.reviewed_at)} | Finalized {formatTimestamp(similarityDetail.review_finalized_at)}
-                </p>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Language and semantic hints</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                  <p><span className="font-medium">Language bucket:</span> {formatLanguageBucket(similarityDetail.language_bucket)}</p>
+                  <p><span className="font-medium">Scripts:</span> Source {similarityDetail.language_profile?.source?.primary_script || '-'} | Matched {similarityDetail.language_profile?.matched?.primary_script || '-'}</p>
+                  <p><span className="font-medium">Mixed/non-Latin:</span> {similarityDetail.language_profile?.mixed_or_non_latin ? 'Yes' : 'No'}</p>
+                  <p><span className="font-medium">Semantic shadow:</span> {formatNumeric(similarityDetail.semantic_shadow_score, 2)}</p>
+                  <p><span className="font-medium">Semantic candidate:</span> {similarityDetail.semantic_review_candidate ? 'Yes' : 'No'}</p>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Review state</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                  <p><span className="font-medium">Status:</span> {similarityDetail.review_status || 'open'}</p>
+                  <p><span className="font-medium">Counts toward calibration:</span> {similarityDetailCountsTowardCalibration ? 'Yes' : 'No'}</p>
+                  <p><span className="font-medium">Scope:</span> {formatMatchScope(similarityDetail.match_scope)}</p>
+                  <p><span className="font-medium">Last update:</span> {formatTimestamp(similarityDetail.review_updated_at || similarityDetail.reviewed_at)}</p>
+                  <p><span className="font-medium">Finalized:</span> {formatTimestamp(similarityDetail.review_finalized_at)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">File quality and OCR diagnostics</p>
+              <div className="mt-3 grid gap-3 lg:grid-cols-2 text-sm text-slate-700 dark:text-slate-200">
+                <div className="space-y-2">
+                  <p><span className="font-medium">Source OCR:</span> {similarityDetail.extraction_diagnostics?.source?.ocr_attempted ? 'Yes' : 'No'} ({similarityDetail.extraction_diagnostics?.source?.ocr_provider || '-'})</p>
+                  <p><span className="font-medium">Matched OCR:</span> {similarityDetail.extraction_diagnostics?.matched?.ocr_attempted ? 'Yes' : 'No'} ({similarityDetail.extraction_diagnostics?.matched?.ocr_provider || '-'})</p>
+                  <p><span className="font-medium">Confidence:</span> {formatNumeric(similarityDetail.extraction_diagnostics?.source?.extraction_confidence, 2)} → {formatNumeric(similarityDetail.extraction_diagnostics?.matched?.extraction_confidence, 2)}</p>
+                </div>
+                <div className="space-y-2">
+                  <p><span className="font-medium">Low-text reason:</span> {similarityDetail.extraction_diagnostics?.source?.low_text_reason || similarityDetail.extraction_diagnostics?.matched?.low_text_reason || '-'}</p>
+                  <p><span className="font-medium">OCR state:</span> {formatOcrResultState(similarityDetail.extraction_diagnostics?.source?.ocr_result_state)} → {formatOcrResultState(similarityDetail.extraction_diagnostics?.matched?.ocr_result_state)}</p>
+                  <p><span className="font-medium">Guidance:</span> {similarityDetail.extraction_diagnostics?.source?.ocr_retry_guidance || similarityDetail.extraction_diagnostics?.matched?.ocr_retry_guidance || 'No OCR retry guidance needed.'}</p>
+                </div>
               </div>
             </div>
 
             <div className="space-y-3">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Matched Excerpts</p>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Similar content found</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Compare the exact wording below from {similarityDetail.source_submission_summary?.student_label || 'the source submission'} and{' '}
+                  {similarityDetail.matched_submission_summary?.student_label || 'the matched submission'}. Higher-overlap excerpts are the strongest evidence.
+                </p>
+              </div>
               <div className="grid gap-3 lg:grid-cols-2">
                 <label className="space-y-1">
                   <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Search excerpts</span>
@@ -2309,36 +2495,62 @@ export default function AIModulePage() {
                       return matchesQuery && overlap >= minOverlap;
                     })
                     .map((item, index) => (
-                    <div key={`${item.source_sentence}-${index}`} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                      <p className="text-xs text-slate-500">Overlap: {item.effective_overlap_ratio ?? item.overlap_ratio ?? '-'}</p>
-                      <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">Source: {item.source_sentence}</p>
-                      <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">Matched: {item.matched_sentence}</p>
+                    <div key={`${item.source_sentence}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Match {index + 1} • Overlap {formatPercent(item.effective_overlap_ratio ?? item.overlap_ratio ?? 0)}
+                      </p>
+                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                        <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            {similarityDetail.source_submission_summary?.student_label || 'Source student'}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{item.source_sentence}</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            {similarityDetail.matched_submission_summary?.student_label || 'Matched student'}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{item.matched_sentence}</p>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">No excerpts stored for this match.</p>
+                <p className="text-sm text-slate-500">No excerpts match the current filter, or no evidence excerpts were stored for this case.</p>
               )}
             </div>
 
             {(similarityDetail.related_shadow_candidates || []).length ? (
               <div className="space-y-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Cross-Assignment Shadow Candidates</p>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Cross-assignment shadow candidates</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    These are review-only semantic hints from other assignments. They never change automatic flagging.
+                  </p>
+                </div>
                 <div className="grid gap-3 lg:grid-cols-2">
                   {(similarityDetail.related_shadow_candidates || []).map((candidate) => (
                     <div key={candidate.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                          {candidate.matched_submission_id}
+                          {candidate.matched_submission_summary?.student_label || candidate.matched_submission_public_id || candidate.matched_submission_id || '-'}
                         </p>
                         <Badge variant="info">{formatMatchScope(candidate.match_scope)}</Badge>
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
+                        {candidate.matched_submission_summary?.submission_public_id || candidate.matched_submission_public_id || '-'} |{' '}
+                        {candidate.matched_assignment_label || candidate.matched_assignment_id || '-'}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
                         Semantic {formatNumeric(candidate.semantic_shadow_score, 2)} | Lexical {formatNumeric(candidate.score, 2)}
                       </p>
                       <p className="text-xs text-slate-500">
-                        Assignment {candidate.matched_assignment_id || '-'} | Script {candidate.language_profile?.matched?.primary_script || '-'}
+                        Script {candidate.language_profile?.matched?.primary_script || '-'} | Review {formatReviewStatusLabel(candidate.review_status)}
                       </p>
+                      <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+                        {candidate.matched_submission_summary?.text_preview || 'No extracted preview available.'}
+                      </div>
                     </div>
                   ))}
                 </div>

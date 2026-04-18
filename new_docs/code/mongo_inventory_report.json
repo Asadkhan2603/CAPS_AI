@@ -1,0 +1,671 @@
+{
+  "generated_at": "2026-04-17T10:54:18.355635Z",
+  "mongodb_url": "mongodb://127.0.0.1:27017",
+  "database": "caps_ai",
+  "collection_count": 64,
+  "collections": [
+    {
+      "collection": "admin_action_reviews",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "entity_type_1_entity_id_1",
+        "status_1_created_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "ai_evaluation_chats",
+      "document_count": 2,
+      "indexes": [
+        "_id_",
+        "exam_id_1",
+        "student_id_1_exam_id_1",
+        "teacher_id_1"
+      ],
+      "last_updated": "2026-04-16T07:22:23.769000"
+    },
+    {
+      "collection": "ai_evaluation_runs",
+      "document_count": 15,
+      "indexes": [
+        "_id_",
+        "evaluation_id_1_created_at_1",
+        "submission_id_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.935000"
+    },
+    {
+      "collection": "ai_jobs",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "job_type_1_idempotency_key_1_status_1",
+        "job_type_1_requested_by_user_id_1_requested_at_1",
+        "status_1_requested_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.940000"
+    },
+    {
+      "collection": "ai_similarity_views",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "library_key_1_updated_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "analytics_snapshots",
+      "document_count": 2,
+      "indexes": [
+        "_id_"
+      ],
+      "last_updated": "2026-04-16T05:45:14.985000"
+    },
+    {
+      "collection": "assignments",
+      "document_count": 2,
+      "indexes": [
+        "_id_",
+        "created_by_1_created_at_1",
+        "is_deleted_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.932000"
+    },
+    {
+      "collection": "attendance_records",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "class_slot_id_1_student_id_1",
+        "student_id_1_marked_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.928000"
+    },
+    {
+      "collection": "audit_logs",
+      "document_count": 82,
+      "indexes": [
+        "_id_",
+        "actor_user_id_1_created_at_1",
+        "created_at_1",
+        "entity_type_1_entity_id_1_created_at_1",
+        "resource_type_1_severity_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.969000"
+    },
+    {
+      "collection": "audit_logs_immutable",
+      "document_count": 81,
+      "indexes": [
+        "_id_",
+        "created_at_1",
+        "integrity_hash_1"
+      ],
+      "last_updated": "2026-04-17T09:05:05.614000"
+    },
+    {
+      "collection": "batch_read_models",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "is_active_1_deleted_at_1",
+        "program_id_1_specialization_id_1_is_active_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.874000"
+    },
+    {
+      "collection": "batches",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "is_active_1_deleted_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.874000"
+    },
+    {
+      "collection": "class_slot_read_models",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "course_offering_id_1_is_active_1",
+        "is_active_1_section_id_1_group_id_1_day_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.921000"
+    },
+    {
+      "collection": "class_slots",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "course_offering_id_1_day_1_start_time_1_is_active_1",
+        "day_1_room_code_1_is_active_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.921000"
+    },
+    {
+      "collection": "classes",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "class_representatives.cr_1.user_id_1_is_active_1",
+        "class_representatives.cr_2.user_id_1_is_active_1",
+        "is_active_1_deleted_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.878000"
+    },
+    {
+      "collection": "club_applications",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "club_id_1_status_1_applied_at_1",
+        "club_id_1_student_user_id_1_status_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.961000"
+    },
+    {
+      "collection": "club_events",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "club_id_1_status_1_event_date_1",
+        "is_deleted_1_club_id_1_status_1_created_at_1",
+        "is_deleted_1_created_at_1",
+        "is_deleted_1_visibility_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.962000"
+    },
+    {
+      "collection": "club_members",
+      "document_count": 2,
+      "indexes": [
+        "_id_",
+        "club_id_1_joined_at_1",
+        "club_id_1_status_1",
+        "club_id_1_student_user_id_1",
+        "student_user_id_1_status_1_club_id_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.957000"
+    },
+    {
+      "collection": "club_queue_snapshots",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "scope_type_1_scope_id_1_queue_type_1_captured_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "club_queue_views",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "scope_type_1_scope_id_1_queue_type_1_updated_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "clubs",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "academic_year_1_updated_at_1",
+        "coordinator_user_id_1",
+        "president_user_id_1",
+        "registration_open_1_updated_at_1",
+        "slug_1_academic_year_1",
+        "status_1_updated_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.950000"
+    },
+    {
+      "collection": "communication_deliveries",
+      "document_count": 15,
+      "indexes": [
+        "_id_",
+        "source_kind_1_source_id_1_channel_1_target_email_1",
+        "source_kind_1_source_id_1_channel_1_target_user_id_1",
+        "target_user_id_1_channel_1_status_1_updated_at_1"
+      ],
+      "last_updated": "2026-04-16T11:07:23.578000"
+    },
+    {
+      "collection": "communication_digests",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "source_kind_1_source_id_1_target_user_id_1_digest_frequency_1",
+        "status_1_scheduled_for_1_digest_frequency_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "course_offering_read_models",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "is_active_1_section_id_1_group_id_1",
+        "teacher_user_id_1_subject_id_1_is_active_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.921000"
+    },
+    {
+      "collection": "course_offerings",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "section_id_1_semester_id_1_academic_year_1_is_active_1",
+        "subject_id_1_teacher_user_id_1_batch_id_1_semester_id_1_section_id_1_group_id_1_academic_year_1_offering_type_1",
+        "teacher_user_id_1_is_active_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.921000"
+    },
+    {
+      "collection": "departments",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "department_id_1",
+        "faculty_id_1_department_code_1",
+        "faculty_id_1_department_name_1",
+        "faculty_id_1_is_active_1",
+        "is_active_1_deleted_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.869000"
+    },
+    {
+      "collection": "enrollments",
+      "document_count": 3,
+      "indexes": [
+        "_id_"
+      ],
+      "last_updated": "2026-04-16T05:45:14.893000"
+    },
+    {
+      "collection": "evaluations",
+      "document_count": 4,
+      "indexes": [
+        "_id_",
+        "student_user_id_1_created_at_1",
+        "teacher_user_id_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T09:14:16.109000"
+    },
+    {
+      "collection": "event_registrations",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "event_id_1_status_1_created_at_1",
+        "event_id_1_student_user_id_1",
+        "student_user_id_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.966000"
+    },
+    {
+      "collection": "exams",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "section_id_1_semester_id_1_scheduled_for_1_is_active_1",
+        "teacher_user_id_1_status_1_scheduled_for_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.944000"
+    },
+    {
+      "collection": "faculties",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "faculty_code_1",
+        "faculty_id_1",
+        "is_active_1_deleted_at_1",
+        "university_id_1_faculty_name_1",
+        "university_id_1_is_active_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.866000"
+    },
+    {
+      "collection": "grievances",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "assigned_resolver_user_id_1_created_at_1",
+        "department_id_1_current_stage_1_created_at_1",
+        "section_id_1_created_at_1",
+        "status_1_stage_due_at_1",
+        "student_user_id_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.968000"
+    },
+    {
+      "collection": "groups",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "section_id_1_code_1_is_active_1",
+        "section_id_1_is_active_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.880000"
+    },
+    {
+      "collection": "internship_sessions",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "status_1_clock_in_at_1",
+        "student_user_id_1_clock_in_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "notices",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "fanout_status_1_fanout_processing_expires_at_1_scheduled_at_1",
+        "is_active_1_created_at_1",
+        "is_active_1_scheduled_at_1_fanout_dispatched_at_1_fanout_next_retry_at_1",
+        "is_deleted_1_deleted_at_1",
+        "scope_1_scope_ref_id_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.948000"
+    },
+    {
+      "collection": "notifications",
+      "document_count": 13,
+      "indexes": [
+        "_id_",
+        "target_user_id_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.950000"
+    },
+    {
+      "collection": "operational_alert_routes",
+      "document_count": 2,
+      "indexes": [
+        "_id_",
+        "alert_code_1",
+        "is_active_1_last_seen_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "permissions",
+      "document_count": 110,
+      "indexes": [
+        "_id_"
+      ],
+      "last_updated": "2026-04-14T10:37:27.798000"
+    },
+    {
+      "collection": "programs",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "department_id_1_is_active_1",
+        "department_id_1_program_code_1",
+        "department_id_1_program_name_1",
+        "is_active_1_deleted_at_1",
+        "program_id_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.870000"
+    },
+    {
+      "collection": "rate_limit_counters",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "created_at_1",
+        "expires_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "recovery_logs",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "created_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "review_tickets",
+      "document_count": 1,
+      "indexes": [
+        "_id_"
+      ],
+      "last_updated": "2026-04-16T05:45:14.947000"
+    },
+    {
+      "collection": "role_permissions",
+      "document_count": 249,
+      "indexes": [
+        "_id_"
+      ],
+      "last_updated": "2026-04-14T10:37:27.798000"
+    },
+    {
+      "collection": "roles",
+      "document_count": 6,
+      "indexes": [
+        "_id_"
+      ],
+      "last_updated": "2026-04-14T10:37:27.798000"
+    },
+    {
+      "collection": "section_read_models",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "class_representatives.cr_1.user_id_1_is_active_1",
+        "class_representatives.cr_2.user_id_1_is_active_1",
+        "department_id_1_batch_id_1_is_active_1",
+        "is_active_1_deleted_at_1",
+        "semester_id_1_class_coordinator_user_id_1_is_active_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.878000"
+    },
+    {
+      "collection": "semester_read_models",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "batch_id_1_semester_number_1_is_active_1",
+        "is_active_1_deleted_at_1",
+        "program_id_1_specialization_id_1_is_active_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.874000"
+    },
+    {
+      "collection": "semester_results",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "status_1_released_at_1",
+        "student_user_id_1_semester_id_1_is_active_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "semesters",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "batch_id_1_semester_number_1",
+        "is_active_1_deleted_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.874000"
+    },
+    {
+      "collection": "similarity_logs",
+      "document_count": 3,
+      "indexes": [
+        "_id_",
+        "source_submission_id_1_matched_submission_id_1_threshold_1_engine_version_1"
+      ],
+      "last_updated": "2026-04-16T09:54:34.741000"
+    },
+    {
+      "collection": "specializations",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "is_active_1_deleted_at_1",
+        "program_id_1_is_active_1",
+        "program_id_1_specialization_code_1",
+        "program_id_1_specialization_name_1",
+        "specialization_id_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.873000"
+    },
+    {
+      "collection": "students",
+      "document_count": 4,
+      "indexes": [
+        "_id_",
+        "class_id_1_group_id_1_is_active_1",
+        "user_id_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.891000"
+    },
+    {
+      "collection": "subjects",
+      "document_count": 1,
+      "indexes": [
+        "_id_"
+      ],
+      "last_updated": "2026-04-16T05:45:14.921000"
+    },
+    {
+      "collection": "submissions",
+      "document_count": 4,
+      "indexes": [
+        "_id_",
+        "assignment_id_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T07:14:56.160000"
+    },
+    {
+      "collection": "system_health_snapshots",
+      "document_count": 20,
+      "indexes": [
+        "_id_",
+        "bucket_minute_1",
+        "recorded_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.985000"
+    },
+    {
+      "collection": "timetable_subject_teacher_maps",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "class_id_1_subject_id_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.927000"
+    },
+    {
+      "collection": "timetables",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "class_id_1_semester_1_status_1_is_active_1",
+        "entries.room_code_1_status_1",
+        "entries.teacher_user_id_1_status_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.925000"
+    },
+    {
+      "collection": "token_blacklist",
+      "document_count": 28,
+      "indexes": [
+        "_id_",
+        "expires_at_1",
+        "jti_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "universities",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "is_active_1_deleted_at_1",
+        "university_id_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.863000"
+    },
+    {
+      "collection": "user_filter_presets",
+      "document_count": 0,
+      "indexes": [
+        "_id_",
+        "created_by_user_id_1_name_normalized_1",
+        "created_by_user_id_1_updated_at_1"
+      ],
+      "last_updated": null
+    },
+    {
+      "collection": "user_invitations",
+      "document_count": 12,
+      "indexes": [
+        "_id_",
+        "email_1_status_1_created_at_1",
+        "token_1"
+      ],
+      "last_updated": "2026-04-15T09:40:39.989000"
+    },
+    {
+      "collection": "user_permission_templates",
+      "document_count": 1,
+      "indexes": [
+        "_id_",
+        "role_1_name_1"
+      ],
+      "last_updated": "2026-04-16T06:51:00.643000"
+    },
+    {
+      "collection": "user_sessions",
+      "document_count": 79,
+      "indexes": [
+        "_id_",
+        "refresh_jti_1",
+        "revoked_at_1",
+        "user_id_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T05:45:14.969000"
+    },
+    {
+      "collection": "users",
+      "document_count": 8,
+      "indexes": [
+        "_id_",
+        "admin_type_1_is_active_1",
+        "created_at_1",
+        "email_1",
+        "extended_roles_1_is_active_1",
+        "last_active_at_1",
+        "last_permission_change_at_1",
+        "last_status_change_at_1",
+        "role_1_is_active_1_updated_at_1"
+      ],
+      "last_updated": "2026-04-17T09:34:44.935000"
+    },
+    {
+      "collection": "users_admin_telemetry",
+      "document_count": 293,
+      "indexes": [
+        "_id_",
+        "actor_user_id_1_created_at_1",
+        "created_at_1",
+        "event_1_outcome_1_created_at_1"
+      ],
+      "last_updated": "2026-04-16T10:49:35.698000"
+    }
+  ]
+}

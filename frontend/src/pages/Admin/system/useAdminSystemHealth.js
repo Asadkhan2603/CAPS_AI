@@ -20,6 +20,8 @@ export function useAdminSystemHealth({ pushToast }) {
   const clubsMetrics = data?.observability?.clubs_metrics || {};
   const clubsObservabilityRaw = data?.clubs_observability || {};
   const snapshotStore = data?.snapshot_store || {};
+  const usersAdminDashboard = data?.users_admin_dashboard || null;
+  const usersAdminAlerts = data?.users_admin_alerts || [];
 
   const historyData = useMemo(
     () =>
@@ -189,6 +191,8 @@ export function useAdminSystemHealth({ pushToast }) {
     persistedHistoryData,
     setIsAutoRefresh,
     snapshotStore,
+    usersAdminAlerts,
+    usersAdminDashboard,
   };
 }
 

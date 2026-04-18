@@ -48,15 +48,19 @@ export default function SubmissionsPage() {
   const [studentQuery, setStudentQuery] = useState('');
   const [studentStatusFilter, setStudentStatusFilter] = useState('');
   const [bulkRunning, setBulkRunning] = useState(false);
+  const [similarityRunningId, setSimilarityRunningId] = useState(null);
   const canUploadSubmission = user?.role === 'student';
   const canRunAi = user?.role === 'admin' || user?.role === 'teacher';
   const canOpenEvaluationConsole = user?.role === 'admin' || user?.role === 'teacher';
-  const canViewTeacherMarks = user?.role === 'admin';
+  const canViewTeacherMarks = user?.role === 'admin' || user?.role === 'teacher';
   const isStudent = user?.role === 'student';
   const assignmentLabelById = useMemo(
     () =>
       Object.fromEntries(
-        assignments.map((item) => [item.id, item.title ? `${item.title} (${item.id})` : item.id])
+        assignments.map((item) => [
+          item.id,
+          item.display_label || (item.title ? `${item.title} (${item.public_id || item.id})` : item.public_id || item.id)
+        ])
       ),
     [assignments]
   );
@@ -296,6 +300,57 @@ export default function SubmissionsPage() {
       pushToast({ title: 'Bulk AI failed', description: String(detail), variant: 'error' });
     } finally {
       setBulkRunning(false);
+    }
+  }
+
+  async function onRunSimilarity(row) {
+    if (!row?.id) return;
+    setSimilarityRunningId(row.id);
+    try {
+      const response = await apiClient.post(`/similarity/checks/run/${row.id}`);
+      const payload = response.data;
+
+      if (Array.isArray(payload)) {
+        const firstLog = payload[0];
+        pushToast({
+          title: payload.length ? 'Similarity checked' : 'No matches found',
+          description: payload.length
+            ? `${payload.length} similarity review record${payload.length === 1 ? '' : 's'} generated.`
+            : 'No reviewable similarity records were generated for this submission.',
+          variant: payload.length ? 'success' : 'default'
+        });
+        navigate(
+          firstLog?.id
+            ? `/ai-operations?source_submission_id=${row.id}&similarity_log_id=${firstLog.id}`
+            : `/ai-operations?source_submission_id=${row.id}`
+        );
+        return;
+      }
+
+      if (payload?.status === 'queued' || payload?.queued) {
+        pushToast({
+          title: 'Similarity queued',
+          description: payload.detail || 'Large similarity run was queued. Track progress in AI Operations.',
+          variant: 'success'
+        });
+        navigate(`/ai-operations?source_submission_id=${row.id}`);
+        return;
+      }
+
+      pushToast({
+        title: 'Similarity check finished',
+        description: 'Open AI Operations to review available similarity records.',
+        variant: 'success'
+      });
+      navigate(`/ai-operations?source_submission_id=${row.id}`);
+    } catch (err) {
+      pushToast({
+        title: 'Similarity check failed',
+        description: formatApiError(err, 'Unable to run similarity check for this submission'),
+        variant: 'error'
+      });
+    } finally {
+      setSimilarityRunningId(null);
     }
   }
 
@@ -555,9 +610,10 @@ export default function SubmissionsPage() {
                     ? [
                         {
                           key: 'similarity-review',
-                          label: 'Similarity',
+                          label: (row) => (similarityRunningId === row.id ? 'Checking...' : 'Similarity'),
                           className: 'text-sky-700 dark:text-sky-300',
-                          onClick: (row) => navigate(`/ai-operations?source_submission_id=${row.id}`)
+                          disabled: (row) => similarityRunningId === row.id,
+                          onClick: onRunSimilarity
                         },
                         {
                           key: 'ai-evaluate',

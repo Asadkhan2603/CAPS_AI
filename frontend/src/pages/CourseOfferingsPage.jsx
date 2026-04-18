@@ -44,7 +44,7 @@ export default function CourseOfferingsPage() {
       try {
         const [dashboardResponse, offeringsResponse] = await Promise.all([
           getSectionDashboard(),
-          apiClient.get('/course-offerings/', { params: { skip: 0, limit: 200, is_active: true } })
+          apiClient.get('/course-offerings/', { params: { skip: 0, limit: 100, is_active: true } })
         ]);
         setDashboard(dashboardResponse || null);
         setActiveOfferings(offeringsResponse.data || []);

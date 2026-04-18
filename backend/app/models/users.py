@@ -106,9 +106,39 @@ def user_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "communication_preferences": normalize_communication_preferences(document.get("communication_preferences")),
         "avatar_url": f"/api/v1/auth/profile/avatar/{user_id}" if document.get("avatar_filename") else None,
         "avatar_updated_at": document.get("avatar_updated_at"),
+        "last_active_at": document.get("last_active_at"),
         "created_at": document.get("created_at"),
+        "last_permission_change_at": document.get("last_permission_change_at"),
+        "last_permission_change_by": document.get("last_permission_change_by"),
+        "last_status_change_at": document.get("last_status_change_at"),
+        "last_status_change_by": document.get("last_status_change_by"),
         "schema_version": normalize_schema_version(
             document.get("schema_version"),
             default=USER_SCHEMA_VERSION,
         ),
+    }
+
+
+def user_admin_list_item(document: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = str(document["_id"])
+    profile = document.get("profile", {}) or {}
+    return {
+        "id": user_id,
+        "full_name": document.get("full_name", ""),
+        "email": document.get("email", ""),
+        "avatar_url": f"/api/v1/auth/profile/avatar/{user_id}" if document.get("avatar_filename") else None,
+        "avatar_updated_at": document.get("avatar_updated_at"),
+        "role": document.get("role", ""),
+        "admin_type": document.get("admin_type", "admin" if document.get("role") == "admin" else None),
+        "is_active": document.get("is_active", True),
+        "extended_roles": document.get("extended_roles", []),
+        "last_active_at": document.get("last_active_at"),
+        "created_at": document.get("created_at"),
+        "updated_at": document.get("updated_at"),
+        "department": profile.get("department"),
+        "designation": profile.get("designation"),
+        "last_permission_change_at": document.get("last_permission_change_at"),
+        "last_permission_change_by": document.get("last_permission_change_by"),
+        "last_status_change_at": document.get("last_status_change_at"),
+        "last_status_change_by": document.get("last_status_change_by"),
     }

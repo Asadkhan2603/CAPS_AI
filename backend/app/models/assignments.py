@@ -4,6 +4,13 @@ from app.core.schema_versions import ASSIGNMENT_SCHEMA_VERSION, normalize_schema
 from app.services.public_ids import apply_public_identity
 
 
+def _normalize_assignment_status(value: Any) -> str:
+    status = str(value or "open").strip().lower()
+    if status in {"closed", "archived"}:
+        return "closed"
+    return "open"
+
+
 def assignment_public(document: Dict[str, Any]) -> Dict[str, Any]:
     payload = {
         "id": str(document["_id"]),
@@ -13,7 +20,7 @@ def assignment_public(document: Dict[str, Any]) -> Dict[str, Any]:
         "class_id": document.get("class_id"),
         "due_date": document.get("due_date"),
         "total_marks": document.get("total_marks", 100.0),
-        "status": document.get("status", "open"),
+        "status": _normalize_assignment_status(document.get("status")),
         "plagiarism_enabled": document.get("plagiarism_enabled", True),
         "created_by": document.get("created_by"),
         "created_at": document.get("created_at"),
